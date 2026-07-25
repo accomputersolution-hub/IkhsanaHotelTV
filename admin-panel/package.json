@@ -1,0 +1,10 @@
+{
+  "name": "ikhsana-hotel-admin",
+  "version": "1.0.0",
+  "description": "Web admin panel for Ikhsana Hotel TV — orders, alerts, menu",
+  "private": true,
+  "scripts": {
+    "start": "npx --yes serve . -p 3000",
+    "dev": "npx --yes serve . -p 3000"
+  }
+}

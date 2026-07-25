@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IKHSANA RESORT & SPA — Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/custom.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <div id="toast" class="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl shadow-lg text-sm font-medium opacity-0 translate-y-4 transition-all duration-300"></div>
+
+  <div id="connection-error" class="hidden bg-red-600 text-white text-center py-2 text-sm px-4"></div>
+
+  <!-- Menu Item Modal (Add / Edit) -->
+  <div id="menu-item-modal" class="modal-overlay hidden">
+    <div class="modal-panel modal-panel-wide">
+      <div class="flex items-center justify-between mb-5">
+        <h3 id="menu-item-modal-title" class="text-lg font-bold">Add Food Item</h3>
+        <button id="menu-item-close" type="button" class="modal-close-btn">&times;</button>
+      </div>
+      <form id="menu-item-form" class="space-y-4">
+        <div>
+          <label for="menu-item-name" class="block text-sm font-medium mb-1">Dish Name</label>
+          <input id="menu-item-name" type="text" required placeholder="e.g. Butter Chicken" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="menu-item-category" class="block text-sm font-medium mb-1">Category</label>
+            <select id="menu-item-category" class="w-full px-4 py-2.5 rounded-xl outline-none"></select>
+          </div>
+          <div>
+            <label for="menu-item-price" class="block text-sm font-medium mb-1">Price (₹)</label>
+            <input id="menu-item-price" type="number" required min="0" step="1" placeholder="350" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+          </div>
+        </div>
+        <div>
+          <label for="menu-item-desc" class="block text-sm font-medium mb-1">Description</label>
+          <textarea id="menu-item-desc" rows="2" placeholder="Brief dish description…" class="w-full px-4 py-2.5 rounded-xl outline-none resize-none"></textarea>
+        </div>
+        <div>
+          <label for="menu-item-image" class="block text-sm font-medium mb-1">Image URL</label>
+          <input id="menu-item-image" type="url" placeholder="https://…" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+        </div>
+        <label class="stock-toggle stock-toggle-form">
+          <input id="menu-item-available" type="checkbox" checked />
+          <span class="stock-slider"></span>
+          <span class="stock-toggle-label">In Stock — visible on TV menu</span>
+        </label>
+        <button type="submit" class="w-full py-3 font-semibold rounded-xl btn-gold">Save Item</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add Category Modal -->
+  <div id="add-category-modal" class="modal-overlay hidden">
+    <div class="modal-panel">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-lg font-bold">Add Category</h3>
+        <button id="add-category-close" type="button" class="modal-close-btn">&times;</button>
+      </div>
+      <form id="add-category-form" class="space-y-4">
+        <div>
+          <label for="category-label" class="block text-sm font-medium mb-1">Category Name</label>
+          <input id="category-label" type="text" required placeholder="e.g. Chef Specials" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+        </div>
+        <p class="text-xs" style="color:var(--text-dim)">Category key is auto-generated. Items in this category sync to the TV app in real time.</p>
+        <button type="submit" class="w-full py-3 font-semibold rounded-xl btn-gold">Add Category</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Check-In Modal -->
+  <div id="check-in-modal" class="modal-overlay hidden">
+    <div class="modal-panel">
+      <div class="flex items-center justify-between mb-5">
+        <h3 id="check-in-modal-title" class="text-lg font-bold">Check-In Guest</h3>
+        <button id="check-in-close" type="button" class="modal-close-btn">&times;</button>
+      </div>
+      <form id="check-in-form" class="space-y-4">
+        <input id="check-in-room" type="hidden" />
+        <div>
+          <label for="check-in-guest-name" class="block text-sm font-medium mb-1">Guest Name</label>
+          <input id="check-in-guest-name" type="text" required placeholder="e.g. Ahad Chaudhary" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+        </div>
+        <div>
+          <label for="check-in-phone" class="block text-sm font-medium mb-1">Phone Number</label>
+          <input id="check-in-phone" type="tel" placeholder="+91 98765 43210" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+        </div>
+        <div>
+          <label for="check-in-checkout" class="block text-sm font-medium mb-1">Check-out Date</label>
+          <input id="check-in-checkout" type="date" required class="w-full px-4 py-2.5 rounded-xl outline-none" />
+        </div>
+        <button type="submit" class="w-full py-3 font-semibold rounded-xl btn-gold">Confirm Check-In</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add Room Modal -->
+  <div id="add-room-modal" class="modal-overlay hidden">
+    <div class="modal-panel">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-lg font-bold">Add New Room</h3>
+        <button id="add-room-close" type="button" class="modal-close-btn">&times;</button>
+      </div>
+      <form id="add-room-form" class="space-y-4">
+        <div>
+          <label for="add-room-number" class="block text-sm font-medium mb-1">Room Number</label>
+          <input id="add-room-number" type="text" required placeholder="e.g. 117" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+        </div>
+        <div>
+          <label for="add-room-type" class="block text-sm font-medium mb-1">Room Type</label>
+          <select id="add-room-type" class="w-full px-4 py-2.5 rounded-xl outline-none">
+            <option value="deluxe">Deluxe Room</option>
+            <option value="suite">Suite</option>
+          </select>
+        </div>
+        <button type="submit" class="w-full py-3 font-semibold rounded-xl btn-gold">Add Room</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="app-shell">
+
+    <!-- ═══ LEFT SIDEBAR ═══ -->
+    <aside id="sidebar" class="sidebar">
+      <div class="logo-block">
+        <div class="logo-emblem">✦</div>
+        <div class="logo-text">
+          <div class="logo-title">IKHSANA RESORT<br />&amp; SPA</div>
+          <div class="logo-sub">Property Management</div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav" aria-label="Main navigation">
+        <button class="nav-item nav-item-active" data-module="pms" aria-current="page">
+          <span class="nav-icon">🏢</span><span class="nav-label">Room &amp; Guest PMS</span>
+        </button>
+        <button class="nav-item" data-module="kds">
+          <span class="nav-icon">🍳</span><span class="nav-label">Kitchen KDS</span>
+        </button>
+        <button class="nav-item" data-module="menu">
+          <span class="nav-icon">🍽️</span><span class="nav-label">Digital Menu Config</span>
+        </button>
+        <button class="nav-item" data-module="messaging">
+          <span class="nav-icon">📺</span><span class="nav-label">TV Mass Messaging</span>
+        </button>
+        <button class="nav-item" data-module="housekeeping">
+          <span class="nav-icon">🧹</span><span class="nav-label">Housekeeping Queue</span>
+          <span id="nav-hk-badge" class="nav-pending-badge hidden">0</span>
+        </button>
+        <button class="nav-item" data-module="concierge">
+          <span class="nav-icon">🚖</span><span class="nav-label">Travel &amp; Concierge</span>
+        </button>
+        <button class="nav-item" data-module="analytics">
+          <span class="nav-icon">📊</span><span class="nav-label">Executive Analytics</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button id="sidebar-toggle" class="sidebar-toggle sidebar-footer-text" type="button">◀ Collapse</button>
+      </div>
+    </aside>
+
+    <!-- ═══ MAIN AREA ═══ -->
+    <div class="main-area">
+
+      <div id="new-order-banner" class="hidden bg-amber-500 text-white text-center py-3 text-sm font-semibold shadow-lg shrink-0">
+        🔔 New room order received!
+      </div>
+
+      <!-- Sub-header -->
+      <header class="sub-header">
+        <div class="sub-header-left">
+          <h1 id="module-title" class="module-title">Room &amp; Guest PMS</h1>
+          <div class="search-wrap">
+            <input id="global-search" type="search" placeholder="Quick search rooms, orders, menu…" class="search-input" />
+          </div>
+        </div>
+        <div class="sub-header-right">
+          <div class="clock-block">
+            <div id="live-clock" class="clock-time">--:--:--</div>
+            <div id="live-date" class="clock-date">---</div>
+          </div>
+          <div id="pms-badge" class="pms-badge">
+            <span id="conn-dot" class="conn-dot connecting w-2 h-2 rounded-full inline-block"></span>
+            <span id="conn-label">Connecting…</span>
+          </div>
+          <button id="sim-order-btn" class="quick-btn quick-btn-primary" type="button">+ Sim Order</button>
+          <button id="sim-request-btn" class="quick-btn" type="button">+ Sim Request</button>
+          <button id="bell-test-btn" class="quick-btn" type="button" title="Test bell">🔔</button>
+          <button id="bell-toggle-btn" class="quick-btn" type="button" title="Toggle bell">
+            <span id="bell-toggle-icon">🔔</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Content views -->
+      <div class="content-area">
+
+        <!-- PMS: Room & Guest -->
+        <div data-module-view="pms" class="module-view">
+          <div class="module-card">
+            <div class="module-card-header">
+              <div>
+                <h2 class="text-base font-bold">Room &amp; Guest Management</h2>
+                <p class="text-xs mt-0.5">Live sync to TV welcome headers · Hotels/ikhsana/Rooms</p>
+              </div>
+              <button id="add-room-btn" type="button" class="btn-gold">+ Add Room</button>
+            </div>
+            <div class="module-card-body flex flex-col gap-5 min-h-0">
+              <div class="pms-summary-grid">
+                <div class="pms-stat-card">
+                  <span class="pms-stat-label">Total Rooms</span>
+                  <span id="pms-stat-total" class="pms-stat-value">0</span>
+                </div>
+                <div class="pms-stat-card pms-stat-occupied">
+                  <span class="pms-stat-label">Occupied</span>
+                  <span id="pms-stat-occupied" class="pms-stat-value">0</span>
+                </div>
+                <div class="pms-stat-card pms-stat-vacant">
+                  <span class="pms-stat-label">Vacant</span>
+                  <span id="pms-stat-vacant" class="pms-stat-value">0</span>
+                </div>
+                <div class="pms-stat-card pms-stat-housekeeping">
+                  <span class="pms-stat-label">Housekeeping</span>
+                  <span id="pms-stat-housekeeping" class="pms-stat-value">0</span>
+                </div>
+              </div>
+              <div class="flex flex-col flex-1 min-h-0">
+                <h3 class="section-label">Deluxe &amp; Suite Room Grid</h3>
+                <div id="guest-room-list" class="room-grid flex-1 overflow-y-auto">
+                  <p class="empty-state col-span-full">Loading rooms…</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- KDS: Kitchen -->
+        <div data-module-view="kds" class="module-view hidden">
+          <div class="module-card">
+            <div class="module-card-header">
+              <div>
+                <h2 class="text-base font-bold text-slate-800">Kitchen Display System</h2>
+                <p class="text-xs text-slate-500">Live_Orders · Bell on new order</p>
+              </div>
+              <div class="flex items-center gap-3">
+                <div class="filter-tabs">
+                  <button class="filter-tab active" data-filter="all">All</button>
+                  <button class="filter-tab" data-filter="pending">Pending</button>
+                  <button class="filter-tab" data-filter="preparing">Preparing</button>
+                  <button class="filter-tab" data-filter="delivered">Delivered</button>
+                </div>
+                <span id="orders-count" class="count-badge">0</span>
+              </div>
+            </div>
+            <div class="module-card-body">
+              <div id="orders-list" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                <div class="col-span-full text-center py-16 text-slate-400"><p>Loading orders…</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Menu Config -->
+        <div data-module-view="menu" class="module-view hidden">
+          <div class="module-card">
+            <div class="module-card-header">
+              <div>
+                <h2 class="text-base font-bold">Digital Menu Configuration</h2>
+                <p class="text-xs mt-0.5">Live sync to guest TV · Hotels/ikhsana/Menu</p>
+              </div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span id="menu-count" class="count-badge">0</span>
+                <button id="add-category-btn" type="button" class="btn-gold">+ Add Category</button>
+                <button id="add-menu-item-btn" type="button" class="btn-gold">+ Add Food Item</button>
+              </div>
+            </div>
+            <div class="module-card-body flex flex-col gap-4 min-h-0">
+              <div id="menu-filter-tabs" class="filter-tabs menu-filter-tabs"></div>
+              <div id="menu-list" class="menu-card-grid flex-1 overflow-y-auto">
+                <p class="empty-state col-span-full">Loading menu…</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TV Messaging -->
+        <div data-module-view="messaging" class="module-view hidden">
+          <div class="grid lg:grid-cols-2 gap-6 h-full min-h-0">
+            <div class="module-card">
+              <div class="module-card-header">
+                <div>
+                  <h2 class="text-base font-bold">TV Mass Messaging</h2>
+                  <p class="text-xs mt-0.5">Broadcast overlays to guest TVs · Hotels/ikhsana/Alerts</p>
+                </div>
+                <button id="clear-active-broadcast-btn" type="button" class="btn-gold btn-danger-outline">Clear Active Message</button>
+              </div>
+              <div class="module-card-body">
+                <form id="broadcast-form" class="broadcast-form space-y-4">
+                  <div>
+                    <label class="section-label block mb-2">Alert Preset</label>
+                    <div class="alert-preset-grid">
+                      <button type="button" class="alert-preset-btn" data-preset="emergency">🚨 Emergency</button>
+                      <button type="button" class="alert-preset-btn" data-preset="event">📅 Event Notice</button>
+                      <button type="button" class="alert-preset-btn" data-preset="promotional">🎁 Promotional Offer</button>
+                      <button type="button" class="alert-preset-btn" data-preset="checkout">🧳 Checkout Reminder</button>
+                    </div>
+                  </div>
+                  <div>
+                    <label for="broadcast-title" class="block text-sm font-medium mb-1">Message Title</label>
+                    <input id="broadcast-title" type="text" required placeholder="e.g. Special Announcement" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+                  </div>
+                  <div>
+                    <label for="broadcast-message" class="block text-sm font-medium mb-1">Message Description</label>
+                    <textarea id="broadcast-message" rows="3" required placeholder="Buffet dinner is now open at Main Dining Hall…" class="w-full px-4 py-2.5 rounded-xl outline-none resize-none"></textarea>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium mb-2">Target</label>
+                    <div class="target-selector">
+                      <label class="target-option">
+                        <input type="radio" name="broadcast-target" value="all" checked />
+                        <span>All Rooms (Broadcast)</span>
+                      </label>
+                      <label class="target-option">
+                        <input type="radio" name="broadcast-target" value="specific" />
+                        <span>Specific Rooms</span>
+                      </label>
+                    </div>
+                    <input id="broadcast-rooms" type="text" disabled placeholder="e.g. 101, 102, 105" class="w-full px-4 py-2.5 rounded-xl outline-none mt-2" />
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label for="broadcast-duration" class="block text-sm font-medium mb-1">Display Duration</label>
+                      <select id="broadcast-duration" class="w-full px-4 py-2.5 rounded-xl outline-none">
+                        <option value="10000">10 seconds</option>
+                        <option value="30000" selected>30 seconds</option>
+                        <option value="60000">1 minute</option>
+                        <option value="0">Persistent (manual dismiss)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label for="broadcast-type" class="block text-sm font-medium mb-1">Alert Type</label>
+                      <select id="broadcast-type" class="w-full px-4 py-2.5 rounded-xl outline-none">
+                        <option value="emergency">Emergency</option>
+                        <option value="event">Event Notice</option>
+                        <option value="promotional">Promotional Offer</option>
+                        <option value="checkout">Checkout Reminder</option>
+                      </select>
+                    </div>
+                  </div>
+                  <button type="submit" class="btn-broadcast w-full py-3 font-semibold rounded-xl">Send Broadcast</button>
+                </form>
+              </div>
+            </div>
+            <div class="module-card flex flex-col min-h-0">
+              <div class="module-card-header">
+                <div>
+                  <h2 class="text-base font-bold">Sent Messages Log</h2>
+                  <p class="text-xs mt-0.5">Recent mass broadcasts · live delivery status</p>
+                </div>
+                <span id="broadcast-count" class="count-badge">0</span>
+              </div>
+              <div class="module-card-body flex-1 overflow-y-auto min-h-0">
+                <div id="broadcast-history" class="broadcast-history">
+                  <p class="empty-state">Loading broadcasts…</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Housekeeping Queue -->
+        <div data-module-view="housekeeping" class="module-view hidden">
+          <div class="module-card">
+            <div class="module-card-header">
+              <div>
+                <h2 class="text-base font-bold">Housekeeping Queue</h2>
+                <p class="text-xs mt-0.5">Guest requests &amp; checked-out room turnover · live sync</p>
+              </div>
+              <span id="housekeeping-count" class="count-badge">0</span>
+            </div>
+            <div class="module-card-body flex flex-col gap-4 min-h-0">
+              <div id="hk-view-tabs" class="hk-view-tabs filter-tabs">
+                <button type="button" class="filter-tab active" data-hk-view="guest_requests">
+                  Guest Service Requests <span id="hk-tab-guest-count" class="hk-tab-badge">0</span>
+                </button>
+                <button type="button" class="filter-tab" data-hk-view="room_cleaning">
+                  Room Cleaning Queue <span id="hk-tab-room-count" class="hk-tab-badge">0</span>
+                </button>
+              </div>
+
+              <div id="hk-guest-panel" class="flex flex-col gap-4 flex-1 min-h-0">
+                <div class="pms-summary-grid pms-summary-grid-3">
+                  <div class="pms-stat-card pms-stat-housekeeping">
+                    <span class="pms-stat-label">Pending</span>
+                    <span id="hk-stat-pending" class="pms-stat-value">0</span>
+                  </div>
+                  <div class="pms-stat-card">
+                    <span class="pms-stat-label">In Progress</span>
+                    <span id="hk-stat-progress" class="pms-stat-value" style="color:#93C5FD">0</span>
+                  </div>
+                  <div class="pms-stat-card pms-stat-vacant">
+                    <span class="pms-stat-label">Completed</span>
+                    <span id="hk-stat-completed" class="pms-stat-value">0</span>
+                  </div>
+                </div>
+                <div id="housekeeping-filters" class="filter-tabs"></div>
+                <div id="housekeeping-list" class="service-card-grid flex-1 overflow-y-auto">
+                  <p class="empty-state col-span-full">Loading requests…</p>
+                </div>
+              </div>
+
+              <div id="hk-rooms-panel" class="hidden flex flex-col gap-4 flex-1 min-h-0">
+                <div class="pms-summary-grid pms-summary-grid-3">
+                  <div class="pms-stat-card pms-stat-housekeeping">
+                    <span class="pms-stat-label">Awaiting Turnover</span>
+                    <span id="hk-stat-cleaning" class="pms-stat-value">0</span>
+                  </div>
+                  <div class="pms-stat-card">
+                    <span class="pms-stat-label">Maintenance</span>
+                    <span id="hk-stat-maintenance" class="pms-stat-value" style="color:#FCD34D">0</span>
+                  </div>
+                  <div class="pms-stat-card pms-stat-vacant">
+                    <span class="pms-stat-label">Ready Today</span>
+                    <span id="hk-stat-ready" class="pms-stat-value">0</span>
+                  </div>
+                </div>
+                <div id="hk-room-cleaning-list" class="service-card-grid flex-1 overflow-y-auto">
+                  <p class="empty-state col-span-full">Loading rooms…</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Travel & Concierge -->
+        <div data-module-view="concierge" class="module-view hidden">
+          <div class="module-card">
+            <div class="module-card-header">
+              <div>
+                <h2 class="text-base font-bold">Travel &amp; Concierge</h2>
+                <p class="text-xs mt-0.5">Cab bookings, tours &amp; guest concierge · live sync</p>
+              </div>
+              <span id="concierge-count" class="count-badge">0</span>
+            </div>
+            <div class="module-card-body flex flex-col gap-4 min-h-0">
+              <div class="pms-summary-grid pms-summary-grid-3">
+                <div class="pms-stat-card pms-stat-housekeeping">
+                  <span class="pms-stat-label">Pending</span>
+                  <span id="con-stat-pending" class="pms-stat-value">0</span>
+                </div>
+                <div class="pms-stat-card">
+                  <span class="pms-stat-label">In Progress</span>
+                  <span id="con-stat-progress" class="pms-stat-value" style="color:#93C5FD">0</span>
+                </div>
+                <div class="pms-stat-card pms-stat-vacant">
+                  <span class="pms-stat-label">Completed</span>
+                  <span id="con-stat-completed" class="pms-stat-value">0</span>
+                </div>
+              </div>
+              <div id="concierge-filters" class="filter-tabs"></div>
+              <div id="concierge-list" class="service-card-grid flex-1 overflow-y-auto">
+                <p class="empty-state col-span-full">Loading requests…</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Executive Analytics -->
+        <div data-module-view="analytics" class="module-view hidden">
+          <div class="module-card">
+            <div class="module-card-header">
+              <div>
+                <h2 class="text-base font-bold">Executive Analytics</h2>
+                <p class="text-xs mt-0.5">Revenue, occupancy &amp; F&amp;B performance · live Firestore sync</p>
+              </div>
+              <span id="ana-last-updated" class="ana-live-badge">Live · syncing…</span>
+            </div>
+            <div class="module-card-body analytics-body flex flex-col gap-4 min-h-0">
+
+              <!-- KPI Summary -->
+              <div class="analytics-kpi-grid">
+                <div class="analytics-kpi-card analytics-kpi-occupancy">
+                  <div class="analytics-kpi-icon">🏨</div>
+                  <div class="analytics-kpi-content">
+                    <span class="analytics-kpi-label">Occupancy Rate</span>
+                    <span id="ana-kpi-occupancy" class="analytics-kpi-value">—</span>
+                    <span id="ana-kpi-occupancy-sub" class="analytics-kpi-sub">Loading rooms…</span>
+                  </div>
+                </div>
+                <div class="analytics-kpi-card analytics-kpi-revenue">
+                  <div class="analytics-kpi-icon">💰</div>
+                  <div class="analytics-kpi-content">
+                    <span class="analytics-kpi-label">Today's Revenue</span>
+                    <span id="ana-kpi-revenue" class="analytics-kpi-value">—</span>
+                    <span id="ana-kpi-revenue-sub" class="analytics-kpi-sub">F&amp;B + Room charges</span>
+                  </div>
+                </div>
+                <div class="analytics-kpi-card analytics-kpi-requests">
+                  <div class="analytics-kpi-icon">📋</div>
+                  <div class="analytics-kpi-content">
+                    <span class="analytics-kpi-label">Active Guest Requests</span>
+                    <span id="ana-kpi-requests" class="analytics-kpi-value">—</span>
+                    <span id="ana-kpi-requests-sub" class="analytics-kpi-sub">Pending &amp; in-progress</span>
+                  </div>
+                </div>
+                <div class="analytics-kpi-card analytics-kpi-housekeeping">
+                  <div class="analytics-kpi-icon">🧹</div>
+                  <div class="analytics-kpi-content">
+                    <span class="analytics-kpi-label">Pending Housekeeping</span>
+                    <span id="ana-kpi-housekeeping" class="analytics-kpi-value">—</span>
+                    <span id="ana-kpi-housekeeping-sub" class="analytics-kpi-sub">Requests &amp; room turnover</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Charts row -->
+              <div class="analytics-charts-grid">
+                <div class="analytics-widget">
+                  <div class="analytics-widget-header">
+                    <h3 class="analytics-widget-title">Revenue Breakdown</h3>
+                    <p class="analytics-widget-desc">Today's F&amp;B vs Room stays</p>
+                  </div>
+                  <div class="analytics-chart-wrap analytics-chart-doughnut">
+                    <canvas id="ana-category-chart"></canvas>
+                  </div>
+                </div>
+
+                <div class="analytics-widget analytics-widget-wide">
+                  <div class="analytics-widget-header">
+                    <h3 class="analytics-widget-title">Daily Order Trends</h3>
+                    <p class="analytics-widget-desc">Last 7 days · <span id="ana-today-orders">0</span> orders today</p>
+                  </div>
+                  <div class="analytics-chart-wrap analytics-chart-line">
+                    <canvas id="ana-trends-chart"></canvas>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Top menu items -->
+              <div class="analytics-widget">
+                <div class="analytics-widget-header">
+                  <h3 class="analytics-widget-title">Top Selling Menu Items</h3>
+                  <p class="analytics-widget-desc">Most ordered dishes from TV in-room dining &amp; KDS</p>
+                </div>
+                <div id="ana-top-items" class="top-menu-list">
+                  <p class="empty-state">Loading order data…</p>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

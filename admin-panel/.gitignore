@@ -1,0 +1,10 @@
+# Dependencies (if using npm start)
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
