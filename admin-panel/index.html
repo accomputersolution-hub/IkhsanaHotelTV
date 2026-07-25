@@ -26,9 +26,40 @@
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/custom.css" />
   <link rel="stylesheet" href="css/luxury-theme.css" />
+  <style>
+    /* Critical: prevent login flash before CSS/JS hydrate */
+    .auth-boot-loader {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0a0d14;
+    }
+    .auth-boot-loader.hidden { display: none !important; }
+    body.auth-booting #login-shell,
+    body.auth-booting #super-admin-shell,
+    body.auth-booting #app-shell {
+      visibility: hidden !important;
+      pointer-events: none !important;
+    }
+  </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
-<body>
+<body class="auth-booting">
+
+  <!-- Auth boot gate: visible until Firebase onAuthStateChanged completes -->
+  <div id="auth-boot-loader" class="auth-boot-loader" role="status" aria-live="polite" aria-busy="true">
+    <div class="auth-boot-inner">
+      <div class="auth-boot-emblem" aria-hidden="true">
+        <svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M4 20V10l8-6 8 6v10H4z" stroke="currentColor" stroke-width="1.6"/><path d="M9 20v-6h6v6" stroke="currentColor" stroke-width="1.6"/></svg>
+      </div>
+      <div class="auth-boot-spinner" aria-hidden="true"></div>
+      <p class="auth-boot-title">Restoring session</p>
+      <p class="auth-boot-sub">Validating secure credentials…</p>
+    </div>
+  </div>
 
   <div id="toast" class="toast opacity-0 translate-y-4" role="status"></div>
 
@@ -48,8 +79,8 @@
     </div>
   </div>
 
-  <!-- ═══ LOGIN ═══ -->
-  <div id="login-shell" class="login-shell">
+  <!-- ═══ LOGIN (hidden until auth loading completes) ═══ -->
+  <div id="login-shell" class="login-shell hidden">
     <div class="login-card">
       <div class="login-brand">
         <div class="logo-emblem" aria-hidden="true">

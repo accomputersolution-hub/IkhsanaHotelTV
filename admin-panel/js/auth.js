@@ -22,6 +22,8 @@ export { auth };
 
 let currentUser = null;
 let currentProfile = null;
+/** True until the first onAuthStateChanged (+ profile load) completes. */
+let authLoading = true;
 const authListeners = new Set();
 
 export function getCurrentUser() {
@@ -30,6 +32,11 @@ export function getCurrentUser() {
 
 export function getCurrentProfile() {
   return currentProfile;
+}
+
+/** Route guards must wait until this is false. */
+export function isAuthLoading() {
+  return authLoading;
 }
 
 export function isSuperAdmin() {
@@ -44,9 +51,15 @@ export function needsBootstrap() {
   return Boolean(currentUser) && (!currentProfile || currentProfile.role === 'unknown');
 }
 
+/**
+ * Subscribe to auth + profile changes.
+ * Does NOT invoke immediately while still loading — first paint waits for Firebase.
+ */
 export function onAuthProfileChange(fn) {
   authListeners.add(fn);
-  fn(currentUser, currentProfile);
+  if (!authLoading) {
+    fn(currentUser, currentProfile);
+  }
   return () => authListeners.delete(fn);
 }
 
@@ -96,6 +109,11 @@ async function loadUserProfile(user) {
   return currentProfile;
 }
 
+/**
+ * Bind Firebase Auth. `loading` stays true until the first callback finishes
+ * (session restore + Firestore profile), then flips to false permanently for
+ * subsequent auth events (login/logout still notify listeners).
+ */
 export function initAuth(onReady) {
   return onAuthStateChanged(auth, async (user) => {
     currentUser = user;
@@ -111,8 +129,11 @@ export function initAuth(onReady) {
       console.error('[auth] profile load failed', err);
       currentProfile = null;
     }
+
+    const wasInitialLoad = authLoading;
+    authLoading = false;
     notifyAuth();
-    onReady?.(user, currentProfile);
+    onReady?.(user, currentProfile, { initial: wasInitialLoad });
   });
 }
 
@@ -122,6 +143,7 @@ export async function loginWithEmail(email, password) {
   if (currentProfile?.role === 'hotel_admin' && currentProfile.hotelId) {
     setAssignedHotel(currentProfile.hotelId, { name: currentProfile.hotelId });
   }
+  authLoading = false;
   notifyAuth();
   return { user: cred.user, profile: currentProfile };
 }
@@ -131,6 +153,7 @@ export async function logout() {
   await signOut(auth);
   currentUser = null;
   currentProfile = null;
+  authLoading = false;
   notifyAuth();
 }
 

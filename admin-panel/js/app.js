@@ -14,6 +14,7 @@ import {
   getCurrentProfile,
   ensureSuperAdminProfile,
   needsBootstrap,
+  isAuthLoading,
 } from './auth.js';
 import {
   getHotelId,
@@ -35,7 +36,27 @@ let hotelStatusUnsub = null;
 /** @type {string} */
 let cachedHotelStatus = 'active';
 
+function setAuthBootUi(loading) {
+  const loader = document.getElementById('auth-boot-loader');
+  if (loader) {
+    loader.classList.toggle('hidden', !loading);
+    loader.setAttribute('aria-busy', loading ? 'true' : 'false');
+  }
+  document.body.classList.toggle('auth-booting', loading);
+  if (loading) {
+    document.getElementById('login-shell')?.classList.add('hidden');
+    document.getElementById('super-admin-shell')?.classList.add('hidden');
+    document.getElementById('app-shell')?.classList.add('hidden');
+  }
+}
+
 function showShell(which) {
+  // Never reveal app shells while Firebase session is still restoring
+  if (isAuthLoading()) {
+    setAuthBootUi(true);
+    return;
+  }
+  setAuthBootUi(false);
   document.getElementById('login-shell')?.classList.toggle('hidden', which !== 'login');
   document.getElementById('super-admin-shell')?.classList.toggle('hidden', which !== 'super-admin');
   document.getElementById('app-shell')?.classList.toggle('hidden', which !== 'pms');
@@ -141,6 +162,12 @@ function handleInactiveForCurrentUser(status) {
 }
 
 async function applyRoute(route) {
+  // Route guard: wait for Firebase Auth initial restore before any redirect/shell
+  if (isAuthLoading()) {
+    setAuthBootUi(true);
+    return;
+  }
+
   const profile = getCurrentProfile();
 
   if (!profile || needsBootstrap()) {
@@ -344,12 +371,19 @@ function setupChromeActions() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Show boot loader immediately — hide login flash until Auth resolves
+  setAuthBootUi(true);
+
   initRouter();
   setupLoginForm();
   setupChromeActions();
   initSuperAdmin();
 
   onRouteChange((route) => {
+    if (isAuthLoading()) {
+      setAuthBootUi(true);
+      return;
+    }
     applyRoute(route);
   });
 
@@ -357,7 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Skip the immediate onHotelChange invocation (auth/route handlers own first paint).
   let hotelChangeReady = false;
   onHotelChange((id) => {
-    if (!hotelChangeReady) return;
+    if (!hotelChangeReady || isAuthLoading()) return;
     if (!id || !getCurrentProfile()) {
       stopHotelStatusWatch();
       showDeactivatedGate(false);
@@ -369,13 +403,18 @@ document.addEventListener('DOMContentLoaded', () => {
   hotelChangeReady = true;
 
   initAuth((user, profile) => {
+    // loading is false inside initAuth before this callback runs
+    setAuthBootUi(false);
+
     if (!user) {
       stopHotelStatusWatch();
       showDeactivatedGate(false);
-      showShell('login');
       navigateTo('/login');
+      showShell('login');
       return;
     }
+
+    // Preserve deep-link hash on refresh; only redirect away from empty/#/login
     if (!location.hash || location.hash === '#/login') {
       if (profile?.role === 'super_admin') navigateTo('/super-admin');
       else navigateTo('/pms');
