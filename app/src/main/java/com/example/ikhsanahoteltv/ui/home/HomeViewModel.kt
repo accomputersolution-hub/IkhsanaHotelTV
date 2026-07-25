@@ -57,6 +57,7 @@ class HomeViewModel(
                 Log.d(
                     TAG,
                     "HomeViewModel sync → guest=${profile.guestName} room=${profile.roomNumber} " +
+                        "hotel=${branding.hotelName} tagline=${branding.tagline} " +
                         "logo_url=${branding.logoUrl} bg_wallpaper=${branding.bgWallpaperUrl} " +
                         "status=${branding.status} roomsCount=${rooms.size}",
                 )
@@ -181,10 +182,15 @@ class HomeViewModel(
         private const val TAG = "HomeViewModel"
 
         private fun GuestProfile.mergeBranding(branding: HotelBranding): GuestProfile = copy(
-            hotelName = hotelName.ifBlank { branding.hotelName }.ifBlank { hotelName },
+            hotelName = branding.hotelName.ifBlank { hotelName },
             hotelLogoUrl = hotelLogoUrl.ifBlank { branding.logoUrl },
             bgWallpaperUrl = branding.bgWallpaperUrl.ifBlank { bgWallpaperUrl },
             themeColor = branding.themeColor.ifBlank { themeColor },
+            tagline = branding.tagline.ifBlank { tagline },
+            welcomeMessage = branding.welcomeMessage
+                .ifBlank { hotelInfo }
+                .ifBlank { welcomeMessage },
+            hotelInfo = branding.welcomeMessage.ifBlank { hotelInfo },
         )
     }
 }

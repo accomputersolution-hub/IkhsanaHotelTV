@@ -1,10 +1,10 @@
 <resources>
-    <string name="app_name">Ikhsana Resort &amp; Spa</string>
-    <string name="brand_name">IKHSANA</string>
-    <string name="brand_subtitle">— RESORT &amp; SPA —</string>
-    <string name="brand_tagline">RELAX • REJUVENATE • RECONNECT</string>
+    <string name="app_name">Hotel TV</string>
+    <string name="brand_name">Your Hotel</string>
+    <string name="brand_subtitle"></string>
+    <string name="brand_tagline"></string>
     <string name="welcome_label">W E L C O M E ,</string>
-    <string name="welcome_subtitle">We are delighted to have you with us. Enjoy a comfortable and memorable stay at Ikhsana.</string>
+    <string name="welcome_subtitle">We are delighted to have you with us. Enjoy a comfortable and memorable stay.</string>
     <string name="room_badge">( Room %1$s )</string>
     <string name="welcome_guest">Welcome, %1$s</string>
     <string name="room_number">Room %1$s</string>

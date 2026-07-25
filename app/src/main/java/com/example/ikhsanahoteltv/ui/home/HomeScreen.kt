@@ -115,7 +115,15 @@ fun HomeScreen(
         HomeForegroundContent(
             modifier = Modifier.fillMaxSize(),
             roomNumber = uiState.guestProfile.roomNumber,
-            hotelLogoUrl = uiState.guestProfile.hotelLogoUrl,
+            hotelLogoUrl = uiState.guestProfile.hotelLogoUrl
+                .ifBlank { uiState.branding.logoUrl },
+            hotelName = uiState.branding.hotelName
+                .ifBlank { uiState.guestProfile.hotelName },
+            tagline = uiState.branding.tagline
+                .ifBlank { uiState.guestProfile.tagline },
+            welcomeMessage = uiState.branding.welcomeMessage
+                .ifBlank { uiState.guestProfile.welcomeMessage }
+                .ifBlank { uiState.guestProfile.hotelInfo },
             guestName = uiState.guestProfile.guestName,
             unreadAlerts = uiState.alerts.count { !it.read && !it.revoked },
             liveTvFocus = liveTvFocus,
@@ -265,6 +273,9 @@ private fun HomeForegroundContent(
     modifier: Modifier = Modifier,
     roomNumber: String,
     hotelLogoUrl: String,
+    hotelName: String,
+    tagline: String,
+    welcomeMessage: String,
     guestName: String,
     unreadAlerts: Int,
     liveTvFocus: FocusRequester,
@@ -284,6 +295,8 @@ private fun HomeForegroundContent(
         HomeHeader(
             roomNumber = roomNumber,
             hotelLogoUrl = hotelLogoUrl,
+            hotelName = hotelName,
+            tagline = tagline,
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -293,6 +306,7 @@ private fun HomeForegroundContent(
         WelcomeBanner(
             guestName = guestName,
             roomNumber = roomNumber,
+            welcomeMessage = welcomeMessage,
         )
 
         Spacer(modifier = Modifier.weight(1f))
@@ -316,7 +330,12 @@ private fun HomeForegroundContent(
 private fun HomeHeader(
     roomNumber: String,
     hotelLogoUrl: String,
+    hotelName: String,
+    tagline: String,
 ) {
+    val displayName = hotelName.ifBlank { stringResource(R.string.brand_name) }
+    val displayTagline = tagline.trim()
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -334,36 +353,28 @@ private fun HomeHeader(
                     .padding(start = 4.dp),
             ) {
                 Text(
-                    text = stringResource(R.string.brand_name),
+                    text = displayName.uppercase(),
                     fontSize = 26.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = SerifDisplay,
                     color = TextPrimary,
                     letterSpacing = 2.sp,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = stringResource(R.string.brand_subtitle),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    fontFamily = SansBody,
-                    color = GoldPrimary,
-                    letterSpacing = 3.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = stringResource(R.string.brand_tagline),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Medium,
-                    fontFamily = SansBody,
-                    color = GoldPrimary.copy(alpha = 0.75f),
-                    letterSpacing = 2.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
+                if (displayTagline.isNotBlank()) {
+                    Text(
+                        text = displayTagline,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        fontFamily = SansBody,
+                        color = GoldPrimary,
+                        letterSpacing = 2.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
             }
         }
 
@@ -529,7 +540,10 @@ private fun GoldSeparatorLine() {
 private fun WelcomeBanner(
     guestName: String,
     roomNumber: String,
+    welcomeMessage: String,
 ) {
+    val subtitle = welcomeMessage.ifBlank { stringResource(R.string.welcome_subtitle) }
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -572,7 +586,7 @@ private fun WelcomeBanner(
         Spacer(modifier = Modifier.height(20.dp))
 
         Text(
-            text = stringResource(R.string.welcome_subtitle),
+            text = subtitle,
             fontSize = 15.sp,
             fontStyle = FontStyle.Italic,
             fontFamily = SerifDisplay,

@@ -114,6 +114,13 @@ function brandingOf(hotel) {
     logoUrl: b.logoUrl || b.logo_url || hotel?.logoUrl || '',
     bgWallpaper: b.bgWallpaper || b.bg_wallpaper || hotel?.bgWallpaper || '',
     themeColor: b.themeColor || b.theme_color || hotel?.themeColor || '#C9A962',
+    tagline: b.tagline || hotel?.tagline || '',
+    welcomeMessage:
+      b.welcomeMessage ||
+      b.welcome_message ||
+      hotel?.welcome_message ||
+      hotel?.welcomeMessage ||
+      '',
   };
 }
 
@@ -387,6 +394,9 @@ function setupEditHotelModal() {
 
     const name = document.getElementById('edit-hotel-name')?.value?.trim();
     const adminEmail = document.getElementById('edit-hotel-admin-email')?.value?.trim();
+    const tagline = document.getElementById('edit-hotel-tagline')?.value?.trim() || '';
+    const welcomeMessage =
+      document.getElementById('edit-hotel-welcome-message')?.value?.trim() || '';
     const logoUrl = document.getElementById('edit-hotel-logo-url')?.value?.trim() || '';
     const bgWallpaper =
       document.getElementById('edit-hotel-wallpaper-url')?.value?.trim() || '';
@@ -409,12 +419,17 @@ function setupEditHotelModal() {
     try {
       await updateDoc(doc(db, 'Hotels', hotelId), {
         name,
+        hotel_name: name,
         adminEmail,
+        tagline,
+        welcome_message: welcomeMessage,
         status: isActive ? 'active' : 'inactive',
         branding: {
           logoUrl,
           themeColor: brand.themeColor || '#C9A962',
           bgWallpaper,
+          tagline,
+          welcomeMessage,
         },
         logoUrl,
         bgWallpaper,
@@ -448,12 +463,16 @@ function openEditHotelModal(hotel) {
 
   const nameEl = document.getElementById('edit-hotel-name');
   const emailEl = document.getElementById('edit-hotel-admin-email');
+  const taglineEl = document.getElementById('edit-hotel-tagline');
+  const welcomeEl = document.getElementById('edit-hotel-welcome-message');
   const logoEl = document.getElementById('edit-hotel-logo-url');
   const wallEl = document.getElementById('edit-hotel-wallpaper-url');
   const activeEl = document.getElementById('edit-hotel-active');
 
   if (nameEl) nameEl.value = hotel.name || '';
   if (emailEl) emailEl.value = hotel.adminEmail || '';
+  if (taglineEl) taglineEl.value = brand.tagline || '';
+  if (welcomeEl) welcomeEl.value = brand.welcomeMessage || '';
   if (logoEl) logoEl.value = brand.logoUrl || '';
   if (wallEl) wallEl.value = brand.bgWallpaper || '';
   if (activeEl) activeEl.checked = isActive;

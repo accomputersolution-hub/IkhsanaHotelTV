@@ -169,8 +169,9 @@ class FirestoreRepository(
     }
 
     /**
-     * Hotels/{hotelId} — branding for logo / wallpaper / theme.
-     * Supports both admin camelCase (`logoUrl`) and snake_case (`logo_url`).
+     * Hotels/{hotelId} — branding for logo / wallpaper / theme / copy.
+     * Supports admin camelCase and snake_case field names.
+     * hotelId comes from SharedPreferences via [HotelConfig].
      */
     fun observeHotelBranding(): Flow<HotelBranding> = callbackFlow {
         val docPath = FirestorePaths.hotelDocument(hotelId)
@@ -192,47 +193,14 @@ class FirestoreRepository(
                     return@addSnapshotListener
                 }
 
-                val data = snapshot.data ?: emptyMap()
-                @Suppress("UNCHECKED_CAST")
-                val branding = (data["branding"] as? Map<String, Any?>) ?: emptyMap()
-
-                val logoUrl = firstNonBlank(
-                    branding["logo_url"] as? String,
-                    branding["logoUrl"] as? String,
-                    data["logo_url"] as? String,
-                    data["logoUrl"] as? String,
-                )
-                val bgWallpaper = firstNonBlank(
-                    branding["bg_wallpaper"] as? String,
-                    branding["bgWallpaper"] as? String,
-                    data["bg_wallpaper"] as? String,
-                    data["bgWallpaper"] as? String,
-                )
-                val themeColor = firstNonBlank(
-                    branding["theme_color"] as? String,
-                    branding["themeColor"] as? String,
-                    data["theme_color"] as? String,
-                    data["themeColor"] as? String,
-                )
-                val name = firstNonBlank(
-                    data["name"] as? String,
-                    data["hotelName"] as? String,
-                )
-
-                val result = HotelBranding(
-                    hotelId = hotelId,
-                    hotelName = name,
-                    logoUrl = logoUrl,
-                    bgWallpaperUrl = bgWallpaper,
-                    themeColor = themeColor,
-                    status = data["status"] as? String ?: "active",
-                )
+                val result = parseHotelBranding(hotelId, snapshot.data ?: emptyMap())
                 Log.d(
                     TAG,
                     "OK Hotel branding snapshot → path=$docPath name=${result.hotelName} " +
-                        "logo_url=$logoUrl bg_wallpaper=$bgWallpaper " +
-                        "theme=$themeColor status=${result.status} " +
-                        "keys=${data.keys} fromCache=${snapshot.metadata.isFromCache}",
+                        "tagline=${result.tagline} welcome=${result.welcomeMessage.take(40)} " +
+                        "logo_url=${result.logoUrl} bg_wallpaper=${result.bgWallpaperUrl} " +
+                        "theme=${result.themeColor} status=${result.status} " +
+                        "keys=${snapshot.data?.keys} fromCache=${snapshot.metadata.isFromCache}",
                 )
                 trySend(result)
             }
@@ -268,37 +236,7 @@ class FirestoreRepository(
                         "data=${snapshot?.data} fromCache=${snapshot?.metadata?.isFromCache}",
                 )
                 if (snapshot != null && snapshot.exists()) {
-                    val data = snapshot.data ?: emptyMap()
-                    @Suppress("UNCHECKED_CAST")
-                    val branding = (data["branding"] as? Map<String, Any?>) ?: emptyMap()
-                    onBranding(
-                        HotelBranding(
-                            hotelId = hotelId,
-                            hotelName = firstNonBlank(
-                                data["name"] as? String,
-                                data["hotelName"] as? String,
-                            ),
-                            logoUrl = firstNonBlank(
-                                branding["logo_url"] as? String,
-                                branding["logoUrl"] as? String,
-                                data["logo_url"] as? String,
-                                data["logoUrl"] as? String,
-                            ),
-                            bgWallpaperUrl = firstNonBlank(
-                                branding["bg_wallpaper"] as? String,
-                                branding["bgWallpaper"] as? String,
-                                data["bg_wallpaper"] as? String,
-                                data["bgWallpaper"] as? String,
-                            ),
-                            themeColor = firstNonBlank(
-                                branding["theme_color"] as? String,
-                                branding["themeColor"] as? String,
-                                data["theme_color"] as? String,
-                                data["themeColor"] as? String,
-                            ),
-                            status = data["status"] as? String ?: "active",
-                        ),
-                    )
+                    onBranding(parseHotelBranding(hotelId, snapshot.data ?: emptyMap()))
                 }
             }
 
@@ -602,11 +540,63 @@ class FirestoreRepository(
     private fun firstNonBlank(vararg values: String?): String =
         values.firstOrNull { !it.isNullOrBlank() }.orEmpty()
 
+    /** Map Hotels/{hotelId} document fields → [HotelBranding]. */
+    private fun parseHotelBranding(hotelId: String, data: Map<String, Any?>): HotelBranding {
+        @Suppress("UNCHECKED_CAST")
+        val branding = (data["branding"] as? Map<String, Any?>) ?: emptyMap()
+
+        return HotelBranding(
+            hotelId = hotelId,
+            hotelName = firstNonBlank(
+                data["name"] as? String,
+                data["hotel_name"] as? String,
+                data["hotelName"] as? String,
+                branding["hotel_name"] as? String,
+                branding["hotelName"] as? String,
+                branding["name"] as? String,
+            ),
+            logoUrl = firstNonBlank(
+                branding["logo_url"] as? String,
+                branding["logoUrl"] as? String,
+                data["logo_url"] as? String,
+                data["logoUrl"] as? String,
+            ),
+            bgWallpaperUrl = firstNonBlank(
+                branding["bg_wallpaper"] as? String,
+                branding["bgWallpaper"] as? String,
+                data["bg_wallpaper"] as? String,
+                data["bgWallpaper"] as? String,
+            ),
+            themeColor = firstNonBlank(
+                branding["theme_color"] as? String,
+                branding["themeColor"] as? String,
+                data["theme_color"] as? String,
+                data["themeColor"] as? String,
+            ),
+            tagline = firstNonBlank(
+                data["tagline"] as? String,
+                branding["tagline"] as? String,
+                data["brand_tagline"] as? String,
+                branding["brandTagline"] as? String,
+            ),
+            welcomeMessage = firstNonBlank(
+                data["welcome_message"] as? String,
+                data["welcomeMessage"] as? String,
+                branding["welcome_message"] as? String,
+                branding["welcomeMessage"] as? String,
+                data["hotelInfo"] as? String,
+                branding["hotelInfo"] as? String,
+            ),
+            status = data["status"] as? String ?: "active",
+        )
+    }
+
     private fun defaultGuestProfile() = GuestProfile(
         guestName = "Guest",
         roomNumber = roomNumber,
-        hotelName = "Ikhsana Hotel",
-        hotelInfo = "Welcome to Ikhsana Hotel. Enjoy your stay!",
+        hotelName = "",
+        hotelInfo = "",
+        welcomeMessage = "",
     )
 
     private fun defaultMenuItems(): List<MenuItem> = listOf(

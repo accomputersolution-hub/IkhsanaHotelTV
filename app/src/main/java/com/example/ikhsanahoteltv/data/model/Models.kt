@@ -13,6 +13,8 @@ data class GuestProfile(
     val activeMessagesCount: Int = 0,
     val bgWallpaperUrl: String = "",
     val themeColor: String = "",
+    val tagline: String = "",
+    val welcomeMessage: String = "",
 )
 
 /** Branding from Hotels/{hotelId} document (multi-tenant master panel). */
@@ -22,6 +24,8 @@ data class HotelBranding(
     val logoUrl: String = "",
     val bgWallpaperUrl: String = "",
     val themeColor: String = "",
+    val tagline: String = "",
+    val welcomeMessage: String = "",
     val status: String = "active",
 )
 

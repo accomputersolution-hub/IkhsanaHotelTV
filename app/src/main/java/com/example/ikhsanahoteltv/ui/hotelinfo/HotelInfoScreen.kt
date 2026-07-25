@@ -67,7 +67,7 @@ fun HotelInfoScreen(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            InfoCard(title = "Hotel", value = profile.hotelName.ifBlank { "Ikhsana Hotel" })
+            InfoCard(title = "Hotel", value = profile.hotelName.ifBlank { "Hotel" })
             InfoCard(title = "Guest", value = profile.guestName)
             InfoCard(title = "Room", value = profile.roomNumber)
 
