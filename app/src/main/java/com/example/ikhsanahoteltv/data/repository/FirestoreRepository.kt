@@ -5,24 +5,45 @@ import com.example.ikhsanahoteltv.config.HotelConfig
 import com.example.ikhsanahoteltv.data.FirestorePaths
 import com.example.ikhsanahoteltv.data.model.GuestProfile
 import com.example.ikhsanahoteltv.data.model.HotelAlert
+import com.example.ikhsanahoteltv.data.model.HotelBranding
 import com.example.ikhsanahoteltv.data.model.LiveOrder
 import com.example.ikhsanahoteltv.data.model.MenuCategory
 import com.example.ikhsanahoteltv.data.model.MenuItem
 import com.example.ikhsanahoteltv.data.model.OrderLineItem
+import com.example.ikhsanahoteltv.data.model.RoomStatus
 import com.example.ikhsanahoteltv.data.model.ServiceRequest
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.MetadataChanges
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 
+/**
+ * All multi-tenant reads/writes go through [FirestorePaths.HOTELS] ("Hotels") + [hotelId].
+ *
+ * [hotelId] comes from SharedPreferences after pairing (`HotelConfig.getHotelId()`).
+ * Paths: Hotels/{hotelId}/Requests|Alerts|Rooms|Menu
+ */
 class FirestoreRepository(
     private val config: HotelConfig,
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
 ) {
 
-    private val hotelId get() = config.hotelId
+    /**
+     * Paired tenant id for every Firestore read and write.
+     * Must match the document id under `Hotels/{hotelId}`.
+     */
+    private val hotelId: String
+        get() {
+            val id = config.getHotelId()?.let { HotelConfig.normalizeHotelId(it) }.orEmpty()
+            check(id.isNotBlank()) {
+                "TV is not paired — HotelConfig.getHotelId() is null"
+            }
+            return id
+        }
+
     private val roomNumber get() = FirestorePaths.normalizeRoom(config.roomNumber)
 
     @Volatile
@@ -30,9 +51,10 @@ class FirestoreRepository(
 
     fun currentSessionKey(): String = currentSessionKey
 
+    /** Hotels/{hotelId}/Rooms/{room} — this TV's guest profile. */
     fun observeGuestProfile(): Flow<GuestProfile> = callbackFlow {
         val docPath = FirestorePaths.roomDocument(hotelId, roomNumber)
-        Log.d(TAG, "Listening guest profile: $docPath")
+        Log.d(TAG, "LISTEN Room doc → $docPath (HOTEL_ID=$hotelId)")
 
         val listener = firestore
             .collection(FirestorePaths.HOTELS)
@@ -41,13 +63,13 @@ class FirestoreRepository(
             .document(roomNumber)
             .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
                 if (error != null) {
-                    Log.e(TAG, "Guest profile listener error at $docPath", error)
+                    Log.e(TAG, "FAIL Room doc listener at $docPath: ${error.message}", error)
                     trySend(defaultGuestProfile())
                     return@addSnapshotListener
                 }
 
                 if (snapshot == null || !snapshot.exists()) {
-                    Log.w(TAG, "Guest profile document not found: $docPath — using defaults")
+                    Log.d(TAG, "EMPTY Room doc missing: $docPath — using defaults")
                     trySend(defaultGuestProfile())
                     return@addSnapshotListener
                 }
@@ -59,7 +81,7 @@ class FirestoreRepository(
                     val profile = GuestProfile(
                         guestName = data["guestName"] as? String ?: "Guest",
                         roomNumber = roomNumber,
-                        hotelName = data["hotelName"] as? String ?: "Ikhsana Hotel",
+                        hotelName = data["hotelName"] as? String ?: "",
                         hotelLogoUrl = data["hotelLogoUrl"] as? String ?: "",
                         hotelInfo = data["hotelInfo"] as? String ?: "",
                         checkInDate = data["checkInDate"] as? String ?: "",
@@ -68,18 +90,267 @@ class FirestoreRepository(
                         activeOrdersCount = (data["activeOrdersCount"] as? Number)?.toInt() ?: 0,
                         activeMessagesCount = (data["activeMessagesCount"] as? Number)?.toInt() ?: 0,
                     )
-                    Log.d(TAG, "Guest profile updated: ${profile.guestName} (room $roomNumber, session=${profile.sessionKey})")
+                    Log.d(
+                        TAG,
+                        "OK Room doc snapshot → path=$docPath guest=${profile.guestName} " +
+                            "status=${data["status"]} session=${profile.sessionKey} " +
+                            "keys=${data.keys} fromCache=${snapshot.metadata.isFromCache}",
+                    )
                     trySend(profile)
                 } else {
+                    Log.e(TAG, "EMPTY Room doc data null at $docPath")
                     trySend(defaultGuestProfile())
                 }
             }
-        awaitClose { listener.remove() }
+        awaitClose {
+            Log.d(TAG, "UNLISTEN Room doc → $docPath")
+            listener.remove()
+        }
     }
 
+    /**
+     * Hotels/{hotelId}/Rooms — live room and guest status for the whole tenant.
+     */
+    fun observeRooms(): Flow<List<RoomStatus>> = callbackFlow {
+        val path = FirestorePaths.roomsCollection(hotelId)
+        Log.d(TAG, "LISTEN Rooms collection → $path (HOTEL_ID=$hotelId)")
+
+        val listener = firestore
+            .collection(FirestorePaths.HOTELS)
+            .document(hotelId)
+            .collection(FirestorePaths.ROOMS)
+            .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "FAIL Rooms collection listener at $path: ${error.message}", error)
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+
+                if (snapshot == null) {
+                    Log.e(TAG, "FAIL Rooms collection snapshot null at $path")
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+
+                val rooms = snapshot.documents.map { doc ->
+                    val data = doc.data ?: emptyMap()
+                    val guestName = data["guestName"] as? String ?: ""
+                    val status = firstNonBlank(
+                        data["status"] as? String,
+                        data["roomStatus"] as? String,
+                    )
+                    RoomStatus(
+                        roomNumber = doc.id,
+                        guestName = guestName,
+                        status = status.ifBlank {
+                            if (guestName.isNotBlank()) "occupied" else "vacant"
+                        },
+                        sessionKey = data["sessionKey"] as? String ?: "",
+                        occupied = guestName.isNotBlank() ||
+                            (data["occupied"] as? Boolean == true) ||
+                            status.equals("occupied", ignoreCase = true),
+                        checkInDate = data["checkInDate"] as? String ?: "",
+                        checkOutDate = data["checkOutDate"] as? String ?: "",
+                    )
+                }.sortedBy { it.roomNumber }
+
+                Log.d(
+                    TAG,
+                    "OK Rooms collection snapshot → path=$path count=${rooms.size} " +
+                        "fromCache=${snapshot.metadata.isFromCache} " +
+                        "rooms=${rooms.joinToString { "${it.roomNumber}:${it.guestName.ifBlank { "-" }}:${it.status}" }}",
+                )
+                trySend(rooms)
+            }
+        awaitClose {
+            Log.d(TAG, "UNLISTEN Rooms collection → $path")
+            listener.remove()
+        }
+    }
+
+    /**
+     * Hotels/{hotelId} — branding for logo / wallpaper / theme.
+     * Supports both admin camelCase (`logoUrl`) and snake_case (`logo_url`).
+     */
+    fun observeHotelBranding(): Flow<HotelBranding> = callbackFlow {
+        val docPath = FirestorePaths.hotelDocument(hotelId)
+        Log.d(TAG, "LISTEN Hotel branding → $docPath (HOTEL_ID=$hotelId)")
+
+        val listener = firestore
+            .collection(FirestorePaths.HOTELS)
+            .document(hotelId)
+            .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "FAIL Hotel branding listener at $docPath: ${error.message}", error)
+                    trySend(HotelBranding(hotelId = hotelId))
+                    return@addSnapshotListener
+                }
+
+                if (snapshot == null || !snapshot.exists()) {
+                    Log.e(TAG, "EMPTY Hotel doc missing: $docPath (check HOTEL_ID=$hotelId)")
+                    trySend(HotelBranding(hotelId = hotelId))
+                    return@addSnapshotListener
+                }
+
+                val data = snapshot.data ?: emptyMap()
+                @Suppress("UNCHECKED_CAST")
+                val branding = (data["branding"] as? Map<String, Any?>) ?: emptyMap()
+
+                val logoUrl = firstNonBlank(
+                    branding["logo_url"] as? String,
+                    branding["logoUrl"] as? String,
+                    data["logo_url"] as? String,
+                    data["logoUrl"] as? String,
+                )
+                val bgWallpaper = firstNonBlank(
+                    branding["bg_wallpaper"] as? String,
+                    branding["bgWallpaper"] as? String,
+                    data["bg_wallpaper"] as? String,
+                    data["bgWallpaper"] as? String,
+                )
+                val themeColor = firstNonBlank(
+                    branding["theme_color"] as? String,
+                    branding["themeColor"] as? String,
+                    data["theme_color"] as? String,
+                    data["themeColor"] as? String,
+                )
+                val name = firstNonBlank(
+                    data["name"] as? String,
+                    data["hotelName"] as? String,
+                )
+
+                val result = HotelBranding(
+                    hotelId = hotelId,
+                    hotelName = name,
+                    logoUrl = logoUrl,
+                    bgWallpaperUrl = bgWallpaper,
+                    themeColor = themeColor,
+                    status = data["status"] as? String ?: "active",
+                )
+                Log.d(
+                    TAG,
+                    "OK Hotel branding snapshot → path=$docPath name=${result.hotelName} " +
+                        "logo_url=$logoUrl bg_wallpaper=$bgWallpaper " +
+                        "theme=$themeColor status=${result.status} " +
+                        "keys=${data.keys} fromCache=${snapshot.metadata.isFromCache}",
+                )
+                trySend(result)
+            }
+        awaitClose {
+            Log.d(TAG, "UNLISTEN Hotel branding → $docPath")
+            listener.remove()
+        }
+    }
+
+    /**
+     * Attaches activity-scoped diagnostic listeners for branding + Rooms.
+     * Returns registrations so [MainActivity] can remove them in onDestroy.
+     */
+    fun attachSyncDiagnostics(
+        onBranding: (HotelBranding) -> Unit = {},
+        onRooms: (List<RoomStatus>) -> Unit = {},
+    ): List<ListenerRegistration> {
+        val hotelPath = FirestorePaths.hotelDocument(hotelId)
+        val roomsPath = FirestorePaths.roomsCollection(hotelId)
+        Log.d(TAG, "ATTACH sync diagnostics → hotel=$hotelPath rooms=$roomsPath")
+
+        val brandingReg = firestore
+            .collection(FirestorePaths.HOTELS)
+            .document(hotelId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "DIAG FAIL Hotels/$hotelId: ${error.message}", error)
+                    return@addSnapshotListener
+                }
+                Log.d(
+                    TAG,
+                    "DIAG Hotels/$hotelId snapshot exists=${snapshot?.exists()} " +
+                        "data=${snapshot?.data} fromCache=${snapshot?.metadata?.isFromCache}",
+                )
+                if (snapshot != null && snapshot.exists()) {
+                    val data = snapshot.data ?: emptyMap()
+                    @Suppress("UNCHECKED_CAST")
+                    val branding = (data["branding"] as? Map<String, Any?>) ?: emptyMap()
+                    onBranding(
+                        HotelBranding(
+                            hotelId = hotelId,
+                            hotelName = firstNonBlank(
+                                data["name"] as? String,
+                                data["hotelName"] as? String,
+                            ),
+                            logoUrl = firstNonBlank(
+                                branding["logo_url"] as? String,
+                                branding["logoUrl"] as? String,
+                                data["logo_url"] as? String,
+                                data["logoUrl"] as? String,
+                            ),
+                            bgWallpaperUrl = firstNonBlank(
+                                branding["bg_wallpaper"] as? String,
+                                branding["bgWallpaper"] as? String,
+                                data["bg_wallpaper"] as? String,
+                                data["bgWallpaper"] as? String,
+                            ),
+                            themeColor = firstNonBlank(
+                                branding["theme_color"] as? String,
+                                branding["themeColor"] as? String,
+                                data["theme_color"] as? String,
+                                data["themeColor"] as? String,
+                            ),
+                            status = data["status"] as? String ?: "active",
+                        ),
+                    )
+                }
+            }
+
+        val roomsReg = firestore
+            .collection(FirestorePaths.HOTELS)
+            .document(hotelId)
+            .collection(FirestorePaths.ROOMS)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "DIAG FAIL Hotels/$hotelId/Rooms: ${error.message}", error)
+                    return@addSnapshotListener
+                }
+                val docs = snapshot?.documents.orEmpty()
+                Log.d(
+                    TAG,
+                    "DIAG Hotels/$hotelId/Rooms snapshot count=${docs.size} " +
+                        "ids=${docs.map { it.id }} fromCache=${snapshot?.metadata?.isFromCache}",
+                )
+                docs.forEach { doc ->
+                    Log.d(TAG, "DIAG Room ${doc.id} → ${doc.data}")
+                }
+                onRooms(
+                    docs.map { doc ->
+                        val data = doc.data ?: emptyMap()
+                        val guestName = data["guestName"] as? String ?: ""
+                        val status = firstNonBlank(
+                            data["status"] as? String,
+                            data["roomStatus"] as? String,
+                        )
+                        RoomStatus(
+                            roomNumber = doc.id,
+                            guestName = guestName,
+                            status = status.ifBlank {
+                                if (guestName.isNotBlank()) "occupied" else "vacant"
+                            },
+                            sessionKey = data["sessionKey"] as? String ?: "",
+                            occupied = guestName.isNotBlank() ||
+                                (data["occupied"] as? Boolean == true),
+                            checkInDate = data["checkInDate"] as? String ?: "",
+                            checkOutDate = data["checkOutDate"] as? String ?: "",
+                        )
+                    },
+                )
+            }
+
+        return listOf(brandingReg, roomsReg)
+    }
+
+    /** Hotels/{hotelId}/Menu */
     fun observeMenuItems(): Flow<List<MenuItem>> = callbackFlow {
-        val path = "${FirestorePaths.HOTELS}/$hotelId/${FirestorePaths.MENU}"
-        Log.d(TAG, "Listening menu: $path")
+        val path = FirestorePaths.menuCollection(hotelId)
+        Log.d(TAG, "LISTEN Menu → $path")
 
         val listener = firestore
             .collection(FirestorePaths.HOTELS)
@@ -87,7 +358,7 @@ class FirestoreRepository(
             .collection(FirestorePaths.MENU)
             .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
                 if (error != null) {
-                    Log.e(TAG, "Menu listener error at $path", error)
+                    Log.e(TAG, "FAIL Menu listener at $path", error)
                     trySend(defaultMenuItems())
                     return@addSnapshotListener
                 }
@@ -105,19 +376,19 @@ class FirestoreRepository(
                     )
                 } ?: emptyList()
 
+                Log.d(TAG, "OK Menu snapshot → ${items.size} items at $path (cache=${snapshot?.metadata?.isFromCache})")
                 trySend(if (items.isEmpty()) defaultMenuItems() else items)
             }
-        awaitClose { listener.remove() }
+        awaitClose {
+            Log.d(TAG, "UNLISTEN Menu → $path")
+            listener.remove()
+        }
     }
 
-    /**
-     * Alerts live at Hotels/{hotelId}/Alerts with a roomNumber field.
-     * Query uses equality filter only (no orderBy) to avoid requiring a composite index.
-     * Results are sorted client-side by timestamp descending.
-     */
+    /** Hotels/{hotelId}/Alerts?roomNumber= */
     fun observeAlerts(): Flow<List<HotelAlert>> = callbackFlow {
         val collectionPath = FirestorePaths.alertsCollection(hotelId)
-        Log.d(TAG, "Listening alerts: $collectionPath where roomNumber == '$roomNumber'")
+        Log.d(TAG, "LISTEN Alerts → $collectionPath where roomNumber == '$roomNumber'")
 
         val listener = firestore
             .collection(FirestorePaths.HOTELS)
@@ -126,7 +397,7 @@ class FirestoreRepository(
             .whereEqualTo("roomNumber", roomNumber)
             .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
                 if (error != null) {
-                    Log.e(TAG, "Alerts listener error at $collectionPath", error)
+                    Log.e(TAG, "FAIL Alerts listener at $collectionPath", error)
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
@@ -150,16 +421,19 @@ class FirestoreRepository(
                     !alert.archived && belongsToCurrentSession(alert.sessionKey)
                 }?.sortedByDescending { it.timestamp } ?: emptyList()
 
-                Log.d(TAG, "Alerts received for room $roomNumber: ${alerts.size} (${alerts.count { !it.read }} unread)")
+                Log.d(TAG, "OK Alerts → ${alerts.size} for room $roomNumber (${alerts.count { !it.read }} unread)")
                 trySend(alerts)
             }
-        awaitClose { listener.remove() }
+        awaitClose {
+            Log.d(TAG, "UNLISTEN Alerts → $collectionPath")
+            listener.remove()
+        }
     }
 
-    /** Real-time orders for this room — used on the dining / order history screen. */
+    /** Top-level Live_Orders filtered by hotelId + roomNumber */
     fun observeRoomOrders(): Flow<List<LiveOrder>> = callbackFlow {
         val path = FirestorePaths.LIVE_ORDERS
-        Log.d(TAG, "Listening room orders: $path where roomNumber == '$roomNumber'")
+        Log.d(TAG, "LISTEN Orders → $path where hotelId=$hotelId roomNumber=$roomNumber")
 
         val listener = firestore
             .collection(FirestorePaths.LIVE_ORDERS)
@@ -167,7 +441,7 @@ class FirestoreRepository(
             .whereEqualTo("hotelId", hotelId)
             .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
                 if (error != null) {
-                    Log.e(TAG, "Room orders listener error", error)
+                    Log.e(TAG, "FAIL Orders listener at $path", error)
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
@@ -199,16 +473,19 @@ class FirestoreRepository(
                     !order.archived && belongsToCurrentSession(order.sessionKey)
                 }?.sortedByDescending { it.timestamp } ?: emptyList()
 
-                Log.d(TAG, "Room orders updated: ${orders.size}")
+                Log.d(TAG, "OK Orders → ${orders.size}")
                 trySend(orders)
             }
-        awaitClose { listener.remove() }
+        awaitClose {
+            Log.d(TAG, "UNLISTEN Orders → $path")
+            listener.remove()
+        }
     }
 
     suspend fun placeOrder(order: LiveOrder): Result<String> = runCatching {
         val docRef = firestore.collection(FirestorePaths.LIVE_ORDERS).document()
         val payload = hashMapOf(
-            "hotelId" to order.hotelId,
+            "hotelId" to HotelConfig.normalizeHotelId(order.hotelId.ifBlank { hotelId }),
             "roomNumber" to FirestorePaths.normalizeRoom(order.roomNumber),
             "guestName" to order.guestName,
             "items" to order.items.map { item ->
@@ -226,12 +503,12 @@ class FirestoreRepository(
             "archived" to false,
         )
         docRef.set(payload).await()
-        Log.d(TAG, "Order placed: ${FirestorePaths.LIVE_ORDERS}/${docRef.id}")
+        Log.d(TAG, "WRITE Order → ${FirestorePaths.LIVE_ORDERS}/${docRef.id} hotelId=$hotelId path=Hotels/$hotelId")
         docRef.id
     }
 
     suspend fun markAlertRead(alertId: String) {
-        val docPath = "${FirestorePaths.alertsCollection(hotelId)}/$alertId"
+        val docPath = "Hotels/$hotelId/Alerts/$alertId"
         firestore
             .collection(FirestorePaths.HOTELS)
             .document(hotelId)
@@ -239,7 +516,7 @@ class FirestoreRepository(
             .document(alertId)
             .update("read", true)
             .await()
-        Log.d(TAG, "Alert marked read: $docPath")
+        Log.d(TAG, "WRITE Alert read → $docPath")
     }
 
     suspend fun submitServiceRequest(
@@ -255,6 +532,7 @@ class FirestoreRepository(
             .collection(FirestorePaths.REQUESTS)
             .document()
         val payload = hashMapOf(
+            "hotelId" to hotelId,
             "roomNumber" to roomNumber,
             "guestName" to guestName,
             "department" to department,
@@ -267,14 +545,14 @@ class FirestoreRepository(
             "archived" to false,
         )
         docRef.set(payload).await()
-        Log.d(TAG, "Service request submitted: $path/${docRef.id} → $serviceLabel")
+        Log.d(TAG, "WRITE Request → Hotels/$hotelId/Requests/${docRef.id} → $serviceLabel")
         docRef.id
     }
 
-    /** Live service requests for this room — status updates from admin panel. */
+    /** Hotels/{hotelId}/Requests?roomNumber= */
     fun observeRoomServiceRequests(): Flow<List<ServiceRequest>> = callbackFlow {
         val path = FirestorePaths.requestsCollection(hotelId)
-        Log.d(TAG, "Listening service requests: $path where roomNumber == '$roomNumber'")
+        Log.d(TAG, "LISTEN Requests → $path where roomNumber == '$roomNumber'")
 
         val listener = firestore
             .collection(FirestorePaths.HOTELS)
@@ -283,7 +561,7 @@ class FirestoreRepository(
             .whereEqualTo("roomNumber", roomNumber)
             .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
                 if (error != null) {
-                    Log.e(TAG, "Service requests listener error at $path", error)
+                    Log.e(TAG, "FAIL Requests listener at $path", error)
                     trySend(emptyList())
                     return@addSnapshotListener
                 }
@@ -306,10 +584,13 @@ class FirestoreRepository(
                     !request.archived && belongsToCurrentSession(request.sessionKey)
                 }?.sortedByDescending { it.timestamp } ?: emptyList()
 
-                Log.d(TAG, "Service requests for room $roomNumber: ${requests.size}")
+                Log.d(TAG, "OK Requests → ${requests.size} for room $roomNumber")
                 trySend(requests)
             }
-        awaitClose { listener.remove() }
+        awaitClose {
+            Log.d(TAG, "UNLISTEN Requests → $path")
+            listener.remove()
+        }
     }
 
     private fun belongsToCurrentSession(itemSessionKey: String): Boolean {
@@ -317,6 +598,9 @@ class FirestoreRepository(
         if (activeSession.isBlank()) return itemSessionKey.isBlank()
         return itemSessionKey.isBlank() || itemSessionKey == activeSession
     }
+
+    private fun firstNonBlank(vararg values: String?): String =
+        values.firstOrNull { !it.isNullOrBlank() }.orEmpty()
 
     private fun defaultGuestProfile() = GuestProfile(
         guestName = "Guest",

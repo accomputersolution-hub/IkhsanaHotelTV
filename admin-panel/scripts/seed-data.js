@@ -10,7 +10,7 @@
  * Safe to run multiple times — uses deterministic document IDs for menu items.
  */
 
-import { db, HOTEL_ID } from '../js/firebase-config.js';
+import { db, DEFAULT_HOTEL_ID } from '../js/firebase-config.js';
 import {
   doc,
   setDoc,
@@ -32,7 +32,7 @@ const DEFAULT_MENU = [
 
 async function seedMenu() {
   for (const item of DEFAULT_MENU) {
-    await setDoc(doc(db, 'Hotels', HOTEL_ID, 'Menu', item.id), {
+    await setDoc(doc(db, 'Hotels', DEFAULT_HOTEL_ID, 'Menu', item.id), {
       name: item.name,
       description: item.description,
       price: item.price,
@@ -45,7 +45,7 @@ async function seedMenu() {
 }
 
 async function seedRoom(roomNumber = '101', guestName = 'Guest') {
-  await setDoc(doc(db, 'Hotels', HOTEL_ID, 'Rooms', roomNumber), {
+  await setDoc(doc(db, 'Hotels', DEFAULT_HOTEL_ID, 'Rooms', roomNumber), {
     guestName,
     hotelName: 'Ikhsana Hotel',
     hotelLogoUrl: '',
@@ -63,7 +63,7 @@ async function seedRoom(roomNumber = '101', guestName = 'Guest') {
 }
 
 async function seed() {
-  const existing = await getDocs(collection(db, 'Hotels', HOTEL_ID, 'Menu'));
+  const existing = await getDocs(collection(db, 'Hotels', DEFAULT_HOTEL_ID, 'Menu'));
   if (!existing.empty) {
     const proceed = confirm(`${existing.size} menu items already exist. Re-seed anyway?`);
     if (!proceed) return;

@@ -2,6 +2,7 @@ package com.example.ikhsanahoteltv.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -24,20 +25,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.annotation.DrawableRes
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import com.example.ikhsanahoteltv.ui.services.ServiceToastType
@@ -112,7 +116,7 @@ private fun RowWithIcon(message: String, type: ServiceToastType) {
 fun LuxuryNavCard(
     title: String,
     subtitle: String,
-    icon: String,
+    @DrawableRes iconRes: Int,
     focusGlowColor: Color,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
@@ -124,35 +128,23 @@ fun LuxuryNavCard(
         animationSpec = tween(durationMillis = 200),
         label = "navCardScale",
     )
-    val glowAlpha by animateFloatAsState(
-        targetValue = if (isFocused) 1f else 0f,
-        animationSpec = tween(durationMillis = 200),
-        label = "navCardGlow",
-    )
+    // Keep fill alpha identical when focused — only the border indicates focus.
+    // Raising opacity on focus paints a square dark slab on API 24 (clip+scale bug).
+    val fillTop = NavyDeep.copy(alpha = 0.42f)
+    val fillBottom = NavyDeep.copy(alpha = 0.32f)
 
     Box(
         modifier = modifier
-            .scale(scale)
-            .then(
-                if (isFocused) {
-                    Modifier.shadow(
-                        elevation = 20.dp,
-                        shape = cardShape,
-                        ambientColor = focusGlowColor.copy(alpha = 0.5f * glowAlpha),
-                        spotColor = focusGlowColor.copy(alpha = 0.7f * glowAlpha),
-                    )
-                } else {
-                    Modifier
-                },
-            )
-            .clip(cardShape)
+            // Scale + clip in one graphicsLayer so rounded outline survives on API 24
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                clip = true
+                shape = cardShape
+            }
             .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        NavyDeep.copy(alpha = if (isFocused) 0.72f else 0.52f),
-                        NavyDeep.copy(alpha = if (isFocused) 0.62f else 0.42f),
-                    ),
-                ),
+                brush = Brush.verticalGradient(listOf(fillTop, fillBottom)),
+                shape = cardShape,
             )
             .border(
                 width = if (isFocused) 3.dp else 1.dp,
@@ -189,15 +181,18 @@ fun LuxuryNavCard(
             .padding(horizontal = 16.dp, vertical = 20.dp),
         contentAlignment = Alignment.Center,
     ) {
+        // No background / no clip on inner children — prevents square black focus artifact
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(cardShape)
-                .background(Color.Transparent),
+            modifier = Modifier.fillMaxSize(),
         ) {
-            Text(text = icon, fontSize = 40.sp)
+            Image(
+                painter = painterResource(iconRes),
+                contentDescription = title,
+                modifier = Modifier.size(40.dp),
+                contentScale = ContentScale.Fit,
+            )
             Text(
                 text = title,
                 fontSize = 17.sp,
@@ -231,7 +226,7 @@ fun LuxuryNavCard(
 fun FeatureCard(
     title: String,
     subtitle: String,
-    icon: String,
+    @DrawableRes iconRes: Int,
     accentColor: Color,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
@@ -239,7 +234,7 @@ fun FeatureCard(
     LuxuryNavCard(
         title = title,
         subtitle = subtitle,
-        icon = icon,
+        iconRes = iconRes,
         focusGlowColor = accentColor,
         modifier = modifier.size(width = 220.dp, height = 180.dp),
         onClick = onClick,

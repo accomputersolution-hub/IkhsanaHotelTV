@@ -1,4 +1,4 @@
-import { db, HOTEL_ID } from './firebase-config.js';
+import { db } from './firebase-config.js';
 import {
   collection,
   doc,
@@ -19,6 +19,7 @@ import {
   setupModalClose,
 } from './utils.js';
 import { paths, logFirestoreWrite, logFirestoreListen } from './paths.js';
+import { getHotelId, onHotelChange } from './tenant-context.js';
 
 const DEFAULT_CATEGORIES = [
   { key: 'starters', label: 'Starters' },
@@ -41,21 +42,39 @@ let categories = [...DEFAULT_CATEGORIES];
 let activeFilter = 'all';
 let editingItemId = null;
 let settingsSeeded = false;
+let menuSettingsUnsub = null;
+let menuUnsub = null;
 
 export function initMenu() {
   renderFilterTabs();
   setupMenuItemModal();
   setupAddCategoryModal();
-  listenMenuSettings();
-  listenMenu();
+  onHotelChange(() => {
+    settingsSeeded = false;
+    listenMenuSettings();
+    listenMenu();
+  });
 }
 
 function listenMenuSettings() {
+  if (menuSettingsUnsub) {
+    menuSettingsUnsub();
+    menuSettingsUnsub = null;
+  }
+
+  const hotelId = getHotelId();
+  if (!hotelId) {
+    categories = [...DEFAULT_CATEGORIES];
+    renderFilterTabs();
+    populateCategorySelect();
+    return;
+  }
+
   const docPath = paths.menuSettingsDoc();
   logFirestoreListen('Menu Settings', docPath);
 
-  onSnapshot(
-    doc(db, 'Hotels', HOTEL_ID, 'Config', 'menuSettings'),
+  menuSettingsUnsub = onSnapshot(
+    doc(db, 'Hotels', hotelId, 'Config', 'menuSettings'),
     async (snapshot) => {
       if (!snapshot.exists()) {
         if (!settingsSeeded) {
@@ -81,12 +100,14 @@ function listenMenuSettings() {
 }
 
 async function seedMenuSettings() {
+  const hotelId = getHotelId();
+  if (!hotelId) return;
   try {
     const payload = {
       categories: DEFAULT_CATEGORIES,
       updatedAt: serverTimestamp(),
     };
-    await setDoc(doc(db, 'Hotels', HOTEL_ID, 'Config', 'menuSettings'), payload, { merge: true });
+    await setDoc(doc(db, 'Hotels', hotelId, 'Config', 'menuSettings'), payload, { merge: true });
     logFirestoreWrite('Menu Settings Seed', paths.menuSettingsDoc(), payload);
   } catch (err) {
     console.error('[Firestore ERROR] Menu settings seed failed:', err);
@@ -94,10 +115,22 @@ async function seedMenuSettings() {
 }
 
 function listenMenu() {
+  if (menuUnsub) {
+    menuUnsub();
+    menuUnsub = null;
+  }
+
+  const hotelId = getHotelId();
+  if (!hotelId) {
+    menuItems = [];
+    renderMenu();
+    return;
+  }
+
   logFirestoreListen('Menu', paths.menuCollection());
 
-  onSnapshot(
-    collection(db, 'Hotels', HOTEL_ID, 'Menu'),
+  menuUnsub = onSnapshot(
+    collection(db, 'Hotels', hotelId, 'Menu'),
     (snapshot) => {
       hideConnectionError();
       menuItems = snapshot.docs
@@ -233,7 +266,7 @@ function bindMenuActions(container) {
       e.target.disabled = true;
 
       try {
-        await updateDoc(doc(db, 'Hotels', HOTEL_ID, 'Menu', id), { available: inStock });
+        await updateDoc(doc(db, 'Hotels', getHotelId(), 'Menu', id), { available: inStock });
         logFirestoreWrite('Menu Stock', `${paths.menuCollection()}/${id}`, { available: inStock });
         toast(inStock ? 'Item is now In Stock on TV' : 'Item hidden from TV menu');
         if (label) label.textContent = inStock ? 'In Stock' : 'Out of Stock';
@@ -256,7 +289,7 @@ function bindMenuActions(container) {
 
       btn.disabled = true;
       try {
-        await deleteDoc(doc(db, 'Hotels', HOTEL_ID, 'Menu', id));
+        await deleteDoc(doc(db, 'Hotels', getHotelId(), 'Menu', id));
         logFirestoreWrite('Menu Delete', `${paths.menuCollection()}/${id}`, {});
         toast('Menu item deleted');
       } catch (err) {
@@ -309,11 +342,11 @@ function setupMenuItemModal() {
 
     try {
       if (editingItemId) {
-        await updateDoc(doc(db, 'Hotels', HOTEL_ID, 'Menu', editingItemId), payload);
+        await updateDoc(doc(db, 'Hotels', getHotelId(), 'Menu', editingItemId), payload);
         logFirestoreWrite('Menu Update', `${paths.menuCollection()}/${editingItemId}`, payload);
         toast('Menu item updated — TV synced');
       } else {
-        const ref = await addDoc(collection(db, 'Hotels', HOTEL_ID, 'Menu'), {
+        const ref = await addDoc(collection(db, 'Hotels', getHotelId(), 'Menu'), {
           ...payload,
           createdAt: serverTimestamp(),
         });
@@ -399,7 +432,7 @@ function setupAddCategoryModal() {
 
     try {
       await setDoc(
-        doc(db, 'Hotels', HOTEL_ID, 'Config', 'menuSettings'),
+        doc(db, 'Hotels', getHotelId(), 'Config', 'menuSettings'),
         { categories: updated, updatedAt: serverTimestamp() },
         { merge: true },
       );

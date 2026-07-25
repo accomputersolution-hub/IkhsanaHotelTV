@@ -21,6 +21,7 @@ import {
 } from './utils.js';
 import { normalizeRoom, logFirestoreWrite } from './paths.js';
 import { writeRoomAlert } from './alerts.js';
+import { getHotelId, onHotelChange } from './tenant-context.js';
 
 const ORDER_STATUS_ALERTS = {
   preparing: {
@@ -37,31 +38,61 @@ let knownOrderIds = new Set();
 let ordersInitialized = false;
 let currentFilter = 'all';
 let allOrders = [];
+let ordersUnsub = null;
 
 export function initOrders() {
   setupFilterTabs();
+  onHotelChange(() => {
+    knownOrderIds = new Set();
+    ordersInitialized = false;
+    listenOrders();
+  });
+}
+
+function listenOrders() {
+  if (ordersUnsub) {
+    ordersUnsub();
+    ordersUnsub = null;
+  }
+
+  const hotelId = getHotelId();
+  if (!hotelId) {
+    allOrders = [];
+    renderOrders();
+    return;
+  }
 
   const q = query(collection(db, 'Live_Orders'), orderBy('timestamp', 'desc'));
 
-  onSnapshot(
+  ordersUnsub = onSnapshot(
     q,
     (snapshot) => {
       hideConnectionError();
-      allOrders = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const currentHotelId = getHotelId();
+      allOrders = snapshot.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((o) => !o.hotelId || o.hotelId === currentHotelId);
+
+      const hotelOrderIds = new Set(allOrders.map((o) => o.id));
 
       snapshot.docChanges().forEach((change) => {
         if (change.type === 'added') {
+          const data = change.doc.data();
+          if (data.hotelId !== currentHotelId) return;
           if (ordersInitialized && !knownOrderIds.has(change.doc.id)) {
             playOrderBell();
             const banner = document.getElementById('new-order-banner');
-            const room = change.doc.data()?.roomNumber || '?';
-            banner.innerHTML = `🔔 New order from Room <strong>${room}</strong>!`;
+            const room = data?.roomNumber || '?';
+            banner.innerHTML = `New order from Room <strong>${room}</strong> — Kitchen ticket created`;
             banner.classList.remove('hidden');
             setTimeout(() => banner.classList.add('hidden'), 6000);
           }
           knownOrderIds.add(change.doc.id);
         }
       });
+
+      // Drop ids from other hotels so re-subscribe doesn't false-bell
+      knownOrderIds = new Set([...knownOrderIds].filter((id) => hotelOrderIds.has(id)));
 
       ordersInitialized = true;
       renderOrders();
@@ -137,7 +168,7 @@ function renderOrders() {
                 ${STATUS_LABELS[status] || status}
               </span>
             </div>
-            <p class="order-meta">${escapeHtml(order.guestName || 'Guest')} · ${formatTime(order.timestamp)}</p>
+            <p class="order-meta">${escapeHtml(order.guestName || 'Guest')} · synced ${formatTime(order.timestamp)}</p>
           </div>
           <p class="order-price">₹${(order.totalAmount || 0).toFixed(0)}</p>
         </div>
@@ -147,7 +178,7 @@ function renderOrders() {
             ? `<button data-action="advance" data-id="${order.id}" data-next="${next}" class="kds-advance-btn">
                 Mark as ${STATUS_LABELS[next]}
               </button>`
-            : `<p class="kds-delivered-label">✓ Delivered</p>`
+            : `<p class="kds-delivered-label">Ready · Complete</p>`
         }
       </div>`;
     })

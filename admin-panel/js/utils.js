@@ -51,15 +51,12 @@ function updateSoundToggleUi() {
   const btn = document.getElementById('bell-toggle-btn');
   const icon = document.getElementById('bell-toggle-icon');
   if (!btn || !icon) return;
-  if (soundEnabled) {
-    icon.textContent = '🔔';
-    btn.title = 'Mute order bell';
-    btn.classList.remove('opacity-50');
-  } else {
-    icon.textContent = '🔕';
-    btn.title = 'Enable order bell';
-    btn.classList.add('opacity-50');
-  }
+  btn.classList.toggle('opacity-50', !soundEnabled);
+  btn.title = soundEnabled ? 'Mute order bell' : 'Enable order bell';
+  btn.setAttribute('aria-pressed', soundEnabled ? 'true' : 'false');
+  icon.innerHTML = soundEnabled
+    ? `<svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M6 17h12l-1.2-1.2A2 2 0 0116 14.4V11a4 4 0 10-8 0v3.4a2 2 0 01-.8 1.4L6 17z" stroke="currentColor" stroke-width="1.7"/><path d="M10 19a2 2 0 004 0" stroke="currentColor" stroke-width="1.7"/></svg>`
+    : `<svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M4 4l16 16M6 17h12l-1.2-1.2A2 2 0 0116 14.4V11a4 4 0 00-.5-1.9M9.2 5.2A4 4 0 0116 11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M10 19a2 2 0 004 0" stroke="currentColor" stroke-width="1.7"/></svg>`;
 }
 
 function unlockAudio() {
@@ -174,12 +171,14 @@ export function escapeHtml(str) {
 
 export function toast(message, type = 'success') {
   const el = document.getElementById('toast');
+  if (!el) return;
   el.textContent = message;
-  el.className = `fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl shadow-lg text-sm font-medium transition-all duration-300 ${
-    type === 'error' ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'
-  }`;
+  el.className = `toast ${type === 'error' ? 'toast-error' : 'toast-success'}`;
   el.classList.remove('opacity-0', 'translate-y-4');
-  setTimeout(() => el.classList.add('opacity-0', 'translate-y-4'), 3000);
+  clearTimeout(el._toastTimer);
+  el._toastTimer = setTimeout(() => {
+    el.classList.add('opacity-0', 'translate-y-4');
+  }, 3000);
 }
 
 export function setConnectionStatus(state) {
@@ -188,7 +187,7 @@ export function setConnectionStatus(state) {
   const badge = document.getElementById('pms-badge');
   if (!dot || !label) return;
 
-  dot.className = `conn-dot w-2 h-2 rounded-full ${state}`;
+  dot.className = `conn-dot ${state}`;
   const labels = {
     connected: 'Connected & Active',
     connecting: 'Syncing…',
@@ -218,8 +217,8 @@ export function hideConnectionError() {
 export const STATUS_FLOW = ['pending', 'preparing', 'delivered'];
 export const STATUS_LABELS = {
   pending: 'Pending',
-  preparing: 'Preparing',
-  delivered: 'Delivered',
+  preparing: 'Cooking',
+  delivered: 'Ready',
 };
 export const STATUS_STYLES = {
   pending: 'status-badge status-pending',

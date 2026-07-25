@@ -1,4 +1,4 @@
-import { db, HOTEL_ID } from './firebase-config.js';
+import { db } from './firebase-config.js';
 import {
   collection,
   doc,
@@ -17,6 +17,7 @@ import {
 } from './utils.js';
 import { normalizeRoom, paths, logFirestoreWrite, logFirestoreListen } from './paths.js';
 import { flushRoomSession, newSessionKey } from './session-reset.js';
+import { getHotelId, onHotelChange } from './tenant-context.js';
 
 const ROOM_STATUSES = {
   vacant: { label: 'Vacant', badge: 'room-status-vacant' },
@@ -36,19 +37,35 @@ const DEFAULT_ROOMS = Array.from({ length: 16 }, (_, i) => {
 
 let roomsCache = [];
 let seedAttempted = false;
+let roomsUnsub = null;
 
 export function initGuests() {
   setupCheckInModal();
   setupAddRoomModal();
-  listenRooms();
+  onHotelChange(() => {
+    seedAttempted = false;
+    listenRooms();
+  });
 }
 
 function listenRooms() {
-  const collectionPath = `Hotels/${HOTEL_ID}/Rooms`;
+  if (roomsUnsub) {
+    roomsUnsub();
+    roomsUnsub = null;
+  }
+  const hotelId = getHotelId();
+  if (!hotelId) {
+    roomsCache = [];
+    renderRoomGrid([]);
+    updateSummaryCounters([]);
+    return;
+  }
+
+  const collectionPath = `Hotels/${hotelId}/Rooms`;
   logFirestoreListen('Guest Rooms', collectionPath);
 
-  onSnapshot(
-    collection(db, 'Hotels', HOTEL_ID, 'Rooms'),
+  roomsUnsub = onSnapshot(
+    collection(db, 'Hotels', hotelId, 'Rooms'),
     async (snapshot) => {
       hideConnectionError();
 
@@ -86,7 +103,7 @@ async function seedDefaultRooms() {
           hotelName: 'Ikhsana Hotel',
           updatedAt: serverTimestamp(),
         };
-        return setDoc(doc(db, 'Hotels', HOTEL_ID, 'Rooms', roomNumber), payload, { merge: true });
+        return setDoc(doc(db, 'Hotels', getHotelId(), 'Rooms', roomNumber), payload, { merge: true });
       }),
     );
     console.log('[PMS] Seeded default rooms 101–116');
@@ -437,6 +454,6 @@ async function handleMarkMaintenance(roomNumber, btn) {
 async function writeRoom(roomNumber, data) {
   const docPath = paths.roomDoc(roomNumber);
   const payload = { ...data, updatedAt: serverTimestamp() };
-  await setDoc(doc(db, 'Hotels', HOTEL_ID, 'Rooms', roomNumber), payload, { merge: true });
+  await setDoc(doc(db, 'Hotels', getHotelId(), 'Rooms', roomNumber), payload, { merge: true });
   logFirestoreWrite('Room PMS', docPath, payload);
 }

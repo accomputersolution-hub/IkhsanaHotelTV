@@ -1,37 +1,43 @@
 rules_version = '2';
 
-// Example Firestore security rules for Ikhsana Hotel TV
+// Example Firestore security rules — multi-tenant master admin
 // Copy to Firebase Console → Firestore → Rules
 //
-// ⚠️  DEV ONLY — replace with authenticated admin rules for production.
+// ⚠️  DEV ONLY — tighten with Auth custom claims / users/{uid} checks for production.
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Live room orders — TV app writes, admin panel reads/updates
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
     match /Live_Orders/{orderId} {
       allow read, write: if true;
     }
 
-    // Multi-tenant hotel data
+    // Hotel registry + tenant subcollections (keep name "Hotels" for Android sync)
     match /Hotels/{hotelId} {
+      allow read, write: if true;
 
-      // Guest room profiles — TV reads
       match /Rooms/{roomNumber} {
-        allow read: if true;
-        allow write: if true; // restrict to admin auth in production
+        allow read, write: if true;
       }
-
-      // Menu items — TV reads, admin manages
       match /Menu/{itemId} {
-        allow read: if true;
-        allow write: if true; // restrict to admin auth in production
+        allow read, write: if true;
       }
-
-      // Alerts — admin writes, TV reads by room
       match /Alerts/{alertId} {
-        allow read: if true;
-        allow write: if true; // restrict to admin auth in production
+        allow read, write: if true;
+      }
+      match /Broadcasts/{id} {
+        allow read, write: if true;
+      }
+      match /Requests/{id} {
+        allow read, write: if true;
+      }
+      match /Config/{docId} {
+        allow read, write: if true;
       }
     }
   }

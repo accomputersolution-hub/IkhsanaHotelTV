@@ -1,103 +1,71 @@
-# Ikhsana Hotel — Web Admin Panel
+# Ikhsana Hotel — Multi-Tenant Master Admin Panel
 
-Standalone reception dashboard for the **Ikhsana Hotel TV** Android app.  
-Built with HTML, Tailwind CSS (CDN), and Firebase Web SDK v11 (modular).
+Vanilla HTML/JS reception + Super Admin dashboard for the **Ikhsana Hotel TV** Android app.  
+Firebase Web SDK v11 (Auth + Firestore) · Tailwind CDN.
 
-## Features
+## Architecture
 
-| Section | Firestore Path | Description |
-|---------|---------------|-------------|
-| **Live Room Orders** | `Live_Orders` | Real-time order feed with status updates (Pending → Preparing → Delivered) and audio alert on new orders |
-| **Guest Management** | `Hotels/ikhsana/Rooms` | Assign guest names per room — TV welcome header updates live |
-| **Send Room Alerts** | `Hotels/ikhsana/Alerts` | Push messages to guest TV screens by room number |
-| **Menu Editor** | `Hotels/ikhsana/Menu` | Full CRUD: add, edit price/description, toggle availability, delete |
+| Role | Route | Behavior |
+|------|-------|----------|
+| **Super Admin** | `#/super-admin` or `/super-admin.html` | Hotels table, add hotel, impersonate any tenant |
+| **Hotel Admin** | `#/pms` | PMS modules scoped to their `hotelId` |
+| **Login** | `#/login` | Email/password via Firebase Auth |
+
+Tenant data lives under **`Hotels/{hotelId}/…`** (same shape as the Android TV app).  
+User profiles: **`users/{uid}`** with `{ role, hotelId, email }`.
 
 ## Quick Start
 
-### 1. Firebase setup
-
-1. Open [Firebase Console](https://console.firebase.google.com) → project **ikhsana-hotel-tv**
-2. Enable **Cloud Firestore**
-3. Copy rules from `firestore.rules.example` into Firestore → Rules (dev only)
-4. Deploy indexes from `firestore.indexes.json` if prompted by Firebase
-
-### 2. Run locally
-
-ES modules require a local HTTP server — do **not** open `index.html` directly via `file://`.
-
-**Option A — npm:**
 ```bash
 cd admin-panel
 npm start
 ```
 
-**Option B — Windows script:**
-```powershell
-.\start.ps1
-```
+Open **http://localhost:3000** → `#/login`.
 
-**Option C — Python:**
-```bash
-python -m http.server 3000
-```
+### Bootstrap Super Admin (once)
 
-Open **http://localhost:3000** in your browser.
+1. Firebase Console → Authentication → enable Email/Password → create a user.
+2. Sign in on the login screen with that user.
+3. Click **Bootstrap Super Admin profile** (writes `users/{uid}.role = super_admin`).
+4. You land on `#/super-admin`.
 
-> Click anywhere on the page once to unlock audio notifications (browser autoplay policy).
+### Onboard a hotel
 
-### 3. Seed sample data (optional)
+From Super Admin → **Add New Hotel** (name, slug, admin email/password, branding).  
+This creates:
 
-After starting the server, open DevTools console and run:
+- `Hotels/{slug}` metadata + branding  
+- Auth user for the hotel admin  
+- `users/{uid}` with `role: hotel_admin` and `hotelId: slug`
 
-```js
-import('./scripts/seed-data.js');
-```
+### Impersonation
 
-This creates 9 default menu items and a Room 101 guest profile.
+Use the **Manage hotel** dropdown (or **Open PMS** on a row) to load that hotel’s Room PMS / KDS / Menu / Messaging as Super Admin.
 
-## File Structure
+## Modules (per hotel)
 
-```
-admin-panel/
-├── index.html              # Main dashboard
-├── css/
-│   └── custom.css          # Scrollbar, animations, connection status
-├── js/
-│   ├── firebase-config.js  # Firebase init + hotel ID
-│   ├── utils.js            # Bell audio, toast, modals
-│   ├── orders.js           # Live orders + bell on new order
-│   ├── guests.js           # Guest name management per room
-│   ├── alerts.js           # Send alerts + recent alerts list
-│   ├── menu.js             # Full menu CRUD + edit modal
-│   └── app.js              # Entry point
-├── scripts/
-│   └── seed-data.js        # Firestore seed script
-├── firestore.rules.example # Dev security rules
-├── firestore.indexes.json  # Required composite indexes
-├── package.json
-├── start.ps1 / start.bat
-└── README.md
-```
+| Module | Path |
+|--------|------|
+| Rooms & Guests | `Hotels/{hotelId}/Rooms` |
+| Alerts / Broadcasts | `Hotels/{hotelId}/Alerts`, `…/Broadcasts` |
+| Menu | `Hotels/{hotelId}/Menu` |
+| Requests | `Hotels/{hotelId}/Requests` |
+| Orders (KDS) | `Live_Orders` filtered by `hotelId` |
 
-## Firestore Schema
+## Key files
 
 ```
-Live_Orders/{orderId}
-  hotelId, roomNumber, guestName, items[], totalAmount, status, timestamp
-
-Hotels/ikhsana/
-  Menu/{itemId}       → name, description, price, category, available, imageUrl
-  Alerts/{alertId}    → roomNumber, title, message, priority, read, timestamp
-  Rooms/{roomNumber}  → guestName, hotelName, hotelLogoUrl, hotelInfo, checkInDate
+js/auth.js              Firebase Auth + roles
+js/tenant-context.js    Active hotelId + branding
+js/router.js            Hash routes (#/login, #/super-admin, #/pms)
+js/super-admin.js       Hotels CRUD + impersonation
+js/paths.js             Dynamic Hotels/{hotelId}/… helpers
+js/app.js               Shell switching by role/route
 ```
 
-## Android TV App Alignment
+## Notes
 
-The Android TV app reads from the same Firestore paths with `hotelId = "ikhsana"`.  
-Ensure each TV device is provisioned with the correct room number (default: `101`).
-
-## Production Notes
-
-- Replace open Firestore rules with authenticated admin access
-- Add Firebase Authentication for reception staff login
-- Deploy to Firebase Hosting: `firebase init hosting && firebase deploy`
+- Keep `Hotels` capitalization in sync with Android `FirestorePaths.kt`.
+- Canonical demo slug is **`ikhsana_001`** (underscore). Hyphenated ids like `ikhsana-001` are normalized to underscores on both Android and Web Admin.
+- Enable Auth + update Firestore rules before production (see `firestore.rules.example`).

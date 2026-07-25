@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -42,6 +43,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -126,11 +128,9 @@ fun DiningScreen(
                 ) {
                     items(uiState.filteredItems, key = { it.id }) { item ->
                         val qty = uiState.cart.find { it.menuItem.id == item.id }?.quantity ?: 0
-                        val activeStatus = uiState.itemStatusMap[item.id]
                         MenuItemRow(
                             item = item,
                             quantity = qty,
-                            orderStatus = activeStatus,
                             onAdd = { viewModel.addToCart(item) },
                             onRemove = { viewModel.removeFromCart(item) },
                         )
@@ -320,7 +320,6 @@ private fun CategoryTab(
 private fun MenuItemRow(
     item: MenuItem,
     quantity: Int,
-    orderStatus: OrderStatus? = null,
     onAdd: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -345,27 +344,22 @@ private fun MenuItemRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = item.name,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    fontFamily = SansBody,
-                    color = TextPrimary,
-                )
-                if (orderStatus != null) {
-                    OrderStatusBadge(status = orderStatus)
-                }
-            }
+            Text(
+                text = item.name,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = SansBody,
+                color = TextPrimary,
+                maxLines = 1,
+                softWrap = false,
+            )
             if (item.description.isNotBlank()) {
                 Text(
                     text = item.description,
                     fontSize = 13.sp,
                     fontFamily = SansBody,
                     color = TextMuted,
+                    maxLines = 2,
                 )
             }
         }
@@ -376,6 +370,8 @@ private fun MenuItemRow(
             fontWeight = FontWeight.Bold,
             color = FocusTeal,
             modifier = Modifier.padding(horizontal = 16.dp),
+            maxLines = 1,
+            softWrap = false,
         )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -386,6 +382,8 @@ private fun MenuItemRow(
                 fontWeight = FontWeight.Bold,
                 fontFamily = SansBody,
                 color = TextPrimary,
+                maxLines = 1,
+                softWrap = false,
                 modifier = Modifier
                     .padding(horizontal = 4.dp)
                     .align(Alignment.CenterVertically),
@@ -503,6 +501,8 @@ private fun OrderHistoryCard(order: LiveOrder) {
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = FocusTeal,
+                maxLines = 1,
+                softWrap = false,
             )
             OrderStatusBadge(status = status)
         }
@@ -513,6 +513,8 @@ private fun OrderHistoryCard(order: LiveOrder) {
                 fontSize = 12.sp,
                 fontFamily = SansBody,
                 color = TextMuted,
+                maxLines = 1,
+                softWrap = false,
             )
         }
     }
@@ -521,22 +523,29 @@ private fun OrderHistoryCard(order: LiveOrder) {
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun OrderStatusBadge(status: OrderStatus) {
-    val (bg, text) = when (status) {
+    val (bg, label) = when (status) {
         OrderStatus.PENDING -> Color(0xFFFBBF24) to stringResource(R.string.status_pending)
         OrderStatus.PREPARING -> Color(0xFF38BDF8) to stringResource(R.string.status_preparing)
         OrderStatus.DELIVERED -> Color(0xFF34D399) to stringResource(R.string.status_delivered)
     }
+    val pillShape = RoundedCornerShape(999.dp)
     Box(
         modifier = Modifier
-            .background(bg.copy(alpha = 0.2f), RoundedCornerShape(6.dp))
-            .border(1.dp, bg.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp, vertical = 2.dp),
+            .wrapContentWidth()
+            .background(bg.copy(alpha = 0.22f), pillShape)
+            .border(1.dp, bg.copy(alpha = 0.6f), pillShape)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = text,
+            text = label,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
+            fontFamily = SansBody,
             color = bg,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Clip,
         )
     }
 }

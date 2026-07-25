@@ -1,4 +1,4 @@
-import { db, HOTEL_ID } from './firebase-config.js';
+import { db } from './firebase-config.js';
 import {
   collection,
   query,
@@ -8,6 +8,7 @@ import {
   serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 import { normalizeRoom, logFirestoreWrite } from './paths.js';
+import { getHotelId } from './tenant-context.js';
 
 const BATCH_LIMIT = 450;
 
@@ -28,7 +29,7 @@ export async function flushRoomSession(roomNumber) {
   totalOps += await archiveRoomOrders(room);
   totalOps += await archiveRoomRequests(room);
 
-  logFirestoreWrite('Session Flush', `Hotels/${HOTEL_ID}/Rooms/${room}`, {
+  logFirestoreWrite('Session Flush', `Hotels/${getHotelId()}/Rooms/${room}`, {
     archivedAlerts: true,
     archivedOrders: true,
     archivedRequests: true,
@@ -41,7 +42,7 @@ export async function flushRoomSession(roomNumber) {
 async function archiveRoomAlerts(roomNumber) {
   const snap = await getDocs(
     query(
-      collection(db, 'Hotels', HOTEL_ID, 'Alerts'),
+      collection(db, 'Hotels', getHotelId(), 'Alerts'),
       where('roomNumber', '==', roomNumber),
     ),
   );
@@ -66,6 +67,7 @@ async function archiveRoomAlerts(roomNumber) {
 }
 
 async function archiveRoomOrders(roomNumber) {
+  const hotelId = getHotelId();
   const snap = await getDocs(
     query(collection(db, 'Live_Orders'), where('roomNumber', '==', roomNumber)),
   );
@@ -73,7 +75,7 @@ async function archiveRoomOrders(roomNumber) {
   const updates = [];
   snap.forEach((docSnap) => {
     const data = docSnap.data();
-    if (data.hotelId && data.hotelId !== HOTEL_ID) return;
+    if (data.hotelId && data.hotelId !== hotelId) return;
     if (!data.archived) {
       updates.push({
         ref: docSnap.ref,
@@ -91,7 +93,7 @@ async function archiveRoomOrders(roomNumber) {
 async function archiveRoomRequests(roomNumber) {
   const snap = await getDocs(
     query(
-      collection(db, 'Hotels', HOTEL_ID, 'Requests'),
+      collection(db, 'Hotels', getHotelId(), 'Requests'),
       where('roomNumber', '==', roomNumber),
     ),
   );

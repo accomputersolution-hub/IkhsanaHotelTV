@@ -1,4 +1,4 @@
-import { db, HOTEL_ID } from './firebase-config.js';
+import { db } from './firebase-config.js';
 import {
   collection,
   doc,
@@ -18,6 +18,7 @@ import {
 import { normalizeRoom, paths, logFirestoreWrite, logFirestoreListen } from './paths.js';
 import { writeRoomAlert } from './alerts.js';
 import { markRoomCleanAndReady } from './guests.js';
+import { getHotelId, onHotelChange } from './tenant-context.js';
 
 const CLEANING_STATUSES = new Set(['housekeeping', 'maintenance', 'needs_cleaning']);
 
@@ -59,6 +60,7 @@ let hkCleaningRooms = [];
 let hkReadyTodayCount = 0;
 let cleaningRoomsInitialized = false;
 let knownCleaningRoomIds = new Set();
+let cleaningRoomsUnsub = null;
 
 export function initHousekeeping() {
   initRequestsModule({
@@ -71,7 +73,11 @@ export function initHousekeeping() {
     statCompletedId: 'hk-stat-completed',
   });
   setupHousekeepingViewTabs();
-  listenCleaningRooms();
+  onHotelChange(() => {
+    knownCleaningRoomIds = new Set();
+    cleaningRoomsInitialized = false;
+    listenCleaningRooms();
+  });
 }
 
 export function initConcierge() {
@@ -104,7 +110,7 @@ export async function createTestRequest(department = 'housekeeping') {
     createdAt: serverTimestamp(),
   };
 
-  const ref = await addDoc(collection(db, 'Hotels', HOTEL_ID, 'Requests'), payload);
+  const ref = await addDoc(collection(db, 'Hotels', getHotelId(), 'Requests'), payload);
   logFirestoreWrite('Sim Request', `${paths.requestsCollection()}/${ref.id}`, payload);
   return ref.id;
 }
@@ -127,10 +133,27 @@ function setupHousekeepingViewTabs() {
 }
 
 function listenCleaningRooms() {
+  if (cleaningRoomsUnsub) {
+    cleaningRoomsUnsub();
+    cleaningRoomsUnsub = null;
+  }
+
+  const hotelId = getHotelId();
+  if (!hotelId) {
+    hkCleaningRooms = [];
+    hkReadyTodayCount = 0;
+    updateCleaningRoomStats();
+    renderCleaningRooms();
+    updateHousekeepingHeaderCount();
+    updateHousekeepingTabBadges();
+    updateSidebarHousekeepingBadge();
+    return;
+  }
+
   logFirestoreListen('Cleaning Rooms', paths.roomsCollection());
 
-  onSnapshot(
-    collection(db, 'Hotels', HOTEL_ID, 'Rooms'),
+  cleaningRoomsUnsub = onSnapshot(
+    collection(db, 'Hotels', hotelId, 'Rooms'),
     (snapshot) => {
       const allRooms = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
 
@@ -312,11 +335,16 @@ function initRequestsModule(config) {
     activeFilter: 'all',
     knownIds: new Set(),
     initialized: false,
+    unsub: null,
   };
   listeners[config.department] = state;
 
   setupFilterTabs(state);
-  listenRequests(state);
+  onHotelChange(() => {
+    state.knownIds = new Set();
+    state.initialized = false;
+    listenRequests(state);
+  });
 }
 
 function setupFilterTabs(state) {
@@ -347,10 +375,23 @@ function setupFilterTabs(state) {
 }
 
 function listenRequests(state) {
+  if (state.unsub) {
+    state.unsub();
+    state.unsub = null;
+  }
+
+  const hotelId = getHotelId();
+  if (!hotelId) {
+    state.allRequests = [];
+    updateStats(state);
+    renderRequests(state);
+    return;
+  }
+
   logFirestoreListen(`${state.department} Requests`, paths.requestsCollection());
 
-  onSnapshot(
-    collection(db, 'Hotels', HOTEL_ID, 'Requests'),
+  state.unsub = onSnapshot(
+    collection(db, 'Hotels', hotelId, 'Requests'),
     (snapshot) => {
       hideConnectionError();
 
@@ -390,7 +431,7 @@ function showRequestBanner(department, data) {
   const banner = document.getElementById('new-order-banner');
   if (!banner) return;
   const deptLabel = department === 'concierge' ? 'Concierge' : 'Housekeeping';
-  banner.innerHTML = `🔔 New ${deptLabel} request — Room <strong>${escapeHtml(String(data.roomNumber || '?'))}</strong> · ${escapeHtml(data.serviceLabel || 'Service')}`;
+  banner.innerHTML = `New ${deptLabel} request — Room <strong>${escapeHtml(String(data.roomNumber || '?'))}</strong> · ${escapeHtml(data.serviceLabel || 'Service')}`;
   banner.classList.remove('hidden');
   setTimeout(() => banner.classList.add('hidden'), 6000);
 }
@@ -501,7 +542,7 @@ async function updateRequestStatus(btn, department, newStatus) {
   btn.textContent = 'Updating…';
 
   try {
-    await updateDoc(doc(db, 'Hotels', HOTEL_ID, 'Requests', id), {
+    await updateDoc(doc(db, 'Hotels', getHotelId(), 'Requests', id), {
       status: newStatus,
       updatedAt: serverTimestamp(),
     });

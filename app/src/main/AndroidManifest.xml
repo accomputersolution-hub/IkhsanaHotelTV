@@ -4,6 +4,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <uses-feature
         android:name="android.hardware.touchscreen"
@@ -31,13 +32,25 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:screenOrientation="landscape"
-            android:configChanges="keyboard|keyboardHidden|navigation">
+            android:configChanges="keyboard|keyboardHidden|navigation"
+            android:defaultFocusHighlightEnabled="false"
+            android:theme="@style/Theme.IkhsanaHotelTV.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".PairingActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:screenOrientation="landscape"
+            android:configChanges="keyboard|keyboardHidden|navigation"
+            android:defaultFocusHighlightEnabled="false"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.IkhsanaHotelTV" />
 
         <receiver
             android:name=".receiver.BootReceiver"
@@ -46,8 +59,9 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-                <action android:name="android.intent.action.REBOOT" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </receiver>

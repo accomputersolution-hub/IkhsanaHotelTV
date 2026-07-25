@@ -1,8 +1,10 @@
-/** Sidebar navigation, module switching, clock, search, collapse */
+/** Sidebar navigation, module switching, clock, search */
 
 import { createTestRequest } from './requests.js';
 import { onAnalyticsShown } from './analytics.js';
 import { toast } from './utils.js';
+import { navigateTo } from './router.js';
+import { isSuperAdmin } from './auth.js';
 
 const MODULES = {
   pms: { label: 'Room & Guest PMS', title: 'Room & Guest PMS' },
@@ -17,23 +19,32 @@ const MODULES = {
 let activeModule = localStorage.getItem('activeModule') || 'pms';
 
 export function initNavigation() {
+  // Always keep sidebar expanded (collapse feature removed)
+  document.getElementById('sidebar')?.classList.remove('sidebar-collapsed');
+  localStorage.removeItem('sidebarCollapsed');
+
   setupSidebarNav();
-  setupSidebarCollapse();
   setupClock();
   setupQuickActions();
   setupGlobalSearch();
   showModule(activeModule);
 }
 
+export function setHotelChromeVisible(visible) {
+  document.getElementById('open-super-admin-link')?.classList.toggle('hidden', !(visible && isSuperAdmin()));
+  document.getElementById('pms-impersonate-wrap')?.classList.toggle('hidden', !(visible && isSuperAdmin()));
+}
+
 function setupSidebarNav() {
   document.querySelectorAll('[data-module]').forEach((btn) => {
     btn.addEventListener('click', () => {
       showModule(btn.dataset.module);
+      navigateTo(`/pms/${btn.dataset.module}`);
     });
   });
 }
 
-function showModule(id) {
+export function showModule(id) {
   if (!MODULES[id]) return;
   activeModule = id;
   localStorage.setItem('activeModule', id);
@@ -54,23 +65,6 @@ function showModule(id) {
   if (id === 'analytics') onAnalyticsShown();
 
   applyGlobalSearch(document.getElementById('global-search')?.value || '');
-}
-
-function setupSidebarCollapse() {
-  const sidebar = document.getElementById('sidebar');
-  const toggle = document.getElementById('sidebar-toggle');
-  const collapsed = localStorage.getItem('sidebarCollapsed') === 'true';
-
-  if (collapsed) sidebar?.classList.add('sidebar-collapsed');
-
-  toggle?.addEventListener('click', () => {
-    sidebar?.classList.toggle('sidebar-collapsed');
-    const collapsed = sidebar?.classList.contains('sidebar-collapsed');
-    localStorage.setItem('sidebarCollapsed', collapsed ? 'true' : 'false');
-    if (toggle) toggle.textContent = collapsed ? '▶' : '◀ Collapse';
-  });
-
-  if (collapsed && toggle) toggle.textContent = '▶';
 }
 
 function setupClock() {
@@ -138,5 +132,3 @@ function applyGlobalSearch(query) {
     el.classList.toggle('search-hidden', !text.includes(query));
   });
 }
-
-export { showModule };

@@ -11,6 +11,29 @@ data class GuestProfile(
     val sessionKey: String = "",
     val activeOrdersCount: Int = 0,
     val activeMessagesCount: Int = 0,
+    val bgWallpaperUrl: String = "",
+    val themeColor: String = "",
+)
+
+/** Branding from Hotels/{hotelId} document (multi-tenant master panel). */
+data class HotelBranding(
+    val hotelId: String = "",
+    val hotelName: String = "",
+    val logoUrl: String = "",
+    val bgWallpaperUrl: String = "",
+    val themeColor: String = "",
+    val status: String = "active",
+)
+
+/** Live room / guest status from Hotels/{hotelId}/Rooms/{roomNumber}. */
+data class RoomStatus(
+    val roomNumber: String = "",
+    val guestName: String = "",
+    val status: String = "",
+    val sessionKey: String = "",
+    val occupied: Boolean = false,
+    val checkInDate: String = "",
+    val checkOutDate: String = "",
 )
 
 data class MenuItem(

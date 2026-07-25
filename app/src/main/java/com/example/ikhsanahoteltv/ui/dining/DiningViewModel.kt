@@ -38,23 +38,6 @@ data class DiningUiState(
     /** Active orders (not yet delivered) for order history display. */
     val activeOrders: List<LiveOrder>
         get() = roomOrders.filter { OrderStatus.fromKey(it.status) != OrderStatus.DELIVERED }
-
-    /** Map menu item id → highest-priority active order status for inline tags. */
-    val itemStatusMap: Map<String, OrderStatus>
-        get() {
-            val map = mutableMapOf<String, OrderStatus>()
-            val priority = listOf(OrderStatus.PREPARING, OrderStatus.PENDING)
-            activeOrders.forEach { order ->
-                val status = OrderStatus.fromKey(order.status)
-                order.items.forEach { line ->
-                    val existing = map[line.itemId]
-                    if (existing == null || priority.indexOf(status) < priority.indexOf(existing)) {
-                        map[line.itemId] = status
-                    }
-                }
-            }
-            return map
-        }
 }
 
 class DiningViewModel(
@@ -131,7 +114,7 @@ class DiningViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isPlacingOrder = true, orderMessage = null) }
             val order = LiveOrder(
-                hotelId = config.hotelId,
+                hotelId = HotelConfig.normalizeHotelId(config.getHotelId()),
                 roomNumber = config.roomNumber,
                 guestName = state.guestName,
                 items = state.cart.map { cartItem ->

@@ -1,4 +1,4 @@
-import { db, HOTEL_ID } from './firebase-config.js';
+import { db } from './firebase-config.js';
 import {
   collection,
   onSnapshot,
@@ -7,6 +7,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 import { paths, logFirestoreListen } from './paths.js';
 import { hideConnectionError, showConnectionError } from './utils.js';
+import { getHotelId, onHotelChange } from './tenant-context.js';
 
 /** Nightly rack rates — used for today's room revenue estimate */
 const ROOM_RATES = {
@@ -21,7 +22,7 @@ const CHART_COLORS = {
   emerald: '#34D399',
   amber: '#FBBF24',
   rose: '#FB7185',
-  grid: 'rgba(148, 163, 184, 0.12)',
+  grid: 'rgba(148, 163, 184, 0.1)',
   text: '#94A3B8',
 };
 
@@ -36,10 +37,16 @@ const charts = {
   trends: null,
 };
 
+let roomsUnsub = null;
+let ordersUnsub = null;
+let requestsUnsub = null;
+
 export function initAnalytics() {
-  listenRooms();
-  listenOrders();
-  listenRequests();
+  onHotelChange(() => {
+    listenRooms();
+    listenOrders();
+    listenRequests();
+  });
 }
 
 /** Call when analytics module becomes visible — fixes Chart.js zero-size canvas issue */
@@ -53,9 +60,21 @@ export function onAnalyticsShown() {
 }
 
 function listenRooms() {
+  if (roomsUnsub) {
+    roomsUnsub();
+    roomsUnsub = null;
+  }
+
+  const hotelId = getHotelId();
+  if (!hotelId) {
+    state.rooms = [];
+    onDataUpdate();
+    return;
+  }
+
   logFirestoreListen('Analytics Rooms', paths.roomsCollection());
-  onSnapshot(
-    collection(db, 'Hotels', HOTEL_ID, 'Rooms'),
+  roomsUnsub = onSnapshot(
+    collection(db, 'Hotels', hotelId, 'Rooms'),
     (snapshot) => {
       hideConnectionError();
       state.rooms = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -69,15 +88,28 @@ function listenRooms() {
 }
 
 function listenOrders() {
+  if (ordersUnsub) {
+    ordersUnsub();
+    ordersUnsub = null;
+  }
+
+  const hotelId = getHotelId();
+  if (!hotelId) {
+    state.orders = [];
+    onDataUpdate();
+    return;
+  }
+
   logFirestoreListen('Analytics Orders', paths.liveOrdersCollection());
   const q = query(collection(db, 'Live_Orders'), orderBy('timestamp', 'desc'));
-  onSnapshot(
+  ordersUnsub = onSnapshot(
     q,
     (snapshot) => {
       hideConnectionError();
+      const currentHotelId = getHotelId();
       state.orders = snapshot.docs
         .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((o) => !o.hotelId || o.hotelId === HOTEL_ID);
+        .filter((o) => !o.hotelId || o.hotelId === currentHotelId);
       onDataUpdate();
     },
     (err) => {
@@ -88,9 +120,21 @@ function listenOrders() {
 }
 
 function listenRequests() {
+  if (requestsUnsub) {
+    requestsUnsub();
+    requestsUnsub = null;
+  }
+
+  const hotelId = getHotelId();
+  if (!hotelId) {
+    state.requests = [];
+    onDataUpdate();
+    return;
+  }
+
   logFirestoreListen('Analytics Requests', paths.requestsCollection());
-  onSnapshot(
-    collection(db, 'Hotels', HOTEL_ID, 'Requests'),
+  requestsUnsub = onSnapshot(
+    collection(db, 'Hotels', hotelId, 'Requests'),
     (snapshot) => {
       hideConnectionError();
       state.requests = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));

@@ -46,4 +46,16 @@
     <string name="status_pending">Pending</string>
     <string name="status_preparing">Preparing</string>
     <string name="status_delivered">Delivered</string>
+    <string name="pairing_title">Pair this TV</string>
+    <string name="pairing_subtitle">Enter the Hotel ID from Super Admin (e.g. ikhsana_001). We verify Hotels/{id} in Firestore before saving.</string>
+    <string name="pairing_hotel_id_label">Hotel ID / Slug</string>
+    <string name="pairing_hotel_id_hint">ikhsana_001</string>
+    <string name="pairing_room_label">Room number</string>
+    <string name="pairing_room_hint">101</string>
+    <string name="pairing_submit">Pair &amp; Continue</string>
+    <string name="pairing_verifying">Pairing...</string>
+    <string name="pairing_hotel_inactive">This hotel is inactive. Contact your platform administrator.</string>
+    <string name="service_suspended_title">Service Suspended</string>
+    <string name="service_suspended_message">This hotel account is currently inactive. Guest services on this TV are temporarily unavailable.</string>
+    <string name="service_suspended_hint">Please contact the front desk or your platform administrator.</string>
 </resources>

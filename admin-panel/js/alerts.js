@@ -1,4 +1,4 @@
-import { db, HOTEL_ID } from './firebase-config.js';
+import { db } from './firebase-config.js';
 import {
   collection,
   doc,
@@ -14,6 +14,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 import { escapeHtml, formatTime, toast, showConnectionError, hideConnectionError } from './utils.js';
 import { normalizeRoom, paths, logFirestoreWrite, logFirestoreListen } from './paths.js';
+import { getHotelId, onHotelChange } from './tenant-context.js';
 
 const ALERT_PRESETS = {
   emergency: {
@@ -58,6 +59,7 @@ const TYPE_LABELS = {
 
 let broadcastsCache = [];
 let activePreset = null;
+let broadcastsUnsub = null;
 
 /**
  * Shared alert writer — used by broadcasts, manual alerts, and order-status notifications.
@@ -90,7 +92,7 @@ export async function writeRoomAlert({
   };
 
   const collectionPath = paths.alertsCollection();
-  const docRef = await addDoc(collection(db, 'Hotels', HOTEL_ID, 'Alerts'), payload);
+  const docRef = await addDoc(collection(db, 'Hotels', getHotelId(), 'Alerts'), payload);
   logFirestoreWrite(`Alert (${source})`, `${collectionPath}/${docRef.id}`, payload);
   return docRef.id;
 }
@@ -99,7 +101,27 @@ export function initAlerts() {
   setupBroadcastForm();
   setupPresetButtons();
   setupClearActiveButton();
-  listenBroadcastHistory();
+  setupTvPreview();
+  onHotelChange(() => {
+    listenBroadcastHistory();
+  });
+}
+
+function setupTvPreview() {
+  const titleInput = document.getElementById('broadcast-title');
+  const messageInput = document.getElementById('broadcast-message');
+  const titleEl = document.getElementById('tv-preview-title');
+  const bodyEl = document.getElementById('tv-preview-body');
+  if (!titleInput || !messageInput || !titleEl || !bodyEl) return;
+
+  const sync = () => {
+    titleEl.textContent = titleInput.value.trim() || 'Message Title';
+    bodyEl.textContent =
+      messageInput.value.trim() || 'Your broadcast copy will appear here on guest screens.';
+  };
+  titleInput.addEventListener('input', sync);
+  messageInput.addEventListener('input', sync);
+  sync();
 }
 
 function setupBroadcastForm() {
@@ -166,7 +188,7 @@ function setupBroadcastForm() {
       };
 
       const broadcastRef = await addDoc(
-        collection(db, 'Hotels', HOTEL_ID, 'Broadcasts'),
+        collection(db, 'Hotels', getHotelId(), 'Broadcasts'),
         broadcastPayload,
       );
       logFirestoreWrite('Broadcast', `${paths.broadcastsCollection()}/${broadcastRef.id}`, broadcastPayload);
@@ -206,7 +228,7 @@ async function deliverBroadcastToRooms({ broadcastId, targetRooms, title, messag
     const batch = writeBatch(db);
 
     chunk.forEach((roomNumber) => {
-      const alertRef = doc(collection(db, 'Hotels', HOTEL_ID, 'Alerts'));
+      const alertRef = doc(collection(db, 'Hotels', getHotelId(), 'Alerts'));
       batch.set(alertRef, {
         roomNumber: normalizeRoom(roomNumber),
         title,
@@ -232,7 +254,7 @@ async function deliverBroadcastToRooms({ broadcastId, targetRooms, title, messag
 }
 
 async function fetchAllRoomNumbers() {
-  const snapshot = await getDocs(collection(db, 'Hotels', HOTEL_ID, 'Rooms'));
+  const snapshot = await getDocs(collection(db, 'Hotels', getHotelId(), 'Rooms'));
   const rooms = snapshot.docs.map((d) => normalizeRoom(d.id)).filter(Boolean);
   if (rooms.length) return rooms.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
@@ -278,15 +300,27 @@ function setupClearActiveButton() {
 }
 
 function listenBroadcastHistory() {
+  if (broadcastsUnsub) {
+    broadcastsUnsub();
+    broadcastsUnsub = null;
+  }
+
+  const hotelId = getHotelId();
+  if (!hotelId) {
+    broadcastsCache = [];
+    renderBroadcastHistory([]);
+    return;
+  }
+
   const collectionPath = paths.broadcastsCollection();
   logFirestoreListen('Broadcasts', collectionPath);
 
   const q = query(
-    collection(db, 'Hotels', HOTEL_ID, 'Broadcasts'),
+    collection(db, 'Hotels', hotelId, 'Broadcasts'),
     orderBy('timestamp', 'desc'),
   );
 
-  onSnapshot(
+  broadcastsUnsub = onSnapshot(
     q,
     (snapshot) => {
       hideConnectionError();
@@ -359,14 +393,14 @@ function renderBroadcastRow(broadcast) {
 
 async function revokeBroadcast(broadcastId, title) {
   try {
-    await updateDoc(doc(db, 'Hotels', HOTEL_ID, 'Broadcasts', broadcastId), {
+    await updateDoc(doc(db, 'Hotels', getHotelId(), 'Broadcasts', broadcastId), {
       status: 'revoked',
       revokedAt: serverTimestamp(),
     });
     logFirestoreWrite('Broadcast Revoke', `${paths.broadcastsCollection()}/${broadcastId}`, { status: 'revoked' });
 
     const alertsQuery = query(
-      collection(db, 'Hotels', HOTEL_ID, 'Alerts'),
+      collection(db, 'Hotels', getHotelId(), 'Alerts'),
       where('broadcastId', '==', broadcastId),
     );
     const snapshot = await getDocs(alertsQuery);

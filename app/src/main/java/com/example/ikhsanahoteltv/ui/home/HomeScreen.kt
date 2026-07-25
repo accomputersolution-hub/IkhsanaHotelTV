@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -105,7 +106,11 @@ fun HomeScreen(
             .clip(RectangleShape)
             .background(NavyDeep),
     ) {
-        ResortBackground(modifier = Modifier.fillMaxSize())
+        ResortBackground(
+            modifier = Modifier.fillMaxSize(),
+            wallpaperUrl = uiState.guestProfile.bgWallpaperUrl
+                .ifBlank { uiState.branding.bgWallpaperUrl },
+        )
 
         HomeForegroundContent(
             modifier = Modifier.fillMaxSize(),
@@ -153,53 +158,105 @@ fun HomeScreen(
 }
 
 /**
- * Background layer — pure Compose gradients only.
- * Do NOT use [R.drawable.resort_background] here; that file is a full UI mockup screenshot
- * with baked-in guest names, clocks, and cards that ghost through any scrim.
+ * Background layer — optional Hotels/{id} branding wallpaper, else Compose gradients.
+ * Wallpaper uses [ContentScale.Crop] for full-bleed 16:9 coverage (no Fit/oval letterboxing),
+ * plus a dark gradient scrim so welcome text and nav tiles stay readable.
  */
 @Composable
-private fun ResortBackground(modifier: Modifier = Modifier) {
+private fun ResortBackground(
+    modifier: Modifier = Modifier,
+    wallpaperUrl: String = "",
+) {
     Box(
-        modifier = modifier.background(
-            Brush.horizontalGradient(
-                colorStops = arrayOf(
-                    0.0f to NavyDeep,
-                    0.55f to NavyMain,
-                    0.85f to Color(0xFF152238),
-                    1.0f to Color(0xFF1A2D45),
-                ),
-            ),
-        ),
+        modifier = modifier
+            .fillMaxSize()
+            .clip(RectangleShape)
+            .background(NavyDeep),
     ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
-                .fillMaxWidth(0.38f)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xFF1E3A52).copy(alpha = 0.55f),
-                            Color.Transparent,
+        if (wallpaperUrl.isNotBlank() && !isLegacyUnsafeImageUrl(wallpaperUrl)) {
+            AsyncImage(
+                model = wallpaperUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RectangleShape),
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.Center,
+            )
+            // Dark gradient scrim — keeps white/gold UI readable over any custom wallpaper.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colorStops = arrayOf(
+                                0.0f to Color.Black.copy(alpha = 0.58f),
+                                0.28f to Color.Black.copy(alpha = 0.32f),
+                                0.55f to Color.Black.copy(alpha = 0.38f),
+                                0.78f to Color.Black.copy(alpha = 0.55f),
+                                1.0f to Color.Black.copy(alpha = 0.72f),
+                            ),
                         ),
                     ),
-                ),
-        )
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0.0f to NavyDeep.copy(alpha = 0.4f),
-                            0.25f to Color.Transparent,
-                            0.75f to Color.Transparent,
-                            1.0f to NavyDeep,
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.horizontalGradient(
+                            colorStops = arrayOf(
+                                0.0f to Color.Black.copy(alpha = 0.22f),
+                                0.5f to Color.Transparent,
+                                1.0f to Color.Black.copy(alpha = 0.28f),
+                            ),
                         ),
                     ),
-                ),
-        )
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.horizontalGradient(
+                            colorStops = arrayOf(
+                                0.0f to NavyDeep,
+                                0.55f to NavyMain,
+                                0.85f to Color(0xFF152238),
+                                1.0f to Color(0xFF1A2D45),
+                            ),
+                        ),
+                    ),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .fillMaxWidth(0.38f)
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(
+                                    Color(0xFF1E3A52).copy(alpha = 0.55f),
+                                    Color.Transparent,
+                                ),
+                            ),
+                        ),
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colorStops = arrayOf(
+                                    0.0f to NavyDeep.copy(alpha = 0.4f),
+                                    0.25f to Color.Transparent,
+                                    0.75f to Color.Transparent,
+                                    1.0f to NavyDeep,
+                                ),
+                            ),
+                        ),
+                )
+            }
+        }
     }
 }
 
@@ -267,11 +324,15 @@ private fun HomeHeader(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
             modifier = Modifier.weight(1f),
         ) {
             BrandLogo(hotelLogoUrl = hotelLogoUrl)
-            Column {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 4.dp),
+            ) {
                 Text(
                     text = stringResource(R.string.brand_name),
                     fontSize = 26.sp,
@@ -279,6 +340,8 @@ private fun HomeHeader(
                     fontFamily = SerifDisplay,
                     color = TextPrimary,
                     letterSpacing = 2.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = stringResource(R.string.brand_subtitle),
@@ -287,6 +350,8 @@ private fun HomeHeader(
                     fontFamily = SansBody,
                     color = GoldPrimary,
                     letterSpacing = 3.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = stringResource(R.string.brand_tagline),
@@ -295,6 +360,8 @@ private fun HomeHeader(
                     fontFamily = SansBody,
                     color = GoldPrimary.copy(alpha = 0.75f),
                     letterSpacing = 2.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
@@ -313,39 +380,55 @@ private fun HomeHeader(
 
 @Composable
 private fun BrandLogo(hotelLogoUrl: String) {
-    if (hotelLogoUrl.isNotBlank()) {
-        AsyncImage(
-            model = hotelLogoUrl,
-            contentDescription = "Hotel Logo",
-            modifier = Modifier
-                .size(64.dp)
-                .clip(CircleShape)
-                .background(GoldPrimary.copy(alpha = 0.12f))
-                .borderGoldCircle(),
-            contentScale = ContentScale.Crop,
-        )
-    } else {
-        Box(
-            modifier = Modifier
-                .size(64.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            GoldPrimary.copy(alpha = 0.25f),
-                            NavyDeep.copy(alpha = 0.8f),
-                        ),
-                    ),
-                )
-                .borderGoldCircle(),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(text = "🪷", fontSize = 28.sp)
+    // Multi-color PNG (ic_logo) fallback — reliable on API 24.
+    // Never load remote SVG / unsupported formats on API 24 (Coil shows a broken "X").
+    val localLogo = painterResource(R.drawable.ic_logo)
+    val useRemote = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+        hotelLogoUrl.isNotBlank() &&
+        !isLegacyUnsafeImageUrl(hotelLogoUrl)
+
+    // Clean transparent logo slot — no gold circle frame; fitCenter so PNGs scale naturally.
+    Box(
+        modifier = Modifier
+            .width(110.dp)
+            .height(80.dp)
+            .padding(end = 8.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        if (useRemote) {
+            AsyncImage(
+                model = hotelLogoUrl,
+                contentDescription = "Hotel Logo",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(6.dp),
+                contentScale = ContentScale.Fit,
+                alignment = Alignment.CenterStart,
+                placeholder = localLogo,
+                error = localLogo,
+            )
+        } else {
+            androidx.compose.foundation.Image(
+                painter = localLogo,
+                contentDescription = "Hotel Logo",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(6.dp),
+                contentScale = ContentScale.Fit,
+                alignment = Alignment.CenterStart,
+            )
         }
     }
 }
 
-private fun Modifier.borderGoldCircle() = border(2.dp, GoldPrimary.copy(alpha = 0.65f), CircleShape)
+/** Remote SVG / vector URLs fail on API 24 without an SVG decoder. */
+private fun isLegacyUnsafeImageUrl(url: String): Boolean {
+    val lower = url.lowercase(Locale.US)
+    return lower.contains(".svg") ||
+        lower.contains("image/svg") ||
+        lower.contains("format=svg") ||
+        lower.contains("data:image/svg")
+}
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -560,7 +643,7 @@ private fun NavigationCardsRow(
         LuxuryNavCard(
             title = stringResource(R.string.feature_live_tv),
             subtitle = stringResource(R.string.feature_live_tv_subtitle),
-            icon = "📺",
+            iconRes = R.drawable.ic_live_tv,
             focusGlowColor = FocusCyan,
             modifier = Modifier
                 .weight(1f)
@@ -571,7 +654,7 @@ private fun NavigationCardsRow(
         LuxuryNavCard(
             title = stringResource(R.string.feature_dining),
             subtitle = stringResource(R.string.feature_dining_subtitle),
-            icon = "🍽️",
+            iconRes = R.drawable.ic_dining,
             focusGlowColor = FocusTeal,
             modifier = Modifier
                 .weight(1f)
@@ -582,7 +665,7 @@ private fun NavigationCardsRow(
         LuxuryNavCard(
             title = stringResource(R.string.feature_services),
             subtitle = stringResource(R.string.feature_services_subtitle),
-            icon = "🛎️",
+            iconRes = R.drawable.ic_services,
             focusGlowColor = FocusBlueTeal,
             modifier = Modifier
                 .weight(1f)
@@ -597,7 +680,7 @@ private fun NavigationCardsRow(
             } else {
                 stringResource(R.string.feature_alerts_subtitle)
             },
-            icon = "💬",
+            iconRes = R.drawable.ic_alerts,
             focusGlowColor = FocusRoyalBlue,
             modifier = Modifier
                 .weight(1f)

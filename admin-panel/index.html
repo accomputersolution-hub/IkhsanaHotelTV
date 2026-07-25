@@ -3,18 +3,324 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>IKHSANA RESORT & SPA — Admin</title>
+  <title>Hotel Master Admin Panel</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            obsidian: { DEFAULT: '#090D16', deep: '#0B132B', panel: '#0F1629' },
+            gold: { DEFAULT: '#C9A962', light: '#E8D5A3', muted: '#8B7355' },
+          },
+          fontFamily: {
+            display: ['"Cormorant Garamond"', 'Georgia', 'serif'],
+            sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/custom.css" />
+  <link rel="stylesheet" href="css/luxury-theme.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
-  <div id="toast" class="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl shadow-lg text-sm font-medium opacity-0 translate-y-4 transition-all duration-300"></div>
+  <div id="toast" class="toast opacity-0 translate-y-4" role="status"></div>
 
-  <div id="connection-error" class="hidden bg-red-600 text-white text-center py-2 text-sm px-4"></div>
+  <div id="connection-error" class="connection-error hidden"></div>
+
+  <!-- Account deactivated gate (hotel_admin when Hotels/{id}.status === inactive) -->
+  <div id="account-deactivated-gate" class="account-deactivated-gate hidden" role="alertdialog" aria-modal="true" aria-labelledby="account-deactivated-title">
+    <div class="account-deactivated-card">
+      <p class="account-deactivated-eyebrow">Account status</p>
+      <h2 id="account-deactivated-title" class="account-deactivated-title">Account Deactivated</h2>
+      <p class="account-deactivated-text">
+        This hotel account has been deactivated by the platform administrator.
+        PMS access is suspended until the property is reactivated.
+      </p>
+      <p id="account-deactivated-hotel" class="account-deactivated-hotel"></p>
+      <button type="button" class="btn-gold account-deactivated-logout" data-logout>Sign out</button>
+    </div>
+  </div>
+
+  <!-- ═══ LOGIN ═══ -->
+  <div id="login-shell" class="login-shell">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="logo-emblem" aria-hidden="true">
+          <svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M4 20V10l8-6 8 6v10H4z" stroke="currentColor" stroke-width="1.6"/><path d="M9 20v-6h6v6" stroke="currentColor" stroke-width="1.6"/></svg>
+        </div>
+        <h1>Hotel Master Admin</h1>
+        <p>Ultra-luxury multi-tenant property operations</p>
+      </div>
+      <form id="login-form" class="space-y-4">
+        <div>
+          <label for="login-email" class="block text-sm font-medium mb-1">Email</label>
+          <input id="login-email" type="email" required autocomplete="username" class="w-full px-4 py-2.5 rounded-xl outline-none" placeholder="admin@hotel.com" />
+        </div>
+        <div>
+          <label for="login-password" class="block text-sm font-medium mb-1">Password</label>
+          <input id="login-password" type="password" required autocomplete="current-password" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+        </div>
+        <button type="submit" class="w-full py-3 font-semibold rounded-xl btn-gold">Sign In</button>
+      </form>
+      <div id="bootstrap-gate" class="bootstrap-gate hidden">
+        <p class="bootstrap-gate-title">No user profile found</p>
+        <p class="bootstrap-gate-text">Initialize this account as <strong>Super Admin</strong> to unlock the master panel.</p>
+        <button id="bootstrap-super-admin" type="button" class="w-full py-3 font-semibold rounded-xl btn-gold">Bootstrap Super Admin</button>
+      </div>
+      <p class="login-hint">Auth: Email/Password · Routes: <code>#/login</code> · <code>#/super-admin</code> · <code>#/pms</code></p>
+    </div>
+  </div>
+
+  <!-- ═══ SUPER ADMIN ═══ -->
+  <div id="super-admin-shell" class="super-admin-shell hidden">
+    <header class="super-admin-header">
+      <div>
+        <h1 class="module-title">Super Admin Dashboard</h1>
+        <p class="sa-header-sub">Master panel · onboard hotels · impersonate tenants</p>
+      </div>
+      <div class="super-admin-header-actions">
+        <label class="impersonate-label">
+          <span>Manage hotel</span>
+          <select id="impersonate-hotel-select" class="impersonate-select" data-impersonate-select>
+            <option value="">— Select hotel to manage —</option>
+          </select>
+        </label>
+        <button id="add-hotel-btn" type="button" class="btn-gold">+ Add New Hotel</button>
+        <button id="super-admin-refresh" type="button" class="quick-btn">Refresh</button>
+        <button type="button" class="quick-btn" data-logout>Sign out</button>
+      </div>
+    </header>
+    <div class="super-admin-content">
+      <section class="sa-stats-grid" aria-label="Dashboard statistics">
+        <article class="sa-stat-card">
+          <div class="sa-stat-icon sa-stat-icon-hotels" aria-hidden="true"></div>
+          <div class="sa-stat-body">
+            <p class="sa-stat-label">Total Onboarded Hotels</p>
+            <p id="sa-stat-total-hotels" class="sa-stat-value">0</p>
+          </div>
+        </article>
+        <article class="sa-stat-card">
+          <div class="sa-stat-icon sa-stat-icon-active" aria-hidden="true"></div>
+          <div class="sa-stat-body">
+            <p class="sa-stat-label">Active Hotels</p>
+            <p id="sa-stat-active-hotels" class="sa-stat-value">0</p>
+          </div>
+        </article>
+        <article class="sa-stat-card">
+          <div class="sa-stat-icon sa-stat-icon-screens" aria-hidden="true"></div>
+          <div class="sa-stat-body">
+            <p class="sa-stat-label">Connected Screens</p>
+            <p id="sa-stat-screens" class="sa-stat-value">0</p>
+          </div>
+        </article>
+      </section>
+
+      <div class="module-card sa-hotels-card">
+        <div class="module-card-header">
+          <div>
+            <h2 class="text-base font-bold">Onboarded Hotels</h2>
+            <p class="text-xs mt-0.5">Firestore <code>Hotels/{hotel_id}</code> · live registry</p>
+          </div>
+        </div>
+        <div class="module-card-body overflow-auto">
+          <table class="hotels-table">
+            <thead>
+              <tr>
+                <th>Hotel Name</th>
+                <th>ID / Slug</th>
+                <th>Admin Email</th>
+                <th>Active TV Screens</th>
+                <th>Status</th>
+                <th class="text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="hotels-table-body">
+              <tr><td colspan="6" class="empty-state">Loading hotels…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Hotel Modal -->
+  <div id="add-hotel-modal" class="modal-overlay hidden">
+    <div class="modal-panel modal-panel-wide">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-lg font-bold">Add New Hotel</h3>
+        <button id="add-hotel-close" type="button" class="modal-close-btn">&times;</button>
+      </div>
+      <form id="add-hotel-form" class="space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="hotel-name" class="block text-sm font-medium mb-1">Hotel Name</label>
+            <input id="hotel-name" type="text" required placeholder="e.g. Ikhsana Resort & Spa" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+          </div>
+          <div>
+            <label for="hotel-slug" class="block text-sm font-medium mb-1">Unique Hotel ID / Slug</label>
+            <input id="hotel-slug" type="text" required placeholder="e.g. ikhsana_001" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="hotel-admin-email" class="block text-sm font-medium mb-1">Admin Email</label>
+            <input id="hotel-admin-email" type="email" required placeholder="gm@hotel.com" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+          </div>
+          <div>
+            <label for="hotel-admin-password" class="block text-sm font-medium mb-1">Password</label>
+            <input id="hotel-admin-password" type="password" required minlength="6" placeholder="Min 6 characters" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="hotel-logo-url" class="block text-sm font-medium mb-1">Logo URL</label>
+            <input id="hotel-logo-url" type="url" placeholder="https://…" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+          </div>
+          <div>
+            <label for="hotel-theme-color" class="block text-sm font-medium mb-1">Theme Color</label>
+            <input id="hotel-theme-color" type="color" value="#C9A962" class="w-full h-11 px-2 rounded-xl outline-none" />
+          </div>
+        </div>
+        <div>
+          <label for="hotel-bg-wallpaper" class="block text-sm font-medium mb-1">BG Wallpaper URL</label>
+          <input id="hotel-bg-wallpaper" type="url" placeholder="https://…" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+        </div>
+        <p class="text-xs" style="color:var(--text-dim)">Creates <code>Hotels/{slug}</code>, Auth user, and <code>users/{uid}</code> with role hotel_admin.</p>
+        <button type="submit" class="w-full py-3 font-semibold rounded-xl btn-gold">Create Hotel</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Hotel Modal -->
+  <div id="edit-hotel-modal" class="modal-overlay hidden">
+    <div class="modal-panel modal-panel-wide">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <h3 class="text-lg font-bold">Edit Hotel</h3>
+          <p class="text-xs mt-0.5" style="color:var(--text-muted)">
+            Updating <code id="edit-hotel-id-label" class="hotel-id-code">—</code>
+          </p>
+        </div>
+        <button id="edit-hotel-close" type="button" class="modal-close-btn">&times;</button>
+      </div>
+      <form id="edit-hotel-form" class="space-y-4">
+        <input type="hidden" id="edit-hotel-id" />
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="edit-hotel-name" class="block text-sm font-medium mb-1">Hotel Name</label>
+            <input
+              id="edit-hotel-name"
+              type="text"
+              required
+              spellcheck="false"
+              autocomplete="off"
+              class="sa-field w-full outline-none"
+            />
+          </div>
+          <div>
+            <label for="edit-hotel-admin-email" class="block text-sm font-medium mb-1">Admin Email</label>
+            <input
+              id="edit-hotel-admin-email"
+              type="email"
+              required
+              spellcheck="false"
+              autocomplete="off"
+              class="sa-field w-full outline-none"
+            />
+          </div>
+        </div>
+        <div>
+          <label for="edit-hotel-logo-url" class="block text-sm font-medium mb-1">Logo URL</label>
+          <input
+            id="edit-hotel-logo-url"
+            type="url"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="https://…"
+            class="sa-field w-full outline-none"
+          />
+          <div class="sa-media-preview mt-2">
+            <img id="edit-hotel-logo-preview" alt="Logo preview" class="sa-preview-img sa-preview-logo hidden" />
+            <span id="edit-hotel-logo-placeholder" class="sa-preview-placeholder">Logo preview</span>
+          </div>
+        </div>
+        <div>
+          <label for="edit-hotel-wallpaper-url" class="block text-sm font-medium mb-1">Wallpaper / Background Image URL</label>
+          <input
+            id="edit-hotel-wallpaper-url"
+            type="url"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="https://…"
+            class="sa-field w-full outline-none"
+          />
+          <div class="sa-media-preview sa-media-preview-wide mt-2">
+            <img id="edit-hotel-wallpaper-preview" alt="Wallpaper preview" class="sa-preview-img sa-preview-wallpaper hidden" />
+            <span id="edit-hotel-wallpaper-placeholder" class="sa-preview-placeholder">Wallpaper preview</span>
+          </div>
+        </div>
+        <div class="sa-status-toggle-row">
+          <div>
+            <p class="text-sm font-medium">Active Status</p>
+            <p class="text-xs" style="color:var(--text-dim)">Inactive hotels stay in the registry but are marked offline for ops.</p>
+          </div>
+          <label class="sa-toggle">
+            <input id="edit-hotel-active" type="checkbox" checked />
+            <span class="sa-toggle-track"></span>
+            <span id="edit-hotel-active-label" class="sa-toggle-label">Active</span>
+          </label>
+        </div>
+        <div class="hotel-row-actions" style="justify-content:flex-end">
+          <button id="edit-hotel-cancel" type="button" class="quick-btn">Cancel</button>
+          <button type="submit" class="btn-gold px-5 py-2.5 rounded-xl font-semibold">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Delete Hotel Modal -->
+  <div id="delete-hotel-modal" class="modal-overlay hidden">
+    <div class="modal-panel">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-bold" style="color:#FCA5A5">Delete Hotel</h3>
+        <button id="delete-hotel-close" type="button" class="modal-close-btn">&times;</button>
+      </div>
+      <p id="delete-hotel-prompt" class="text-sm mb-4" style="color:var(--text-muted); line-height:1.5"></p>
+      <div class="space-y-3">
+        <div>
+          <label for="delete-hotel-confirm-id" class="block text-sm font-medium mb-1">
+            Type Hotel ID to confirm
+            (<code id="delete-hotel-expected-id" class="hotel-id-code"></code>)
+          </label>
+          <input
+            id="delete-hotel-confirm-id"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Enter exact Hotel ID"
+            class="w-full px-4 py-2.5 rounded-xl outline-none"
+          />
+        </div>
+        <p class="text-xs" style="color:var(--text-dim)">
+          Removes <code>Hotels/{hotel_id}</code> (Rooms, Menu, Alerts, …), disassociates
+          <code>users/{uid}</code>, and disconnects guest TVs from this tenant.
+        </p>
+        <div class="hotel-row-actions" style="justify-content:flex-end; margin-top:0.5rem">
+          <button id="delete-hotel-cancel" type="button" class="quick-btn">Cancel</button>
+          <button id="delete-hotel-confirm-btn" type="button" class="quick-btn quick-btn-danger" disabled>
+            Delete permanently
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Menu Item Modal (Add / Edit) -->
   <div id="menu-item-modal" class="modal-overlay hidden">
@@ -124,78 +430,113 @@
     </div>
   </div>
 
-  <div class="app-shell">
+  <div id="app-shell" class="app-shell hidden">
 
     <!-- ═══ LEFT SIDEBAR ═══ -->
     <aside id="sidebar" class="sidebar">
       <div class="logo-block">
-        <div class="logo-emblem">✦</div>
+        <div class="logo-emblem" aria-hidden="true">
+          <svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M4 20V10l8-6 8 6v10H4z" stroke="currentColor" stroke-width="1.6"/><path d="M9 20v-6h6v6" stroke="currentColor" stroke-width="1.6"/></svg>
+        </div>
         <div class="logo-text">
           <div class="logo-title">IKHSANA RESORT<br />&amp; SPA</div>
           <div class="logo-sub">Property Management</div>
         </div>
       </div>
 
+      <div id="tenant-banner" class="tenant-banner hidden">
+        <span class="tenant-banner-label">Active property</span>
+        <span id="tenant-banner-name" class="tenant-banner-name">—</span>
+      </div>
+
       <nav class="sidebar-nav" aria-label="Main navigation">
         <button class="nav-item nav-item-active" data-module="pms" aria-current="page">
-          <span class="nav-icon">🏢</span><span class="nav-label">Room &amp; Guest PMS</span>
+          <span class="nav-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M3 10.5 12 3l9 7.5V21H3V10.5z" stroke="currentColor" stroke-width="1.7"/><path d="M9 21v-7h6v7" stroke="currentColor" stroke-width="1.7"/></svg></span>
+          <span class="nav-label">Room &amp; Guest PMS</span>
         </button>
         <button class="nav-item" data-module="kds">
-          <span class="nav-icon">🍳</span><span class="nav-label">Kitchen KDS</span>
+          <span class="nav-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M4 11h16v9H4v-9z" stroke="currentColor" stroke-width="1.7"/><path d="M8 11V7a4 4 0 018 0v4" stroke="currentColor" stroke-width="1.7"/><path d="M8 15h.01M12 15h.01M16 15h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span>
+          <span class="nav-label">Kitchen KDS</span>
         </button>
         <button class="nav-item" data-module="menu">
-          <span class="nav-icon">🍽️</span><span class="nav-label">Digital Menu Config</span>
+          <span class="nav-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M4 4h16v16H4V4z" stroke="currentColor" stroke-width="1.7"/><path d="M8 8h8M8 12h8M8 16h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+          <span class="nav-label">Digital Menu Config</span>
         </button>
         <button class="nav-item" data-module="messaging">
-          <span class="nav-icon">📺</span><span class="nav-label">TV Mass Messaging</span>
+          <span class="nav-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 21h8M12 17v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+          <span class="nav-label">TV Mass Messaging</span>
         </button>
         <button class="nav-item" data-module="housekeeping">
-          <span class="nav-icon">🧹</span><span class="nav-label">Housekeeping Queue</span>
+          <span class="nav-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M4 20h16M6 20V9l6-4 6 4v11" stroke="currentColor" stroke-width="1.7"/><path d="M9 13h6M9 16h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+          <span class="nav-label">Housekeeping Queue</span>
           <span id="nav-hk-badge" class="nav-pending-badge hidden">0</span>
         </button>
         <button class="nav-item" data-module="concierge">
-          <span class="nav-icon">🚖</span><span class="nav-label">Travel &amp; Concierge</span>
+          <span class="nav-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M3 13h18l-1.5 5H4.5L3 13z" stroke="currentColor" stroke-width="1.7"/><path d="M5 13 7 7h10l2 6M7 18.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM17 18.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" stroke="currentColor" stroke-width="1.7"/></svg></span>
+          <span class="nav-label">Travel &amp; Concierge</span>
         </button>
         <button class="nav-item" data-module="analytics">
-          <span class="nav-icon">📊</span><span class="nav-label">Executive Analytics</span>
+          <span class="nav-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M4 19h16M7 16V9M12 16V5M17 16v-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+          <span class="nav-label">Executive Analytics</span>
         </button>
       </nav>
 
       <div class="sidebar-footer">
-        <button id="sidebar-toggle" class="sidebar-toggle sidebar-footer-text" type="button">◀ Collapse</button>
+        <button id="open-super-admin-link" type="button" class="sidebar-footer-text hidden">← Super Admin</button>
+        <button type="button" class="sidebar-footer-text" data-logout>Sign out</button>
       </div>
     </aside>
 
     <!-- ═══ MAIN AREA ═══ -->
     <div class="main-area">
 
-      <div id="new-order-banner" class="hidden bg-amber-500 text-white text-center py-3 text-sm font-semibold shadow-lg shrink-0">
-        🔔 New room order received!
+      <div id="impersonation-bar" class="impersonation-bar hidden">
+        <span>Super Admin viewing <strong id="impersonation-hotel-name">—</strong></span>
+        <button id="back-to-super-admin" type="button" class="quick-btn">Back to Master Panel</button>
+      </div>
+
+      <div id="new-order-banner" class="new-order-banner hidden">
+        New room order received — Kitchen KDS updated
       </div>
 
       <!-- Sub-header -->
       <header class="sub-header">
         <div class="sub-header-left">
-          <h1 id="module-title" class="module-title">Room &amp; Guest PMS</h1>
+          <div class="module-title-wrap">
+            <p class="module-eyebrow">Operations</p>
+            <h1 id="module-title" class="module-title">Room &amp; Guest PMS</h1>
+          </div>
           <div class="search-wrap">
-            <input id="global-search" type="search" placeholder="Quick search rooms, orders, menu…" class="search-input" />
+            <input id="global-search" type="search" placeholder="Search rooms, orders, menu…" class="search-input" />
           </div>
         </div>
         <div class="sub-header-right">
+          <label id="pms-impersonate-wrap" class="impersonate-label pms-impersonate hidden">
+            <span>Hotel</span>
+            <select id="pms-impersonate-hotel-select" class="impersonate-select" data-impersonate-select>
+              <option value="">— Select hotel —</option>
+            </select>
+          </label>
           <div class="clock-block">
             <div id="live-clock" class="clock-time">--:--:--</div>
             <div id="live-date" class="clock-date">---</div>
           </div>
           <div id="pms-badge" class="pms-badge">
-            <span id="conn-dot" class="conn-dot connecting w-2 h-2 rounded-full inline-block"></span>
+            <span id="conn-dot" class="conn-dot connecting"></span>
             <span id="conn-label">Connecting…</span>
           </div>
-          <button id="sim-order-btn" class="quick-btn quick-btn-primary" type="button">+ Sim Order</button>
-          <button id="sim-request-btn" class="quick-btn" type="button">+ Sim Request</button>
-          <button id="bell-test-btn" class="quick-btn" type="button" title="Test bell">🔔</button>
-          <button id="bell-toggle-btn" class="quick-btn" type="button" title="Toggle bell">
-            <span id="bell-toggle-icon">🔔</span>
-          </button>
+          <div class="header-actions">
+            <button id="sim-order-btn" class="quick-btn quick-btn-primary" type="button">+ Sim Order</button>
+            <button id="sim-request-btn" class="quick-btn" type="button">+ Sim Request</button>
+            <button id="bell-test-btn" class="icon-btn" type="button" title="Test bell" aria-label="Test notification bell">
+              <svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M6 17h12l-1.2-1.2A2 2 0 0116 14.4V11a4 4 0 10-8 0v3.4a2 2 0 01-.8 1.4L6 17z" stroke="currentColor" stroke-width="1.7"/><path d="M10 19a2 2 0 004 0" stroke="currentColor" stroke-width="1.7"/></svg>
+            </button>
+            <button id="bell-toggle-btn" class="icon-btn" type="button" title="Toggle bell" aria-label="Toggle notification bell">
+              <span id="bell-toggle-icon" class="icon-btn-glyph">
+                <svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M6 17h12l-1.2-1.2A2 2 0 0116 14.4V11a4 4 0 10-8 0v3.4a2 2 0 01-.8 1.4L6 17z" stroke="currentColor" stroke-width="1.7"/><path d="M10 19a2 2 0 004 0" stroke="currentColor" stroke-width="1.7"/></svg>
+              </span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -208,7 +549,7 @@
             <div class="module-card-header">
               <div>
                 <h2 class="text-base font-bold">Room &amp; Guest Management</h2>
-                <p class="text-xs mt-0.5">Live sync to TV welcome headers · Hotels/ikhsana/Rooms</p>
+                <p class="text-xs mt-0.5">Live sync to TV welcome headers · Hotels/{hotelId}/Rooms</p>
               </div>
               <button id="add-room-btn" type="button" class="btn-gold">+ Add Room</button>
             </div>
@@ -246,22 +587,22 @@
           <div class="module-card">
             <div class="module-card-header">
               <div>
-                <h2 class="text-base font-bold text-slate-800">Kitchen Display System</h2>
-                <p class="text-xs text-slate-500">Live_Orders · Bell on new order</p>
+                <h2 class="text-base font-bold">Kitchen Display System</h2>
+                <p class="text-xs mt-0.5">Live_Orders · Bell on new order · real-time ticket board</p>
               </div>
               <div class="flex items-center gap-3">
                 <div class="filter-tabs">
                   <button class="filter-tab active" data-filter="all">All</button>
                   <button class="filter-tab" data-filter="pending">Pending</button>
-                  <button class="filter-tab" data-filter="preparing">Preparing</button>
-                  <button class="filter-tab" data-filter="delivered">Delivered</button>
+                  <button class="filter-tab" data-filter="preparing">Cooking</button>
+                  <button class="filter-tab" data-filter="delivered">Ready</button>
                 </div>
                 <span id="orders-count" class="count-badge">0</span>
               </div>
             </div>
             <div class="module-card-body">
-              <div id="orders-list" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                <div class="col-span-full text-center py-16 text-slate-400"><p>Loading orders…</p></div>
+              <div id="orders-list" class="kds-orders-grid">
+                <div class="col-span-full empty-state"><p>Loading orders…</p></div>
               </div>
             </div>
           </div>
@@ -273,7 +614,7 @@
             <div class="module-card-header">
               <div>
                 <h2 class="text-base font-bold">Digital Menu Configuration</h2>
-                <p class="text-xs mt-0.5">Live sync to guest TV · Hotels/ikhsana/Menu</p>
+                <p class="text-xs mt-0.5">Live sync to guest TV · Hotels/{hotelId}/Menu</p>
               </div>
               <div class="flex items-center gap-2 flex-wrap">
                 <span id="menu-count" class="count-badge">0</span>
@@ -292,12 +633,12 @@
 
         <!-- TV Messaging -->
         <div data-module-view="messaging" class="module-view hidden">
-          <div class="grid lg:grid-cols-2 gap-6 h-full min-h-0">
+          <div class="messaging-layout">
             <div class="module-card">
               <div class="module-card-header">
                 <div>
                   <h2 class="text-base font-bold">TV Mass Messaging</h2>
-                  <p class="text-xs mt-0.5">Broadcast overlays to guest TVs · Hotels/ikhsana/Alerts</p>
+                  <p class="text-xs mt-0.5">Compose overlays for guest TVs · Hotels/{hotelId}/Alerts</p>
                 </div>
                 <button id="clear-active-broadcast-btn" type="button" class="btn-gold btn-danger-outline">Clear Active Message</button>
               </div>
@@ -306,10 +647,10 @@
                   <div>
                     <label class="section-label block mb-2">Alert Preset</label>
                     <div class="alert-preset-grid">
-                      <button type="button" class="alert-preset-btn" data-preset="emergency">🚨 Emergency</button>
-                      <button type="button" class="alert-preset-btn" data-preset="event">📅 Event Notice</button>
-                      <button type="button" class="alert-preset-btn" data-preset="promotional">🎁 Promotional Offer</button>
-                      <button type="button" class="alert-preset-btn" data-preset="checkout">🧳 Checkout Reminder</button>
+                      <button type="button" class="alert-preset-btn" data-preset="emergency">Emergency</button>
+                      <button type="button" class="alert-preset-btn" data-preset="event">Event Notice</button>
+                      <button type="button" class="alert-preset-btn" data-preset="promotional">Promotional Offer</button>
+                      <button type="button" class="alert-preset-btn" data-preset="checkout">Checkout Reminder</button>
                     </div>
                   </div>
                   <div>
@@ -318,7 +659,7 @@
                   </div>
                   <div>
                     <label for="broadcast-message" class="block text-sm font-medium mb-1">Message Description</label>
-                    <textarea id="broadcast-message" rows="3" required placeholder="Buffet dinner is now open at Main Dining Hall…" class="w-full px-4 py-2.5 rounded-xl outline-none resize-none"></textarea>
+                    <textarea id="broadcast-message" rows="4" required placeholder="Buffet dinner is now open at Main Dining Hall…" class="w-full px-4 py-2.5 rounded-xl outline-none resize-none composer-textarea"></textarea>
                   </div>
                   <div>
                     <label class="block text-sm font-medium mb-2">Target</label>
@@ -356,6 +697,18 @@
                   </div>
                   <button type="submit" class="btn-broadcast w-full py-3 font-semibold rounded-xl">Send Broadcast</button>
                 </form>
+
+                <div class="tv-preview-panel" aria-hidden="true">
+                  <div class="tv-preview-bezel">
+                    <div class="tv-preview-screen">
+                      <p class="tv-preview-brand">Guest TV Preview</p>
+                      <div class="tv-preview-overlay">
+                        <p id="tv-preview-title" class="tv-preview-title">Message Title</p>
+                        <p id="tv-preview-body" class="tv-preview-body">Your broadcast copy will appear here on guest screens.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="module-card flex flex-col min-h-0">
@@ -487,35 +840,47 @@
               <!-- KPI Summary -->
               <div class="analytics-kpi-grid">
                 <div class="analytics-kpi-card analytics-kpi-occupancy">
-                  <div class="analytics-kpi-icon">🏨</div>
+                  <div class="analytics-kpi-icon" aria-hidden="true">
+                    <svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M3 10.5 12 3l9 7.5V21H3V10.5z" stroke="currentColor" stroke-width="1.6"/></svg>
+                  </div>
                   <div class="analytics-kpi-content">
                     <span class="analytics-kpi-label">Occupancy Rate</span>
                     <span id="ana-kpi-occupancy" class="analytics-kpi-value">—</span>
                     <span id="ana-kpi-occupancy-sub" class="analytics-kpi-sub">Loading rooms…</span>
+                    <span class="growth-badge growth-up">Live</span>
                   </div>
                 </div>
                 <div class="analytics-kpi-card analytics-kpi-revenue">
-                  <div class="analytics-kpi-icon">💰</div>
+                  <div class="analytics-kpi-icon" aria-hidden="true">
+                    <svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M12 3v18M7 8h7.5a2.5 2.5 0 010 5H9.5a2.5 2.5 0 000 5H17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                  </div>
                   <div class="analytics-kpi-content">
                     <span class="analytics-kpi-label">Today's Revenue</span>
                     <span id="ana-kpi-revenue" class="analytics-kpi-value">—</span>
                     <span id="ana-kpi-revenue-sub" class="analytics-kpi-sub">F&amp;B + Room charges</span>
+                    <span class="growth-badge growth-up">F&amp;B</span>
                   </div>
                 </div>
                 <div class="analytics-kpi-card analytics-kpi-requests">
-                  <div class="analytics-kpi-icon">📋</div>
+                  <div class="analytics-kpi-icon" aria-hidden="true">
+                    <svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M7 4h10v16H7V4z" stroke="currentColor" stroke-width="1.6"/><path d="M10 8h4M10 12h4M10 16h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                  </div>
                   <div class="analytics-kpi-content">
                     <span class="analytics-kpi-label">Active Guest Requests</span>
                     <span id="ana-kpi-requests" class="analytics-kpi-value">—</span>
                     <span id="ana-kpi-requests-sub" class="analytics-kpi-sub">Pending &amp; in-progress</span>
+                    <span class="growth-badge growth-amber">Queue</span>
                   </div>
                 </div>
                 <div class="analytics-kpi-card analytics-kpi-housekeeping">
-                  <div class="analytics-kpi-icon">🧹</div>
+                  <div class="analytics-kpi-icon" aria-hidden="true">
+                    <svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M4 20h16M6 20V9l6-4 6 4v11" stroke="currentColor" stroke-width="1.6"/></svg>
+                  </div>
                   <div class="analytics-kpi-content">
                     <span class="analytics-kpi-label">Pending Housekeeping</span>
                     <span id="ana-kpi-housekeeping" class="analytics-kpi-value">—</span>
                     <span id="ana-kpi-housekeeping-sub" class="analytics-kpi-sub">Requests &amp; room turnover</span>
+                    <span class="growth-badge growth-amber">Ops</span>
                   </div>
                 </div>
               </div>

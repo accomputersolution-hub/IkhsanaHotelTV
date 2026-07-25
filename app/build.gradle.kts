@@ -19,9 +19,12 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        // Multi-tenant defaults — override per device via adb or provisioning
-        buildConfigField("String", "DEFAULT_HOTEL_ID", "\"ikhsana\"")
+        // Multi-tenant defaults — hotel id is paired at runtime via PairingActivity
         buildConfigField("String", "DEFAULT_ROOM_NUMBER", "\"101\"")
+
+        vectorDrawables {
+            useSupportLibrary = true
+        }
     }
 
     buildTypes {
@@ -47,10 +50,12 @@ dependencies {
 
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.cardview)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)
