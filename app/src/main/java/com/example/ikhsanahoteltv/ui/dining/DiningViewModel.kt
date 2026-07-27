@@ -31,10 +31,10 @@ data class DiningUiState(
     /** Non-null while the QR dialog is shown. Carries the total so the dialog can display it. */
     val pendingQrTotal: Double? = null,
     /**
-     * True once the room-status snapshot has arrived and the room is OCCUPIED.
-     * Defaults to true so the UI is never accidentally blocked before the first snapshot.
+     * False until Firestore confirms OCCUPIED. Fail-closed so vacant rooms
+     * cannot place orders before the first snapshot arrives.
      */
-    val roomOccupied: Boolean = true,
+    val roomOccupied: Boolean = false,
     /** Show the "room not checked-in" blocking dialog. */
     val showVacantRoomDialog: Boolean = false,
 ) {
@@ -157,6 +157,10 @@ class DiningViewModel(
     fun confirmQrPayment() {
         val state = _uiState.value
         if (state.pendingQrTotal == null || state.isPlacingOrder) return
+        if (!state.roomOccupied) {
+            _uiState.update { it.copy(pendingQrTotal = null, showVacantRoomDialog = true) }
+            return
+        }
         _uiState.update { it.copy(pendingQrTotal = null) }
         submitOrder(state)
     }
@@ -167,6 +171,10 @@ class DiningViewModel(
     }
 
     private fun submitOrder(state: DiningUiState) {
+        if (!state.roomOccupied) {
+            _uiState.update { it.copy(showVacantRoomDialog = true, isPlacingOrder = false) }
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(isPlacingOrder = true, orderMessage = null) }
             val order = LiveOrder(
@@ -194,9 +202,16 @@ class DiningViewModel(
                         )
                     }
                 }
-                .onFailure {
+                .onFailure { err ->
+                    val vacant = err.message?.contains("Checked-In", ignoreCase = true) == true ||
+                        err.message?.contains("not occupied", ignoreCase = true) == true
                     _uiState.update {
-                        it.copy(isPlacingOrder = false, orderMessage = "error")
+                        it.copy(
+                            isPlacingOrder = false,
+                            orderMessage = if (vacant) null else "error",
+                            showVacantRoomDialog = vacant,
+                            roomOccupied = if (vacant) false else it.roomOccupied,
+                        )
                     }
                 }
         }

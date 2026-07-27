@@ -110,8 +110,13 @@ class FirestoreRepository(
 
     /**
      * Hotels/{hotelId}/Rooms/{room} — live occupancy status for *this* TV's room only.
-     * Emits [RoomStatus.occupied] = true only when status is "occupied" or guestName is set.
-     * Defaults to occupied=true so the UI is not blocked if Firestore is unreachable.
+     *
+     * Occupancy matches admin PMS [deriveStatus]:
+     * - status == "occupied" → occupied
+     * - status in vacant/housekeeping/maintenance/needs_cleaning → NOT occupied
+     * - guestName "Guest" is a vacant placeholder, NOT a real guest
+     *
+     * Fail-closed: missing/error → occupied=false so orders cannot be placed blindly.
      */
     fun observeThisRoomStatus(): Flow<RoomStatus> = callbackFlow {
         val docPath = FirestorePaths.roomDocument(hotelId, roomNumber)
@@ -125,39 +130,51 @@ class FirestoreRepository(
             .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
                 if (error != null) {
                     Log.e(TAG, "FAIL ThisRoom status listener: ${error.message}", error)
-                    // Fail-open: allow services when Firestore is down
-                    trySend(RoomStatus(roomNumber = roomNumber, occupied = true, status = "occupied"))
+                    trySend(RoomStatus(roomNumber = roomNumber, occupied = false, status = "unknown"))
                     return@addSnapshotListener
                 }
                 if (snapshot == null || !snapshot.exists()) {
-                    Log.d(TAG, "EMPTY ThisRoom doc missing: $docPath — defaulting occupied=true")
-                    trySend(RoomStatus(roomNumber = roomNumber, occupied = true, status = "occupied"))
+                    Log.d(TAG, "EMPTY ThisRoom doc missing: $docPath — fail-closed vacant")
+                    trySend(RoomStatus(roomNumber = roomNumber, occupied = false, status = "vacant"))
                     return@addSnapshotListener
                 }
-                val data = snapshot.data ?: emptyMap()
-                val guestName = data["guestName"] as? String ?: ""
-                val status = firstNonBlank(
-                    data["status"] as? String,
-                    data["roomStatus"] as? String,
-                ).lowercase()
-                val occupied = guestName.isNotBlank() ||
-                    (data["occupied"] as? Boolean == true) ||
-                    status == "occupied"
-                val roomStatus = RoomStatus(
-                    roomNumber = roomNumber,
-                    guestName = guestName,
-                    status = status.ifBlank { if (occupied) "occupied" else "vacant" },
-                    sessionKey = data["sessionKey"] as? String ?: "",
-                    occupied = occupied,
-                    checkInDate = data["checkInDate"] as? String ?: "",
-                    checkOutDate = data["checkOutDate"] as? String ?: "",
+                val roomStatus = parseRoomStatus(roomNumber, snapshot.data ?: emptyMap())
+                Log.d(
+                    TAG,
+                    "OK ThisRoom status → occupied=${roomStatus.occupied} " +
+                        "status=${roomStatus.status} guest=${roomStatus.guestName}",
                 )
-                Log.d(TAG, "OK ThisRoom status → occupied=$occupied status=${roomStatus.status}")
                 trySend(roomStatus)
             }
         awaitClose {
             Log.d(TAG, "UNLISTEN ThisRoom status → $docPath")
             listener.remove()
+        }
+    }
+
+    /**
+     * One-shot occupancy check used as a hard gate before writing orders / service requests.
+     * Throws if the room is not occupied so [runCatching] surfaces a failure to the ViewModel.
+     */
+    private suspend fun requireRoomOccupied() {
+        val snap = firestore
+            .collection(FirestorePaths.HOTELS)
+            .document(hotelId)
+            .collection(FirestorePaths.ROOMS)
+            .document(roomNumber)
+            .get()
+            .await()
+        if (!snap.exists()) {
+            throw IllegalStateException("Room $roomNumber not found — cannot place order")
+        }
+        val room = parseRoomStatus(roomNumber, snap.data ?: emptyMap())
+        if (!room.occupied) {
+            Log.w(
+                TAG,
+                "BLOCKED write — room $roomNumber is not occupied " +
+                    "(status=${room.status}, guest=${room.guestName})",
+            )
+            throw IllegalStateException("Room is not currently Checked-In")
         }
     }
 
@@ -186,25 +203,7 @@ class FirestoreRepository(
                 }
 
                 val rooms = snapshot.documents.map { doc ->
-                    val data = doc.data ?: emptyMap()
-                    val guestName = data["guestName"] as? String ?: ""
-                    val status = firstNonBlank(
-                        data["status"] as? String,
-                        data["roomStatus"] as? String,
-                    )
-                    RoomStatus(
-                        roomNumber = doc.id,
-                        guestName = guestName,
-                        status = status.ifBlank {
-                            if (guestName.isNotBlank()) "occupied" else "vacant"
-                        },
-                        sessionKey = data["sessionKey"] as? String ?: "",
-                        occupied = guestName.isNotBlank() ||
-                            (data["occupied"] as? Boolean == true) ||
-                            status.equals("occupied", ignoreCase = true),
-                        checkInDate = data["checkInDate"] as? String ?: "",
-                        checkOutDate = data["checkOutDate"] as? String ?: "",
-                    )
+                    parseRoomStatus(doc.id, doc.data ?: emptyMap())
                 }.sortedBy { it.roomNumber }
 
                 Log.d(
@@ -313,24 +312,7 @@ class FirestoreRepository(
                 }
                 onRooms(
                     docs.map { doc ->
-                        val data = doc.data ?: emptyMap()
-                        val guestName = data["guestName"] as? String ?: ""
-                        val status = firstNonBlank(
-                            data["status"] as? String,
-                            data["roomStatus"] as? String,
-                        )
-                        RoomStatus(
-                            roomNumber = doc.id,
-                            guestName = guestName,
-                            status = status.ifBlank {
-                                if (guestName.isNotBlank()) "occupied" else "vacant"
-                            },
-                            sessionKey = data["sessionKey"] as? String ?: "",
-                            occupied = guestName.isNotBlank() ||
-                                (data["occupied"] as? Boolean == true),
-                            checkInDate = data["checkInDate"] as? String ?: "",
-                            checkOutDate = data["checkOutDate"] as? String ?: "",
-                        )
+                        parseRoomStatus(doc.id, doc.data ?: emptyMap())
                     },
                 )
             }
@@ -483,6 +465,7 @@ class FirestoreRepository(
     }
 
     suspend fun placeOrder(order: LiveOrder): Result<String> = runCatching {
+        requireRoomOccupied()
         val docRef = firestore.collection(FirestorePaths.LIVE_ORDERS).document()
         val payload = hashMapOf(
             "hotelId" to HotelConfig.normalizeHotelId(order.hotelId.ifBlank { hotelId }),
@@ -526,6 +509,7 @@ class FirestoreRepository(
         serviceLabel: String,
         guestName: String,
     ): Result<String> = runCatching {
+        requireRoomOccupied()
         val path = FirestorePaths.requestsCollection(hotelId)
         val docRef = firestore
             .collection(FirestorePaths.HOTELS)
@@ -602,6 +586,68 @@ class FirestoreRepository(
 
     private fun firstNonBlank(vararg values: String?): String =
         values.firstOrNull { !it.isNullOrBlank() }.orEmpty()
+
+    /**
+     * Parse a Rooms/{id} document into [RoomStatus].
+     * Mirrors admin-panel `deriveStatus` in guests.js / analytics.js:
+     * - Explicit status wins when it is a known PMS status.
+     * - Placeholder guestName "Guest" does NOT mean occupied.
+     * - Only a real guest name (or status=occupied / occupied=true / guest_checked_in=true)
+     *   marks the room as occupied for TV order/service writes.
+     */
+    private fun parseRoomStatus(roomId: String, data: Map<String, Any?>): RoomStatus {
+        val guestName = (data["guestName"] as? String)?.trim().orEmpty()
+        val rawStatus = firstNonBlank(
+            data["status"] as? String,
+            data["roomStatus"] as? String,
+            data["room_status"] as? String,
+        ).lowercase()
+
+        val knownNonOccupied = setOf(
+            "vacant",
+            "housekeeping",
+            "maintenance",
+            "needs_cleaning",
+            "checked_out",
+            "checkout",
+            "dirty",
+        )
+
+        val guestCheckedIn = data["guest_checked_in"] as? Boolean
+            ?: data["guestCheckedIn"] as? Boolean
+            ?: data["checkedIn"] as? Boolean
+
+        val occupiedFlag = data["occupied"] as? Boolean
+        val hasRealGuest = guestName.isNotBlank() &&
+            !guestName.equals("Guest", ignoreCase = true)
+
+        val occupied = when {
+            guestCheckedIn == false -> false
+            occupiedFlag == false -> false
+            rawStatus in knownNonOccupied -> false
+            rawStatus == "occupied" -> true
+            guestCheckedIn == true -> true
+            occupiedFlag == true -> true
+            hasRealGuest -> true
+            else -> false
+        }
+
+        val status = when {
+            rawStatus.isNotBlank() -> rawStatus
+            occupied -> "occupied"
+            else -> "vacant"
+        }
+
+        return RoomStatus(
+            roomNumber = roomId,
+            guestName = guestName,
+            status = status,
+            sessionKey = data["sessionKey"] as? String ?: "",
+            occupied = occupied,
+            checkInDate = data["checkInDate"] as? String ?: "",
+            checkOutDate = data["checkOutDate"] as? String ?: "",
+        )
+    }
 
     /** Map Hotels/{hotelId} document fields → [HotelBranding]. */
     private fun parseHotelBranding(hotelId: String, data: Map<String, Any?>): HotelBranding {

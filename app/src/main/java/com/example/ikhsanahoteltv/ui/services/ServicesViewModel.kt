@@ -31,8 +31,8 @@ data class ServicesUiState(
     val toastMessage: String? = null,
     val toastType: ServiceToastType = ServiceToastType.SUCCESS,
     val activeRequests: List<ServiceRequest> = emptyList(),
-    /** True when the room's Firestore doc shows the room is OCCUPIED. Defaults to true (fail-open). */
-    val roomOccupied: Boolean = true,
+    /** True when the room's Firestore doc shows the room is OCCUPIED. Fail-closed until known. */
+    val roomOccupied: Boolean = false,
     /** Show the "room not checked-in" blocking dialog. */
     val showVacantRoomDialog: Boolean = false,
 )
@@ -128,9 +128,21 @@ class ServicesViewModel(
                 knownRequestStatuses[requestId] = "pending"
                 showToast("Request sent to Front Desk!", ServiceToastType.SUCCESS)
                 _uiState.update { it.copy(isSubmitting = false) }
-            }.onFailure {
-                showToast("Could not send request. Please try again.", ServiceToastType.ERROR)
-                _uiState.update { it.copy(isSubmitting = false) }
+            }.onFailure { err ->
+                val vacant = err.message?.contains("Checked-In", ignoreCase = true) == true ||
+                    err.message?.contains("not occupied", ignoreCase = true) == true
+                if (vacant) {
+                    _uiState.update {
+                        it.copy(
+                            isSubmitting = false,
+                            showVacantRoomDialog = true,
+                            roomOccupied = false,
+                        )
+                    }
+                } else {
+                    showToast("Could not send request. Please try again.", ServiceToastType.ERROR)
+                    _uiState.update { it.copy(isSubmitting = false) }
+                }
             }
         }
     }
