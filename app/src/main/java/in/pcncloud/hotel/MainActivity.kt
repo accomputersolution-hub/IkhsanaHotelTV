@@ -1,5 +1,8 @@
 package `in`.pcncloud.hotel
 
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
@@ -26,6 +29,7 @@ import `in`.pcncloud.hotel.data.model.HotelBranding
 import `in`.pcncloud.hotel.data.repository.FirestoreRepository
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskRemoteConfig
+import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.ScreensaverOverlay
 import `in`.pcncloud.hotel.ui.components.ServiceSuspendedScreen
@@ -46,8 +50,8 @@ import kotlinx.coroutines.delay
  * (see AndroidManifest). Back behaviour is owned primarily by [HotelNavGraph]; this
  * Activity callback is a safety net when Compose has not consumed the event.
  *
- * Lock Task Mode is driven live from Firebase Realtime Database
- * `app_config/is_kiosk_mode_enabled` (Web Admin Panel).
+ * Lock Task Mode and its package whitelist are driven live from Firebase Realtime
+ * Database (`app_config/is_kiosk_mode_enabled`, `app_config/allowed_packages`).
  */
 class MainActivity : ComponentActivity() {
 
@@ -58,6 +62,10 @@ class MainActivity : ComponentActivity() {
     /** RTDB listener for live kiosk / Lock Task control from Web Admin. */
     private var kioskModeRef: DatabaseReference? = null
     private var kioskModeListener: ValueEventListener? = null
+
+    /** RTDB listener for Lock Task package whitelist from Web Admin. */
+    private var allowedPackagesRef: DatabaseReference? = null
+    private var allowedPackagesListener: ValueEventListener? = null
 
     /** Last value applied from RTDB (also mirrored in [KioskPolicy]). */
     private var isKioskModeEnabled: Boolean = true
@@ -84,6 +92,7 @@ class MainActivity : ComponentActivity() {
 
         // Live Web Admin control via Realtime Database.
         attachKioskModeRealtimeListener()
+        attachAllowedPackagesRealtimeListener()
 
         installKioskBackSafetyNet()
 
@@ -220,6 +229,66 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * Firebase Realtime Database listener for `app_config/allowed_packages`.
+     * Web Admin updates this list to control which apps may run under Lock Task Mode.
+     */
+    private fun attachAllowedPackagesRealtimeListener() {
+        try {
+            val ref = FirebaseDatabase.getInstance()
+                .getReference(RTDB_ALLOWED_PACKAGES_PATH)
+            val listener = object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    val packageList = snapshot.children.mapNotNull { child ->
+                        child.getValue(String::class.java)?.trim()?.takeIf { it.isNotEmpty() }
+                    }
+                    Log.i(
+                        TAG,
+                        "RTDB $RTDB_ALLOWED_PACKAGES_PATH → count=${packageList.size} $packageList",
+                    )
+                    applyLockTaskPackages(packageList)
+                }
+
+                override fun onCancelled(error: DatabaseError) {
+                    Log.w(TAG, "Allowed packages RTDB listener cancelled: ${error.message}")
+                }
+            }
+            ref.addValueEventListener(listener)
+            allowedPackagesRef = ref
+            allowedPackagesListener = listener
+            Log.i(TAG, "Attached RTDB listener → $RTDB_ALLOWED_PACKAGES_PATH")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to attach allowed packages RTDB listener", e)
+        }
+    }
+
+    /**
+     * Apply Lock Task package whitelist via [DevicePolicyManager.setLockTaskPackages].
+     * Always includes this app's [packageName] so we cannot lock ourselves out.
+     * No-op (safe) when not device owner.
+     */
+    private fun applyLockTaskPackages(packageList: List<String>) {
+        try {
+            val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val adminName = ComponentName(this, MyDeviceAdminReceiver::class.java)
+
+            if (!dpm.isDeviceOwnerApp(packageName)) {
+                Log.w(TAG, "Not device owner — skip setLockTaskPackages")
+                return
+            }
+
+            val finalArray = (packageList + packageName).distinct().toTypedArray()
+            dpm.setLockTaskPackages(adminName, finalArray)
+            Log.i(TAG, "setLockTaskPackages → ${finalArray.toList()}")
+        } catch (e: SecurityException) {
+            Log.w(TAG, "setLockTaskPackages security exception", e)
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "setLockTaskPackages invalid args", e)
+        } catch (e: Exception) {
+            Log.w(TAG, "setLockTaskPackages failed", e)
+        }
+    }
+
+    /**
      * Start / stop Lock Task Mode. Wrapped safely — devices that are not device-owner
      * (or not allowlisted for lock task) throw; we must never crash the guest UI.
      */
@@ -334,6 +403,16 @@ class MainActivity : ComponentActivity() {
         kioskModeListener = null
         kioskModeRef = null
 
+        allowedPackagesListener?.let { listener ->
+            try {
+                allowedPackagesRef?.removeEventListener(listener)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to remove allowed packages RTDB listener", e)
+            }
+        }
+        allowedPackagesListener = null
+        allowedPackagesRef = null
+
         syncListeners.forEach { registration ->
             registration.remove()
         }
@@ -353,6 +432,8 @@ class MainActivity : ComponentActivity() {
         private const val TAG = "MainActivity"
         /** Firebase Realtime Database path controlled by the Web Admin Panel. */
         private const val RTDB_KIOSK_PATH = "app_config/is_kiosk_mode_enabled"
+        /** Lock Task package whitelist controlled by the Web Admin Panel. */
+        private const val RTDB_ALLOWED_PACKAGES_PATH = "app_config/allowed_packages"
         /** 10 minutes of no remote / touch input before the screen saver appears. */
         private const val INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000L
     }

@@ -109,6 +109,21 @@
             </intent-filter>
         </receiver>
 
+        <!-- Device-owner admin for Lock Task package whitelist (setLockTaskPackages). -->
+        <receiver
+            android:name=".kiosk.MyDeviceAdminReceiver"
+            android:description="@string/device_admin_description"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
         <!--
           Optional kiosk keep-alive. START_STICKY must never relaunch UI on its own;
           bring-to-front is gated by KioskPolicy (kiosk ON or crash recovery only).
