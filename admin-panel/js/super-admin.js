@@ -144,7 +144,7 @@ function renderHotelsTable(hotels) {
       const statusLabel = isActive ? 'Active' : 'Inactive';
       const brand = brandingOf(h);
       return `
-      <tr data-searchable data-search-text="${escapeHtml(`${h.name} ${h.id} ${h.adminEmail}`)}">
+      <tr data-searchable data-hotel-id="${escapeHtml(h.id)}" data-search-text="${escapeHtml(`${h.name} ${h.id} ${h.adminEmail}`)}">
         <td>
           <div class="sa-hotel-name-cell">
             ${
@@ -198,8 +198,16 @@ function renderHotelsTable(hotels) {
 
   tbody.querySelectorAll('.kiosk-settings-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const id = btn.getAttribute('data-id');
-      if (id) openKioskSettingsModal(id);
+      const hotelId =
+        btn.getAttribute('data-id') ||
+        btn.closest('tr')?.getAttribute('data-hotel-id');
+      console.log('Opening Kiosk Settings for Hotel ID:', hotelId);
+      if (!hotelId) {
+        toast('Hotel ID not found', 'error');
+        return;
+      }
+      window.currentKioskHotelId = hotelId;
+      openKioskSettingsModal(hotelId);
     });
   });
 
@@ -572,14 +580,35 @@ function resetKioskSaveButton() {
   saveBtn.classList.remove('opacity-50', 'cursor-not-allowed');
 }
 
+/**
+ * Fire-and-forget RTDB mirror — must NEVER block the Save button finally{} path.
+ * A hanging RTDB write was the root cause of infinite "Saving...".
+ */
+function mirrorKioskConfigToRtdb(hotelId, isKioskModeEnabled, allowedPackages) {
+  Promise.resolve()
+    .then(async () => {
+      const base = `hotels/${hotelId}/config`;
+      await Promise.all([
+        rtdbSet(rtdbRef(rtdb, `${base}/is_kiosk_mode_enabled`), isKioskModeEnabled),
+        rtdbSet(rtdbRef(rtdb, `${base}/allowed_packages`), allowedPackages),
+      ]);
+      console.log('[super-admin] RTDB kiosk mirror OK →', base);
+    })
+    .catch((rtdbErr) => {
+      console.warn('[super-admin] RTDB kiosk mirror skipped', rtdbErr);
+    });
+}
+
 function setupKioskSettingsModal() {
   setupModalClose('kiosk-settings-modal', 'kiosk-settings-close');
   document.getElementById('kiosk-settings-close')?.addEventListener('click', () => {
+    window.currentKioskHotelId = null;
     kioskHotelId = null;
     resetKioskSaveButton();
   });
   document.getElementById('kiosk-settings-x')?.addEventListener('click', () => {
     closeModal('kiosk-settings-modal');
+    window.currentKioskHotelId = null;
     kioskHotelId = null;
     resetKioskSaveButton();
   });
@@ -594,55 +623,70 @@ function setupKioskSettingsModal() {
     saveBtn.dataset.kioskSaveBound = '1';
     saveBtn.addEventListener('click', async (e) => {
       e.preventDefault();
-      e.stopPropagation();
 
-      if (!kioskHotelId) {
-        toast('No hotel selected', 'error');
+      const hotelId =
+        window.currentKioskHotelId ||
+        kioskHotelId ||
+        document.getElementById('kiosk-hotel-id')?.value;
+
+      if (!hotelId) {
+        alert('Error: Hotel ID not found!');
+        resetKioskSaveButton();
         return;
       }
 
-      // Only flip to "Saving..." inside the explicit click handler.
-      saveBtn.disabled = true;
-      saveBtn.innerText = 'Saving...';
-      saveBtn.classList.add('opacity-50', 'cursor-not-allowed');
-
-      const isKioskModeEnabled = Boolean(document.getElementById('kiosk-mode-toggle')?.checked);
-      const allowedPackages = parseAllowedPackagesInput(
-        document.getElementById('kiosk-packages-input')?.value,
+      const isKioskModeEnabled = Boolean(
+        document.getElementById('kiosk-mode-toggle')?.checked,
       );
+      const packagesText = document.getElementById('kiosk-packages-input')?.value || '';
+      const allowedPackages = packagesText
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      saveBtn.innerText = 'Saving...';
+      saveBtn.disabled = true;
 
       try {
-        await updateDoc(doc(db, 'Hotels', kioskHotelId), {
+        console.log('Updating Firestore doc:', `Hotels/${hotelId}`, {
           isKioskModeEnabled,
           allowedPackages,
-          updatedAt: serverTimestamp(),
         });
 
-        // Mirror to RTDB so paired Android TVs receive instant Lock Task updates.
-        try {
-          const base = `hotels/${kioskHotelId}/config`;
-          await Promise.all([
-            rtdbSet(rtdbRef(rtdb, `${base}/is_kiosk_mode_enabled`), isKioskModeEnabled),
-            rtdbSet(rtdbRef(rtdb, `${base}/allowed_packages`), allowedPackages),
-          ]);
-        } catch (rtdbErr) {
-          console.warn('[super-admin] RTDB kiosk mirror skipped', rtdbErr);
-        }
+        const hotelRef = doc(db, 'Hotels', hotelId);
+        await updateDoc(hotelRef, {
+          isKioskModeEnabled,
+          allowedPackages,
+          updatedAt: new Date().toISOString(),
+        });
 
-        const cached = hotelsCache.find((h) => h.id === kioskHotelId);
+        console.log('Successfully saved Kiosk settings!');
+
+        // Do not await RTDB — prevents infinite "Saving..." if RTDB hangs.
+        mirrorKioskConfigToRtdb(hotelId, isKioskModeEnabled, allowedPackages);
+
+        const cached = hotelsCache.find((h) => h.id === hotelId);
         if (cached) {
           cached.isKioskModeEnabled = isKioskModeEnabled;
           cached.allowedPackages = allowedPackages;
         }
 
-        closeModal('kiosk-settings-modal');
-        toast(`Kiosk settings saved for ${kioskHotelId}`);
+        if (typeof closeModal === 'function') {
+          closeModal('kiosk-settings-modal');
+        } else {
+          document.getElementById('kiosk-settings-modal')?.classList.add('hidden');
+        }
+
+        toast('Settings saved successfully!');
+        window.currentKioskHotelId = null;
         kioskHotelId = null;
-      } catch (err) {
-        console.error('[super-admin] save kiosk settings failed', err);
-        toast(err.message || 'Failed to save kiosk settings', 'error');
+      } catch (error) {
+        console.error('Firestore Update Error:', error);
+        alert('Failed to save settings: ' + (error?.message || String(error)));
       } finally {
-        resetKioskSaveButton();
+        saveBtn.innerText = 'Save Changes';
+        saveBtn.disabled = false;
+        saveBtn.classList.remove('opacity-50', 'cursor-not-allowed');
       }
     });
   }
@@ -654,7 +698,10 @@ function setupKioskSettingsModal() {
  */
 async function openKioskSettingsModal(hotelId) {
   if (!hotelId) return;
+
+  window.currentKioskHotelId = hotelId;
   kioskHotelId = hotelId;
+  console.log('Opening Kiosk Settings for Hotel ID:', hotelId);
 
   const nameEl = document.getElementById('kiosk-hotel-name');
   const idField = document.getElementById('kiosk-hotel-id');
@@ -674,6 +721,7 @@ async function openKioskSettingsModal(hotelId) {
     const snap = await getDoc(doc(db, 'Hotels', hotelId));
     if (!snap.exists()) {
       toast('Hotel not found', 'error');
+      window.currentKioskHotelId = null;
       kioskHotelId = null;
       resetKioskSaveButton();
       return;
@@ -697,6 +745,7 @@ async function openKioskSettingsModal(hotelId) {
   } catch (err) {
     console.error('[super-admin] open kiosk settings failed', err);
     toast(err.message || 'Could not load kiosk settings', 'error');
+    window.currentKioskHotelId = null;
     kioskHotelId = null;
     resetKioskSaveButton();
   }
