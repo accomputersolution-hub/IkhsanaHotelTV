@@ -32,14 +32,6 @@ android {
         buildConfigField("String", "DEFAULT_ROOM_NUMBER", "\"101\"")
         // Staff Master PIN for TV Admin Mode (in-memory session only; change per hotel build if needed)
         buildConfigField("String", "DEFAULT_MASTER_PIN", "\"1234\"")
-        // Force-update JSON endpoint (never leave empty). Override here or in UpdateManager.
-        // Default: public raw file on this repo. For Drive use:
-        // "https://drive.google.com/uc?export=download&id=<FILE_ID>"
-        buildConfigField(
-            "String",
-            "UPDATE_JSON_URL",
-            "\"https://raw.githubusercontent.com/accomputersolution-hub/IkhsanaHotelTV/main/update-config.json\"",
-        )
 
         vectorDrawables {
             useSupportLibrary = true

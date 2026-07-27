@@ -26,7 +26,6 @@ import `in`.pcncloud.hotel.data.model.HotelBranding
 import `in`.pcncloud.hotel.data.repository.FirestoreRepository
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskRemoteConfig
-import `in`.pcncloud.hotel.update.UpdateManager
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.ScreensaverOverlay
 import `in`.pcncloud.hotel.ui.components.ServiceSuspendedScreen
@@ -79,7 +78,6 @@ class MainActivity : ComponentActivity() {
 
         repository = FirestoreRepository(hotelConfig)
         val viewModelFactory = HotelViewModelFactory(repository, hotelConfig)
-        UpdateManager.checkForUpdates(this)
 
         Log.d(TAG, "TV Firestore sync starting → hotelId=$hotelId room=${hotelConfig.roomNumber}")
         Log.d(TAG, "Path Hotels/{hotelId} → ${FirestorePaths.hotelDocument(hotelId)}")
