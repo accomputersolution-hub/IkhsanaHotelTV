@@ -99,6 +99,14 @@
     <string name="splash_overlay_granted">Overlay permission granted</string>
     <string name="splash_overlay_denied">Overlay permission not enabled — continuing…</string>
     <string name="splash_overlay_denied_toast">Display over other apps was not enabled. Some background features may be limited.</string>
+    <string name="update_available_title">Update Available</string>
+    <string name="update_available_message">A new version (%1$s) is available. Update now to get the latest features and fixes.</string>
+    <string name="update_button_now">Update</string>
+    <string name="update_button_later">Later</string>
+    <string name="update_downloading">Downloading update…</string>
+    <string name="update_download_complete">Download complete. Opening installer…</string>
+    <string name="update_download_failed">Could not download update. Please try again.</string>
+    <string name="update_install_permission_needed">Allow install from this app to continue the update.</string>
     <string name="kiosk_notification_channel">Hotel TV keep-alive</string>
     <string name="kiosk_notification_channel_desc">Optional kiosk foreground service — does not reopen the app on minimize</string>
     <string name="kiosk_notification_title">Hotel TV</string>

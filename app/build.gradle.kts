@@ -15,7 +15,7 @@ android {
     signingConfigs {
         create("release") {
             storeFile = file("../pcncloud-release.jks")
-            storePassword = "YOUR_KEYSTORE_PASSWORD"
+            storePassword = "Superman@007"
             keyAlias = "pcncloud-key"
             keyPassword = "Superman@007"
         }
@@ -75,6 +75,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil)
     implementation(libs.firebase.firestore)
+    implementation("com.google.firebase:firebase-config-ktx")
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

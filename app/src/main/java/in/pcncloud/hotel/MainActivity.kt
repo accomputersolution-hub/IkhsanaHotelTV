@@ -22,6 +22,7 @@ import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.data.model.HotelBranding
 import `in`.pcncloud.hotel.data.repository.FirestoreRepository
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
+// import `in`.pcncloud.hotel.update.UpdateManager
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.ServiceSuspendedScreen
 import `in`.pcncloud.hotel.ui.navigation.HotelNavGraph
@@ -54,6 +55,8 @@ class MainActivity : ComponentActivity() {
 
         repository = FirestoreRepository(hotelConfig)
         val viewModelFactory = HotelViewModelFactory(repository, hotelConfig)
+        // Temporarily disabled — re-enable when Remote Config update flow is ready.
+        // UpdateManager.checkForUpdates(this)
 
         Log.d(TAG, "TV Firestore sync starting → hotelId=$hotelId room=${hotelConfig.roomNumber}")
         Log.d(TAG, "Path Hotels/{hotelId} → ${FirestorePaths.hotelDocument(hotelId)}")
