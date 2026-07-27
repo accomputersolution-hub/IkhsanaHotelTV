@@ -159,10 +159,9 @@ class MainActivity : ComponentActivity() {
         // Live Web Admin control via RTDB hotels/{hotelId}/config.
         attachKioskConfigRealtimeListener(hotelId)
 
-        // Only prompt Home selection when kiosk is ON (avoid relaunch loops when unlocked).
+        // Prompt Home picker when kiosk is ON and we are not yet the default launcher.
         if (resolveKioskEnabled() && !isDefaultHomeLauncher()) {
-            requestHomeLauncherSelection(this)
-            checkAndPromptDefaultLauncher()
+            openDefaultHomePicker()
         }
 
         repository = FirestoreRepository(hotelConfig)
@@ -257,6 +256,35 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * Triggers the Android Default Home picker so staff can set this app as the
+     * system launcher (required for Lock Task / Home eligibility on TV).
+     */
+    private fun openDefaultHomePicker() {
+        try {
+            val intent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            startActivity(intent)
+            Log.i(TAG, "openDefaultHomePicker — HOME chooser intent fired")
+        } catch (e: Exception) {
+            Log.w(TAG, "HOME chooser failed — opening Home settings", e)
+            try {
+                val intent = Intent(Settings.ACTION_HOME_SETTINGS)
+                startActivity(intent)
+            } catch (ex: Exception) {
+                Log.e(TAG, "ACTION_HOME_SETTINGS also failed", ex)
+                e.printStackTrace()
+                try {
+                    startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+                } catch (ex2: Exception) {
+                    Log.e(TAG, "Could not open default-apps settings", ex2)
+                }
+            }
+        }
+    }
+
+    /**
      * Triggers the system Home-app chooser (or brings this launcher forward).
      * Required so Android TV surfaces this app in Home / default-launcher selection.
      */
@@ -270,29 +298,6 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "requestHomeLauncherSelection — fired HOME intent")
         } catch (e: Exception) {
             Log.e(TAG, "requestHomeLauncherSelection failed", e)
-        }
-    }
-
-    /**
-     * If this app is not the current default HOME launcher, open system Home settings
-     * so staff can set PCN Cloud / Hotel TV as the default launcher.
-     */
-    private fun checkAndPromptDefaultLauncher() {
-        if (isDefaultHomeLauncher()) {
-            Log.i(TAG, "Already default HOME launcher → $packageName")
-            return
-        }
-
-        Log.w(TAG, "Not default HOME launcher — prompting Home settings")
-        try {
-            startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
-        } catch (e: Exception) {
-            Log.w(TAG, "ACTION_HOME_SETTINGS unavailable, falling back", e)
-            try {
-                startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
-            } catch (e2: Exception) {
-                Log.e(TAG, "Could not open default-apps settings", e2)
-            }
         }
     }
 
@@ -433,11 +438,27 @@ class MainActivity : ComponentActivity() {
     /**
      * Apply Lock Task package whitelist via [DevicePolicyManager.setLockTaskPackages]
      * and suppress system UI with [DevicePolicyManager.setLockTaskFeatures]
-     * (`LOCK_TASK_FEATURE_NONE`). Merges Firebase packages + hotel app + YouTube / Live TV.
+     * (`LOCK_TASK_FEATURE_NONE`). Persists Admin packages for [KioskPolicy.canLaunchApp].
      */
     private fun applyLockTaskPackages(allowedPackagesList: List<String>) {
+        KioskPolicy.setAllowedPackagesList(this, allowedPackagesList)
         KioskLockTask.applyAllowlist(this, allowedPackagesList)
         MyDeviceAdminReceiver.applyStrictLockTaskFeatures(this)
+    }
+
+    /**
+     * Validates whether an external app may be launched.
+     * When Kiosk Mode is OFF → allow everything.
+     * When Kiosk Mode is ON → only packages explicitly in the Admin whitelist.
+     */
+    fun canLaunchApp(targetPackageName: String): Boolean {
+        // If Kiosk Mode is disabled, allow launching everything
+        if (!isKioskModeEnabled) return true
+
+        // If Kiosk Mode is ENABLED, check if the package is explicitly whitelisted
+        val allowedPackagesList = lastAppliedAllowedPackages
+            ?: KioskPolicy.getAllowedPackagesList(this)
+        return allowedPackagesList.contains(targetPackageName)
     }
 
     /**

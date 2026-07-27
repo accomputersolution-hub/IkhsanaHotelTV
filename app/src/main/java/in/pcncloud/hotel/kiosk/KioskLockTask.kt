@@ -9,13 +9,12 @@ import android.content.ContextWrapper
 import android.content.Intent
 import android.os.Build
 import android.util.Log
-import `in`.pcncloud.hotel.integration.OnyxIptvLauncher
 
 /**
  * Device-owner Lock Task helpers for hotel kiosk.
  *
  * Keeps Home/Back from escaping to the stock Android TV launcher while kiosk is ON,
- * including when guests are inside allowlisted apps (YouTube / Live TV).
+ * including when guests are inside Admin-whitelisted apps (YouTube / Live TV).
  */
 object KioskLockTask {
 
@@ -23,18 +22,13 @@ object KioskLockTask {
 
     const val YOUTUBE_TV_PACKAGE = "com.google.android.youtube.tv"
 
-    /** Baseline packages always merged into the Lock Task allowlist when kiosk is ON. */
-    val BASELINE_ALLOWED_PACKAGES: List<String> = listOf(
-        YOUTUBE_TV_PACKAGE,
-        OnyxIptvLauncher.PACKAGE_NAME,
-    )
-
     fun adminComponent(context: Context): ComponentName =
         MyDeviceAdminReceiver.getComponentName(context)
 
     /**
      * Registers Lock Task packages + suppresses system overlays/home chrome.
-     * [firebasePackages] are merged with this app + baseline OTT packages.
+     * [firebasePackages] are the explicit Admin whitelist, merged only with this hotel app.
+     * YouTube / Live TV must be listed in Admin `allowedPackages` to be launchable.
      */
     fun applyAllowlist(context: Context, firebasePackages: List<String>) {
         try {
@@ -47,11 +41,7 @@ object KioskLockTask {
                 return
             }
 
-            val allowedApps = (
-                firebasePackages +
-                    ourPackage +
-                    BASELINE_ALLOWED_PACKAGES
-                )
+            val allowedApps = (firebasePackages + ourPackage)
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
                 .distinct()
@@ -120,10 +110,21 @@ object KioskLockTask {
     }
 
     /**
+     * Same as [KioskPolicy.canLaunchApp] — convenience for launch call sites.
+     */
+    fun canLaunchApp(context: Context, targetPackageName: String): Boolean =
+        KioskPolicy.canLaunchApp(context, targetPackageName)
+
+    /**
      * Launch an allowlisted package under Lock Task with safe Intent flags.
      * @return true if startActivity was attempted successfully
      */
     fun launchAllowlistedPackage(context: Context, targetPackage: String): Boolean {
+        if (!canLaunchApp(context, targetPackage)) {
+            Log.w(TAG, "Refusing launch — kiosk ON and $targetPackage not whitelisted")
+            return false
+        }
+
         ensureLockTaskActive(context)
 
         val pm = context.packageManager

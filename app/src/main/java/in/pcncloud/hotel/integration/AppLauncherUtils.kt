@@ -36,6 +36,16 @@ object AppLauncherUtils {
      * Otherwise → open Google Play Store (market://, then https fallback).
      */
     fun launchOrInstall(context: Context, packageName: String, appLabel: String = packageName) {
+        if (!KioskPolicy.canLaunchApp(context, packageName)) {
+            Log.w(TAG, "Blocked by kiosk whitelist → $packageName")
+            Toast.makeText(
+                context,
+                context.getString(R.string.kiosk_app_not_allowed, appLabel),
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
+
         if (isAppInstalled(context, packageName)) {
             launchInstalledApp(context, packageName, appLabel)
         } else {
@@ -46,6 +56,16 @@ object AppLauncherUtils {
     private fun launchInstalledApp(context: Context, packageName: String, appLabel: String) {
         // Prefer Lock Task–safe path when kiosk is ON (or always — ensureLockTask is no-op if off).
         if (KioskLockTask.launchAllowlistedPackage(context, packageName)) {
+            return
+        }
+
+        // Do not fall through to a raw startActivity while kiosk is ON.
+        if (KioskPolicy.isKioskModeEnabled(context)) {
+            Toast.makeText(
+                context,
+                context.getString(R.string.entertainment_launch_failed, appLabel),
+                Toast.LENGTH_LONG,
+            ).show()
             return
         }
 
@@ -64,7 +84,6 @@ object AppLauncherUtils {
         }
 
         try {
-            KioskLockTask.ensureLockTaskActive(context)
             KioskPolicy.markExternalAppSession(context)
             launchIntent.addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,

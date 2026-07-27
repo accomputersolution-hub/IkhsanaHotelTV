@@ -38,6 +38,12 @@ object KioskPolicy {
     private const val KEY_PENDING_CRASH_RECOVERY = "pending_crash_recovery"
     private const val KEY_EXTERNAL_APP_UNTIL = "external_app_until_ms"
 
+    /** Explicit Admin whitelist from RTDB `hotels/{id}/config/allowedPackages`. */
+    private const val KEY_ALLOWED_PACKAGES = "allowedPackages"
+
+    /** MainActivity / Admin camelCase flag (preferred over [KEY_KIOSK_ENABLED] when set). */
+    private const val KEY_KIOSK_ENABLED_CAMEL = "isKioskModeEnabled"
+
     /** How long [onUserLeaveHint] may skip reclaim after launching YouTube / IPTV / etc. */
     private const val EXTERNAL_APP_SESSION_MS = 4 * 60 * 60 * 1000L // 4 hours of OTT viewing
 
@@ -70,7 +76,40 @@ object KioskPolicy {
      */
     fun isKioskModeEnabled(context: Context): Boolean {
         migrateIfNeeded(context)
-        return prefs(context).getBoolean(KEY_KIOSK_ENABLED, true)
+        val p = prefs(context)
+        // Prefer camelCase key written by MainActivity RTDB sync.
+        if (p.contains(KEY_KIOSK_ENABLED_CAMEL)) {
+            return p.getBoolean(KEY_KIOSK_ENABLED_CAMEL, false)
+        }
+        return p.getBoolean(KEY_KIOSK_ENABLED, true)
+    }
+
+    /** Persist Super Admin package whitelist for launch-time validation. */
+    fun setAllowedPackagesList(context: Context, packages: List<String>) {
+        val cleaned = packages.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        prefs(context).edit().putStringSet(KEY_ALLOWED_PACKAGES, cleaned).apply()
+        Log.i(TAG, "allowedPackages=${cleaned.size} → $cleaned")
+    }
+
+    fun getAllowedPackagesList(context: Context): List<String> =
+        prefs(context).getStringSet(KEY_ALLOWED_PACKAGES, emptySet())?.toList().orEmpty()
+
+    /**
+     * Validates whether an external app may be launched.
+     * When Kiosk Mode is OFF → allow everything.
+     * When Kiosk Mode is ON → only packages explicitly in the Admin whitelist.
+     */
+    fun canLaunchApp(context: Context, targetPackageName: String): Boolean {
+        if (!isKioskModeEnabled(context)) return true
+        val allowed = getAllowedPackagesList(context)
+        val ok = allowed.contains(targetPackageName.trim())
+        if (!ok) {
+            Log.w(
+                TAG,
+                "Blocked launch of $targetPackageName — not in allowedPackages ($allowed)",
+            )
+        }
+        return ok
     }
 
     fun setKioskModeEnabled(
