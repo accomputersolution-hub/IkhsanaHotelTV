@@ -1,10 +1,10 @@
 package `in`.pcncloud.hotel
 
-import android.app.admin.DevicePolicyManager
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
 import android.view.WindowManager
@@ -28,8 +28,8 @@ import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.data.model.HotelBranding
 import `in`.pcncloud.hotel.data.repository.FirestoreRepository
+import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
-import `in`.pcncloud.hotel.kiosk.KioskRemoteConfig
 import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.ScreensaverOverlay
@@ -38,7 +38,11 @@ import `in`.pcncloud.hotel.ui.navigation.HotelNavGraph
 import `in`.pcncloud.hotel.ui.theme.IkhsanaHotelTVTheme
 import `in`.pcncloud.hotel.ui.theme.NavyDeep
 import com.google.firebase.FirebaseApp
-import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.DatabaseReference
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
 import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.delay
 
@@ -47,9 +51,8 @@ import kotlinx.coroutines.delay
  * (see AndroidManifest). Back behaviour is owned primarily by [HotelNavGraph]; this
  * Activity callback is a safety net when Compose has not consumed the event.
  *
- * Lock Task Mode and package whitelist are driven live from Firestore
- * `Hotels/{hotelId}` fields `isKioskModeEnabled` and `allowedPackages`
- * (Super Admin → Kiosk Settings).
+ * Lock Task Mode is driven live from Realtime Database
+ * `hotels/{hotelId}/config/isKioskModeEnabled` (Super Admin → Kiosk Settings).
  */
 class MainActivity : ComponentActivity() {
 
@@ -57,17 +60,21 @@ class MainActivity : ComponentActivity() {
     private lateinit var repository: FirestoreRepository
     private val syncListeners = mutableListOf<ListenerRegistration>()
 
-    /** Firestore listener on Hotels/{hotelId} for live kiosk / Lock Task control. */
-    private var hotelKioskListener: ListenerRegistration? = null
+    /** RTDB listener on hotels/{hotelId}/config for live kiosk / Lock Task control. */
+    private var kioskConfigRef: DatabaseReference? = null
+    private var kioskConfigListener: ValueEventListener? = null
 
     /**
-     * Latest kiosk flag from Firestore (null until first cloud snapshot).
+     * Latest kiosk flag from RTDB (null until first cloud snapshot).
      * Prefer this over defaults so Admin unlock is not overwritten on resume.
      */
     private var currentKioskState: Boolean? = null
 
     /** @deprecated Prefer [resolveKioskEnabled] — kept in sync for existing call sites. */
     private var isKioskModeEnabled: Boolean = false
+
+    /** Last packages applied from RTDB — skip no-op snapshot repeats. */
+    private var lastAppliedAllowedPackages: List<String>? = null
 
     /** Bumped on any remote / touch interaction so the idle timer restarts. */
     private var lastInteractionAt by mutableLongStateOf(System.currentTimeMillis())
@@ -79,7 +86,7 @@ class MainActivity : ComponentActivity() {
         applicationContext.getSharedPreferences(KIOSK_PREFS, Context.MODE_PRIVATE)
 
     /**
-     * Authoritative local kiosk flag: in-memory Firestore value, else SharedPreferences.
+     * Authoritative local kiosk flag: in-memory RTDB value, else SharedPreferences.
      * Default **false** so a missing/stale preference never re-locks after Admin unlock.
      */
     private fun resolveKioskEnabled(): Boolean =
@@ -133,22 +140,10 @@ class MainActivity : ComponentActivity() {
             FirebaseApp.initializeApp(this)
         }
 
-        // Seed from last persisted Admin/Firestore value (default unlocked until cloud says otherwise).
+        // Seed from last persisted RTDB value (default unlocked until cloud says otherwise).
         isKioskModeEnabled = resolveKioskEnabled()
         applyKeepScreenOn(isKioskModeEnabled)
         applyLockTaskFromPersistedState("onCreate")
-
-        // Remote Config is fallback only — never override a Firestore-delivered unlock.
-        KioskRemoteConfig.syncOnLaunch(this) { enabled ->
-            if (currentKioskState != null) {
-                Log.i(TAG, "Skip Remote Config kiosk=$enabled — Firestore already set $currentKioskState")
-                return@syncOnLaunch
-            }
-            Log.i(TAG, "Kiosk mode after Remote Config sync → $enabled")
-            persistKioskState(enabled)
-            applyKeepScreenOn(enabled)
-            applyLockTaskFromPersistedState("remoteConfig")
-        }
 
         installKioskBackSafetyNet()
 
@@ -161,8 +156,14 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        // Live Web Admin control via Firestore Hotels/{hotelId}.
-        attachHotelKioskFirestoreListener(hotelId)
+        // Live Web Admin control via RTDB hotels/{hotelId}/config.
+        attachKioskConfigRealtimeListener(hotelId)
+
+        // Only prompt Home selection when kiosk is ON (avoid relaunch loops when unlocked).
+        if (resolveKioskEnabled() && !isDefaultHomeLauncher()) {
+            requestHomeLauncherSelection(this)
+            checkAndPromptDefaultLauncher()
+        }
 
         repository = FirestoreRepository(hotelConfig)
         val viewModelFactory = HotelViewModelFactory(repository, hotelConfig)
@@ -241,107 +242,202 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Live Firestore listener on `Hotels/{hotelId}`.
-     * Super Admin Kiosk Settings writes `isKioskModeEnabled` + `allowedPackages`
-     * on this document — TVs apply Lock Task instantly.
-     */
-    private fun attachHotelKioskFirestoreListener(hotelId: String) {
-        try {
-            hotelKioskListener?.remove()
-            hotelKioskListener = FirebaseFirestore.getInstance()
-                .collection(FirestorePaths.HOTELS)
-                .document(hotelId)
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        Log.e(TAG, "Hotels/$hotelId kiosk listener error: ${error.message}", error)
-                        return@addSnapshotListener
-                    }
-                    if (snapshot == null || !snapshot.exists()) {
-                        Log.w(TAG, "Hotels/$hotelId missing — keeping kiosk=$isKioskModeEnabled")
-                        return@addSnapshotListener
-                    }
-
-                    val isKioskEnabled = snapshot.getBoolean("isKioskModeEnabled") ?: true
-                    @Suppress("UNCHECKED_CAST")
-                    val allowedPackages = (snapshot.get("allowedPackages") as? List<*>)
-                        ?.mapNotNull { (it as? String)?.trim()?.takeIf(String::isNotEmpty) }
-                        .orEmpty()
-
-                    Log.i(
-                        TAG,
-                        "Firestore Hotels/$hotelId → isKioskModeEnabled=$isKioskEnabled " +
-                            "allowedPackages=${allowedPackages.size} $allowedPackages",
-                    )
-
-                    // Persist so onResume / focus cannot re-lock after Admin unlock.
-                    if (KioskPolicy.hasAdminOverride(this)) {
-                        KioskPolicy.clearAdminOverride(this)
-                    }
-                    persistKioskState(isKioskEnabled)
-                    applyKeepScreenOn(isKioskEnabled)
-                    applyLockTaskPackages(allowedPackages)
-
-                    if (isKioskEnabled) {
-                        try {
-                            startLockTask()
-                            Log.d("KioskMode", "Lock Task Mode ENABLED")
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                            Log.w(TAG, "startLockTask failed", e)
-                        }
-                    } else {
-                        try {
-                            stopLockTask()
-                            Log.d("KioskMode", "Lock Task Mode DISABLED")
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                            Log.w(TAG, "stopLockTask failed", e)
-                        }
-                    }
-                }
-            Log.i(TAG, "Attached Firestore kiosk listener → Hotels/$hotelId")
+    /** True when this package is the resolved default HOME launcher. */
+    private fun isDefaultHomeLauncher(): Boolean {
+        return try {
+            val intent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+            }
+            val resolveInfo = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            resolveInfo?.activityInfo?.packageName == packageName
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to attach Hotels/$hotelId kiosk listener", e)
+            Log.w(TAG, "isDefaultHomeLauncher check failed", e)
+            false
         }
     }
 
     /**
-     * Apply Lock Task package whitelist via [DevicePolicyManager.setLockTaskPackages].
-     * Combines Firebase [allowedPackages] + this app + YouTube TV so guests can leave
-     * Lock Task into allowlisted OTT apps without being blocked by the system.
-     * No-op (safe) when not device owner.
+     * Triggers the system Home-app chooser (or brings this launcher forward).
+     * Required so Android TV surfaces this app in Home / default-launcher selection.
      */
-    private fun applyLockTaskPackages(allowedPackagesList: List<String>) {
+    fun requestHomeLauncherSelection(context: Context) {
         try {
-            val adminName = ComponentName(this, MyDeviceAdminReceiver::class.java)
-            val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val intent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+            Log.i(TAG, "requestHomeLauncherSelection — fired HOME intent")
+        } catch (e: Exception) {
+            Log.e(TAG, "requestHomeLauncherSelection failed", e)
+        }
+    }
 
-            if (!dpm.isDeviceOwnerApp(packageName)) {
-                Log.w(TAG, "Not device owner — skip setLockTaskPackages")
-                return
+    /**
+     * If this app is not the current default HOME launcher, open system Home settings
+     * so staff can set PCN Cloud / Hotel TV as the default launcher.
+     */
+    private fun checkAndPromptDefaultLauncher() {
+        if (isDefaultHomeLauncher()) {
+            Log.i(TAG, "Already default HOME launcher → $packageName")
+            return
+        }
+
+        Log.w(TAG, "Not default HOME launcher — prompting Home settings")
+        try {
+            startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
+        } catch (e: Exception) {
+            Log.w(TAG, "ACTION_HOME_SETTINGS unavailable, falling back", e)
+            try {
+                startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+            } catch (e2: Exception) {
+                Log.e(TAG, "Could not open default-apps settings", e2)
+            }
+        }
+    }
+
+    /**
+     * Live RTDB listener on `hotels/{hotelId}/config`.
+     * Reads `isKioskModeEnabled` and applies Lock Task immediately on change.
+     */
+    private fun attachKioskConfigRealtimeListener(hotelId: String) {
+        try {
+            detachKioskConfigRealtimeListener()
+
+            val ref = FirebaseDatabase
+                .getInstance(FirebaseApp.getInstance(), RTDB_URL)
+                .getReference("hotels/$hotelId/config")
+            val listener = object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    if (!snapshot.exists()) {
+                        Log.w(TAG, "RTDB hotels/$hotelId/config missing — keeping kiosk=$isKioskModeEnabled")
+                        return
+                    }
+
+                    val isKioskEnabled = readKioskEnabledFromConfig(snapshot) ?: run {
+                        Log.w(
+                            TAG,
+                            "RTDB hotels/$hotelId/config has no isKioskModeEnabled — " +
+                                "keeping kiosk=$isKioskModeEnabled",
+                        )
+                        return
+                    }
+                    val allowedPackages = readAllowedPackagesFromConfig(snapshot)
+
+                    val kioskChanged = currentKioskState != isKioskEnabled
+                    val packagesChanged = lastAppliedAllowedPackages != allowedPackages
+
+                    Log.i(
+                        TAG,
+                        "RTDB hotels/$hotelId/config → isKioskModeEnabled=$isKioskEnabled " +
+                            "allowedPackages=${allowedPackages.size} " +
+                            "kioskChanged=$kioskChanged packagesChanged=$packagesChanged",
+                    )
+
+                    // Ignore no-op syncs — prevents relaunch / Lock Task churn while disabled.
+                    if (!kioskChanged && !packagesChanged && currentKioskState != null) {
+                        Log.d(TAG, "RTDB kiosk snapshot unchanged — skip apply")
+                        return
+                    }
+
+                    if (KioskPolicy.hasAdminOverride(this@MainActivity)) {
+                        KioskPolicy.clearAdminOverride(this@MainActivity)
+                    }
+
+                    if (kioskChanged || currentKioskState == null) {
+                        persistKioskState(isKioskEnabled)
+                        applyKeepScreenOn(isKioskEnabled)
+                        if (isKioskEnabled) {
+                            try {
+                                startLockTask()
+                                Log.d("KioskMode", "Lock Task Mode ENABLED")
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                                Log.w(TAG, "startLockTask failed", e)
+                            }
+                        } else {
+                            try {
+                                stopLockTask()
+                                Log.d("KioskMode", "Lock Task Mode DISABLED")
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                                Log.w(TAG, "stopLockTask failed", e)
+                            }
+                            // Unlocked: allow normal minimize — do not startActivity / reclaim.
+                            KioskPolicy.markUserMinimized(this@MainActivity)
+                        }
+                    }
+
+                    if (packagesChanged || lastAppliedAllowedPackages == null) {
+                        applyLockTaskPackages(allowedPackages)
+                        lastAppliedAllowedPackages = allowedPackages
+                    }
+                }
+
+                override fun onCancelled(error: DatabaseError) {
+                    Log.e(
+                        TAG,
+                        "RTDB hotels/$hotelId/config listener cancelled: ${error.message}",
+                        error.toException(),
+                    )
+                }
             }
 
-            // Combine our app package + allowed packages from Firebase (+ YouTube TV baseline).
-            val packagesToAllow = (
-                allowedPackagesList +
-                    packageName +
-                    YOUTUBE_TV_PACKAGE
-                )
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-                .distinct()
-                .toTypedArray()
-
-            dpm.setLockTaskPackages(adminName, packagesToAllow)
-            Log.i(TAG, "setLockTaskPackages → ${packagesToAllow.toList()}")
-        } catch (e: SecurityException) {
-            Log.w(TAG, "setLockTaskPackages security exception", e)
-        } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "setLockTaskPackages invalid args", e)
+            kioskConfigRef = ref
+            kioskConfigListener = listener
+            ref.addValueEventListener(listener)
+            Log.i(TAG, "Attached RTDB kiosk listener → hotels/$hotelId/config")
         } catch (e: Exception) {
-            Log.w(TAG, "setLockTaskPackages failed", e)
+            Log.e(TAG, "Failed to attach RTDB hotels/$hotelId/config listener", e)
         }
+    }
+
+    private fun detachKioskConfigRealtimeListener() {
+        val ref = kioskConfigRef
+        val listener = kioskConfigListener
+        if (ref != null && listener != null) {
+            try {
+                ref.removeEventListener(listener)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to remove RTDB kiosk listener", e)
+            }
+        }
+        kioskConfigRef = null
+        kioskConfigListener = null
+    }
+
+    /** Prefer camelCase Admin field; accept legacy snake_case mirror. */
+    private fun readKioskEnabledFromConfig(snapshot: DataSnapshot): Boolean? {
+        val raw = snapshot.child("isKioskModeEnabled").value
+            ?: snapshot.child("is_kiosk_mode_enabled").value
+            ?: return null
+        return when (raw) {
+            is Boolean -> raw
+            is Number -> raw.toInt() != 0
+            is String -> raw.equals("true", ignoreCase = true)
+            else -> null
+        }
+    }
+
+    private fun readAllowedPackagesFromConfig(snapshot: DataSnapshot): List<String> {
+        val node = when {
+            snapshot.hasChild("allowedPackages") -> snapshot.child("allowedPackages")
+            snapshot.hasChild("allowed_packages") -> snapshot.child("allowed_packages")
+            else -> return emptyList()
+        }
+        return node.children.mapNotNull { child ->
+            (child.value as? String)?.trim()?.takeIf(String::isNotEmpty)
+        }
+    }
+
+    /**
+     * Apply Lock Task package whitelist via [DevicePolicyManager.setLockTaskPackages]
+     * and suppress system UI with [DevicePolicyManager.setLockTaskFeatures]
+     * (`LOCK_TASK_FEATURE_NONE`). Merges Firebase packages + hotel app + YouTube / Live TV.
+     */
+    private fun applyLockTaskPackages(allowedPackagesList: List<String>) {
+        KioskLockTask.applyAllowlist(this, allowedPackagesList)
+        MyDeviceAdminReceiver.applyStrictLockTaskFeatures(this)
     }
 
     /**
@@ -351,6 +447,7 @@ class MainActivity : ComponentActivity() {
     private fun applyLockTaskMode(enabled: Boolean) {
         try {
             if (enabled) {
+                MyDeviceAdminReceiver.applyStrictLockTaskFeatures(this)
                 startLockTask()
                 Log.d("KioskMode", "Lock Task Mode ENABLED")
                 Log.i(TAG, "startLockTask() — Home/Back locked")
@@ -432,12 +529,13 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Soft Lock Task sync when focus returns.
-     * Never force-enable — honor Admin unlock via [resolveKioskEnabled].
+     * Soft Lock Task sync when focus returns — only while kiosk is ON.
+     * When disabled, do nothing so we never fight normal minimization.
      */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (!hasFocus) return
+        if (!resolveKioskEnabled()) return
         applyLockTaskFromPersistedState("onWindowFocusChanged")
     }
 
@@ -446,14 +544,17 @@ class MainActivity : ComponentActivity() {
         if (!screensaverVisible) {
             lastInteractionAt = System.currentTimeMillis()
         }
-        // Re-evaluate from persisted Admin/Firestore state — do NOT blind startLockTask().
-        applyLockTaskFromPersistedState("onResume")
+        // Only re-assert Lock Task while kiosk is ON.
+        if (resolveKioskEnabled()) {
+            applyLockTaskFromPersistedState("onResume")
+        }
     }
 
     override fun onStart() {
         super.onStart()
-        KioskPolicy.clearUserMinimized(this)
-        // Returning from YouTube / Live TV / Home — end external session suppress.
+        if (resolveKioskEnabled()) {
+            KioskPolicy.clearUserMinimized(this)
+        }
         if (!KioskPolicy.isExternalAppSessionActive(this)) {
             KioskPolicy.clearExternalAppSession(this)
         }
@@ -462,7 +563,11 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // HOME category relaunch (Home pressed from YouTube / Live TV / stock UI).
+        // When unlocked, ignore HOME/MAIN re-entry side effects that re-lock UI.
+        if (!resolveKioskEnabled()) {
+            Log.d(TAG, "onNewIntent ignored — kiosk disabled")
+            return
+        }
         if (intent.categories?.contains(Intent.CATEGORY_HOME) == true ||
             intent.action == Intent.ACTION_MAIN
         ) {
@@ -474,26 +579,31 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Hotel app is the primary launcher interface (locked OR unlocked).
-     * Home / leave reclaim brings [MainActivity] to front, except while an
-     * intentional OTT / IPTV session is active (YouTube, Live TV, etc.).
-     * Pressing Home from those apps routes here via the HOME intent-filter.
+     * Bring MainActivity to front ONLY while Kiosk Mode is ACTIVE.
+     * When [isKioskModeEnabled] is false, do nothing — allow normal minimize / Home.
      */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
 
-        if (KioskPolicy.isExternalAppSessionActive(this)) {
-            Log.d(TAG, "onUserLeaveHint — external OTT/IPTV session, skip reclaim")
+        val kioskOn = resolveKioskEnabled()
+        isKioskModeEnabled = kioskOn
+
+        if (!kioskOn) {
+            KioskPolicy.markUserMinimized(this)
+            Log.d(TAG, "onUserLeaveHint — kiosk DISABLED, allow normal minimization")
             return
         }
 
-        Log.d(TAG, "onUserLeaveHint — reclaiming hotel launcher (kiosk=${resolveKioskEnabled()})")
+        if (KioskPolicy.isExternalAppSessionActive(this)) {
+            Log.d(TAG, "onUserLeaveHint — OTT/IPTV session under kiosk, skip reclaim")
+            return
+        }
+
+        Log.d(TAG, "onUserLeaveHint — kiosk ON, reordering MainActivity to front")
         try {
             val intent = Intent(this, MainActivity::class.java).apply {
                 addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT,
+                    Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT,
                 )
             }
             startActivity(intent)
@@ -503,12 +613,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        try {
-            hotelKioskListener?.remove()
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to remove Hotels kiosk listener", e)
-        }
-        hotelKioskListener = null
+        detachKioskConfigRealtimeListener()
 
         syncListeners.forEach { registration ->
             registration.remove()
@@ -528,10 +633,11 @@ class MainActivity : ComponentActivity() {
     companion object {
         private const val TAG = "MainActivity"
         private const val KIOSK_PREFS = "hotel_tv_kiosk"
-        /** SharedPreferences key — matches Admin Panel field name. */
+        /** SharedPreferences key — matches Admin Panel / RTDB field name. */
         private const val PREF_KIOSK_ENABLED = "isKioskModeEnabled"
-        /** Always allowlisted for Lock Task so Entertainment → YouTube works under kiosk. */
-        private const val YOUTUBE_TV_PACKAGE = "com.google.android.youtube.tv"
+        /** Must match admin-panel RTDB region (google-services.json may still list us-central). */
+        private const val RTDB_URL =
+            "https://ikhsana-hotel-tv-default-rtdb.asia-southeast1.firebasedatabase.app"
         /** 10 minutes of no remote / touch input before the screen saver appears. */
         private const val INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000L
     }

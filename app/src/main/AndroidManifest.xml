@@ -69,17 +69,24 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleInstance"
+            android:stateNotNeeded="true"
+            android:clearTaskOnLaunch="true"
             android:screenOrientation="landscape"
             android:configChanges="keyboard|keyboardHidden|navigation"
             android:defaultFocusHighlightEnabled="false"
-            android:theme="@style/Theme.IkhsanaHotelTV">
+            android:theme="@style/Theme.IkhsanaHotelTV"
+            android:banner="@drawable/pcn_banner"
+            android:icon="@drawable/pcn_logo"
+            android:label="@string/app_name">
             <!--
-              Custom launcher / kiosk: register as HOME so the TV can set this app
-              as the default launcher. singleInstance avoids recreate/flash when
-              Home is pressed and we reorder this activity to front.
+              Valid Android TV Home / Leanback launcher candidate.
+              HOME + DEFAULT are required for System Home App selection.
+              LEANBACK_LAUNCHER is required for Android TV to list the app.
             -->
-            <intent-filter android:priority="999">
+            <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>

@@ -225,6 +225,12 @@ object KioskPolicy {
      * - An existing task is already created (unless crash recovery / kiosk needs reorder)
      */
     fun shouldBringAppToFront(context: Context, allowReorderIfKiosk: Boolean = true): Boolean {
+        // Absolute block when kiosk is off — no watchdog / boot relaunch loops.
+        if (!isKioskModeEnabled(context) && !hasPendingCrashRecovery(context)) {
+            Log.d(TAG, "shouldBringAppToFront=false (kiosk off, no crash recovery)")
+            return false
+        }
+
         if (wasUserMinimized(context) && !isKioskModeEnabled(context)) {
             Log.d(TAG, "shouldBringAppToFront=false (user minimized, kiosk off)")
             return false
@@ -232,10 +238,6 @@ object KioskPolicy {
 
         val kiosk = isKioskModeEnabled(context)
         val crash = hasPendingCrashRecovery(context)
-        if (!kiosk && !crash) {
-            Log.d(TAG, "shouldBringAppToFront=false (kiosk off, no crash recovery)")
-            return false
-        }
 
         if (isProcessLifecycleStarted()) {
             Log.d(TAG, "shouldBringAppToFront=false (process already STARTED)")

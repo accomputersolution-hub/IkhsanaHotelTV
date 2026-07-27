@@ -8,11 +8,15 @@ import android.net.Uri
 import android.util.Log
 import android.widget.Toast
 import `in`.pcncloud.hotel.R
+import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 
 /**
  * Launches an installed OTT / entertainment app, or opens its Play Store page
  * when the package is missing on the TV.
+ *
+ * When hotel kiosk / Lock Task is active, launches go through [KioskLockTask] so
+ * Home/Back inside YouTube cannot escape to the stock Android TV launcher.
  */
 object AppLauncherUtils {
 
@@ -40,8 +44,12 @@ object AppLauncherUtils {
     }
 
     private fun launchInstalledApp(context: Context, packageName: String, appLabel: String) {
+        // Prefer Lock Task–safe path when kiosk is ON (or always — ensureLockTask is no-op if off).
+        if (KioskLockTask.launchAllowlistedPackage(context, packageName)) {
+            return
+        }
+
         val pm = context.packageManager
-        // Prefer Leanback launcher on Android TV; fall back to standard launch intent.
         val launchIntent = pm.getLeanbackLaunchIntentForPackage(packageName)
             ?: pm.getLaunchIntentForPackage(packageName)
 
@@ -56,11 +64,12 @@ object AppLauncherUtils {
         }
 
         try {
-            // Allow leave without Home reclaim so OTT can stay in foreground.
+            KioskLockTask.ensureLockTaskActive(context)
             KioskPolicy.markExternalAppSession(context)
-            context.startActivity(
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            launchIntent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
             )
+            context.startActivity(launchIntent)
             Log.i(TAG, "Launched $packageName")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch $packageName", e)
@@ -80,10 +89,23 @@ object AppLauncherUtils {
             Toast.LENGTH_SHORT,
         ).show()
 
+        // Play Store is usually NOT lock-task allowlisted — only open when kiosk is off.
+        if (KioskPolicy.isKioskModeEnabled(context)) {
+            Toast.makeText(
+                context,
+                context.getString(R.string.entertainment_launch_failed, appLabel),
+                Toast.LENGTH_LONG,
+            ).show()
+            Log.w(TAG, "Skip Play Store while kiosk Lock Task is ON → $packageName")
+            return
+        }
+
         val marketIntent = Intent(
             Intent.ACTION_VIEW,
             Uri.parse("market://details?id=$packageName"),
-        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ).addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
+        )
 
         try {
             KioskPolicy.markExternalAppSession(context)
@@ -92,7 +114,9 @@ object AppLauncherUtils {
             val webIntent = Intent(
                 Intent.ACTION_VIEW,
                 Uri.parse("https://play.google.com/store/apps/details?id=$packageName"),
-            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ).addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
+            )
             try {
                 KioskPolicy.markExternalAppSession(context)
                 context.startActivity(webIntent)

@@ -589,6 +589,9 @@ function mirrorKioskConfigToRtdb(hotelId, isKioskModeEnabled, allowedPackages) {
     .then(async () => {
       const base = `hotels/${hotelId}/config`;
       await Promise.all([
+        rtdbSet(rtdbRef(rtdb, `${base}/isKioskModeEnabled`), isKioskModeEnabled),
+        rtdbSet(rtdbRef(rtdb, `${base}/allowedPackages`), allowedPackages),
+        // Legacy snake_case keys (older TV builds).
         rtdbSet(rtdbRef(rtdb, `${base}/is_kiosk_mode_enabled`), isKioskModeEnabled),
         rtdbSet(rtdbRef(rtdb, `${base}/allowed_packages`), allowedPackages),
       ]);

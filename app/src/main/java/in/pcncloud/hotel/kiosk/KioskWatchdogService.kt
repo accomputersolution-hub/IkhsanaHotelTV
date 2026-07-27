@@ -81,9 +81,10 @@ class KioskWatchdogService : Service() {
     }
 
     private fun maybeBringToFront(reason: String) {
-        if (!KioskPolicy.isKioskModeEnabled(this) &&
-            !KioskPolicy.hasPendingCrashRecovery(this)
-        ) {
+        // Hard gate: never relaunch UI while kiosk is disabled.
+        if (!KioskPolicy.isKioskModeEnabled(this)) {
+            Log.d(TAG, "maybeBringToFront skipped — kiosk disabled ($reason)")
+            handler.removeCallbacks(pollRunnable)
             return
         }
         if (!KioskPolicy.shouldBringAppToFront(this)) {
