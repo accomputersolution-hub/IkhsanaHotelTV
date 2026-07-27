@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -84,10 +85,18 @@ class MainActivity : ComponentActivity() {
             FirebaseApp.initializeApp(this)
         }
 
+        // Seed from local policy immediately so idle / focus reclaim works before RTDB sync.
+        isKioskModeEnabled = KioskPolicy.isKioskModeEnabled(this)
+        applyKeepScreenOn(isKioskModeEnabled)
+        if (isKioskModeEnabled) {
+            applyLockTaskMode(true)
+        }
+
         // Sync is_kiosk_mode_enabled from Remote Config → SharedPreferences (unless admin override).
         KioskRemoteConfig.syncOnLaunch(this) { enabled ->
             Log.i(TAG, "Kiosk mode after Remote Config sync → $enabled")
             isKioskModeEnabled = enabled
+            applyKeepScreenOn(enabled)
             applyLockTaskMode(enabled)
         }
 
@@ -213,6 +222,7 @@ class MainActivity : ComponentActivity() {
                         enabled = enabled,
                         source = KioskPolicy.KioskSource.REALTIME_DATABASE,
                     )
+                    applyKeepScreenOn(enabled)
                     applyLockTaskMode(enabled)
                 }
 
@@ -314,6 +324,29 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * Prevent display sleep / activity pause while kiosk is ON.
+     * Without this, Android TV idle / dream / memory optimizations can drop Lock Task
+     * after several minutes of no input.
+     */
+    private fun applyKeepScreenOn(enabled: Boolean) {
+        try {
+            if (enabled) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                Log.d(TAG, "FLAG_KEEP_SCREEN_ON added")
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                Log.d(TAG, "FLAG_KEEP_SCREEN_ON cleared")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to update KEEP_SCREEN_ON flag", e)
+        }
+    }
+
+    /** True when local cache or SharedPreferences say kiosk Lock Task should be active. */
+    private fun isKioskActive(): Boolean =
+        isKioskModeEnabled || KioskPolicy.isKioskModeEnabled(this)
+
+    /**
      * Fallback when Compose [androidx.activity.compose.BackHandler] is not in the tree
      * (e.g. service-suspended screen). Kiosk ON → never finish; kiosk OFF → leave task.
      */
@@ -322,7 +355,7 @@ class MainActivity : ComponentActivity() {
             this,
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
-                    if (KioskPolicy.isKioskModeEnabled(this@MainActivity)) {
+                    if (isKioskActive()) {
                         Log.d(TAG, "Kiosk safety-net: Back blocked at Activity")
                     } else {
                         Log.d(TAG, "Kiosk off safety-net: moveTaskToBack")
@@ -351,13 +384,50 @@ class MainActivity : ComponentActivity() {
         return super.dispatchKeyEvent(event)
     }
 
+    /**
+     * Aggressive focus reclaim: if the window loses focus while kiosk is ON
+     * (system UI, dream, idle dialogs), dismiss system overlays and re-assert Lock Task.
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus || !isKioskActive()) return
+
+        Log.w(TAG, "Window lost focus while kiosk ON — reclaiming")
+        try {
+            @Suppress("DEPRECATION")
+            sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+        } catch (e: Exception) {
+            Log.w(TAG, "CLOSE_SYSTEM_DIALOGS failed", e)
+        }
+        try {
+            startLockTask()
+        } catch (e: Exception) {
+            Log.w(TAG, "startLockTask after focus loss failed", e)
+            e.printStackTrace()
+        }
+        // Bring ourselves forward again in case another activity stole focus.
+        try {
+            val relaunch = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(relaunch)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to reorder MainActivity after focus loss", e)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         if (!screensaverVisible) {
             lastInteractionAt = System.currentTimeMillis()
         }
-        // Re-assert Lock Task after resume (e.g. returning from another activity).
-        if (KioskPolicy.isKioskModeEnabled(this)) {
+
+        // Always re-evaluate kiosk and re-assert Lock Task after idle / sleep / pause.
+        isKioskModeEnabled = KioskPolicy.isKioskModeEnabled(this)
+        applyKeepScreenOn(isKioskModeEnabled)
+        if (isKioskModeEnabled) {
             applyLockTaskMode(true)
         }
     }
@@ -369,22 +439,27 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Home / app-switch intercept: when kiosk is ON, immediately bring [MainActivity]
-     * back to the front so the guest cannot stay on the Android TV home screen.
+     * back to the front so the guest cannot stay on the Android TV home screen
+     * (including after long idle when the system may drop Lock Task briefly).
      */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        val kioskOn = KioskPolicy.isKioskModeEnabled(this)
-        if (kioskOn) {
+        if (isKioskActive()) {
             Log.d(TAG, "onUserLeaveHint — kiosk ON, reordering MainActivity to front")
             try {
                 val relaunch = Intent(this, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
                     addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 startActivity(relaunch)
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to bring MainActivity to front after Home", e)
+            }
+            try {
+                startLockTask()
+            } catch (e: Exception) {
+                Log.w(TAG, "startLockTask in onUserLeaveHint failed", e)
             }
         } else {
             // Explicit Home / app-switch — do not allow watchdog to pull us back.

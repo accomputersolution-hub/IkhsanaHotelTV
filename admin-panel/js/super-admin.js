@@ -563,72 +563,89 @@ function syncKioskToggleLabel() {
   label.classList.toggle('is-inactive', !toggle.checked);
 }
 
+/** Always restore Save button to idle default (fixes stuck "Saving..." on re-open). */
+function resetKioskSaveButton() {
+  const saveBtn = document.getElementById('save-kiosk-settings-btn');
+  if (!saveBtn) return;
+  saveBtn.innerText = 'Save Changes';
+  saveBtn.disabled = false;
+  saveBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+}
+
 function setupKioskSettingsModal() {
   setupModalClose('kiosk-settings-modal', 'kiosk-settings-close');
+  document.getElementById('kiosk-settings-close')?.addEventListener('click', () => {
+    kioskHotelId = null;
+    resetKioskSaveButton();
+  });
   document.getElementById('kiosk-settings-x')?.addEventListener('click', () => {
     closeModal('kiosk-settings-modal');
     kioskHotelId = null;
+    resetKioskSaveButton();
   });
 
   document.getElementById('kiosk-mode-toggle')?.addEventListener('change', () => {
     syncKioskToggleLabel();
   });
 
-  document.getElementById('save-kiosk-settings-btn')?.addEventListener('click', async () => {
-    if (!kioskHotelId) {
-      toast('No hotel selected', 'error');
-      return;
-    }
+  const saveBtn = document.getElementById('save-kiosk-settings-btn');
+  // Bind once — avoid stacking listeners if initSuperAdmin runs again.
+  if (saveBtn && saveBtn.dataset.kioskSaveBound !== '1') {
+    saveBtn.dataset.kioskSaveBound = '1';
+    saveBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    const isKioskModeEnabled = Boolean(document.getElementById('kiosk-mode-toggle')?.checked);
-    const allowedPackages = parseAllowedPackagesInput(
-      document.getElementById('kiosk-packages-input')?.value,
-    );
+      if (!kioskHotelId) {
+        toast('No hotel selected', 'error');
+        return;
+      }
 
-    const saveBtn = document.getElementById('save-kiosk-settings-btn');
-    if (saveBtn) {
+      // Only flip to "Saving..." inside the explicit click handler.
       saveBtn.disabled = true;
-      saveBtn.textContent = 'Saving…';
-    }
+      saveBtn.innerText = 'Saving...';
+      saveBtn.classList.add('opacity-50', 'cursor-not-allowed');
 
-    try {
-      await updateDoc(doc(db, 'Hotels', kioskHotelId), {
-        isKioskModeEnabled,
-        allowedPackages,
-        updatedAt: serverTimestamp(),
-      });
+      const isKioskModeEnabled = Boolean(document.getElementById('kiosk-mode-toggle')?.checked);
+      const allowedPackages = parseAllowedPackagesInput(
+        document.getElementById('kiosk-packages-input')?.value,
+      );
 
-      // Mirror to RTDB so paired Android TVs receive instant Lock Task updates.
       try {
-        const base = `hotels/${kioskHotelId}/config`;
-        await Promise.all([
-          rtdbSet(rtdbRef(rtdb, `${base}/is_kiosk_mode_enabled`), isKioskModeEnabled),
-          rtdbSet(rtdbRef(rtdb, `${base}/allowed_packages`), allowedPackages),
-        ]);
-      } catch (rtdbErr) {
-        console.warn('[super-admin] RTDB kiosk mirror skipped', rtdbErr);
-      }
+        await updateDoc(doc(db, 'Hotels', kioskHotelId), {
+          isKioskModeEnabled,
+          allowedPackages,
+          updatedAt: serverTimestamp(),
+        });
 
-      // Refresh local cache so table / re-open stays current until next snapshot.
-      const cached = hotelsCache.find((h) => h.id === kioskHotelId);
-      if (cached) {
-        cached.isKioskModeEnabled = isKioskModeEnabled;
-        cached.allowedPackages = allowedPackages;
-      }
+        // Mirror to RTDB so paired Android TVs receive instant Lock Task updates.
+        try {
+          const base = `hotels/${kioskHotelId}/config`;
+          await Promise.all([
+            rtdbSet(rtdbRef(rtdb, `${base}/is_kiosk_mode_enabled`), isKioskModeEnabled),
+            rtdbSet(rtdbRef(rtdb, `${base}/allowed_packages`), allowedPackages),
+          ]);
+        } catch (rtdbErr) {
+          console.warn('[super-admin] RTDB kiosk mirror skipped', rtdbErr);
+        }
 
-      closeModal('kiosk-settings-modal');
-      toast(`Kiosk settings saved for ${kioskHotelId}`);
-      kioskHotelId = null;
-    } catch (err) {
-      console.error('[super-admin] save kiosk settings failed', err);
-      toast(err.message || 'Failed to save kiosk settings', 'error');
-    } finally {
-      if (saveBtn) {
-        saveBtn.disabled = false;
-        saveBtn.textContent = 'Save Changes';
+        const cached = hotelsCache.find((h) => h.id === kioskHotelId);
+        if (cached) {
+          cached.isKioskModeEnabled = isKioskModeEnabled;
+          cached.allowedPackages = allowedPackages;
+        }
+
+        closeModal('kiosk-settings-modal');
+        toast(`Kiosk settings saved for ${kioskHotelId}`);
+        kioskHotelId = null;
+      } catch (err) {
+        console.error('[super-admin] save kiosk settings failed', err);
+        toast(err.message || 'Failed to save kiosk settings', 'error');
+      } finally {
+        resetKioskSaveButton();
       }
-    }
-  });
+    });
+  }
 }
 
 /**
@@ -644,6 +661,9 @@ async function openKioskSettingsModal(hotelId) {
   const toggle = document.getElementById('kiosk-mode-toggle');
   const packagesInput = document.getElementById('kiosk-packages-input');
 
+  // Reset Save button BEFORE opening — clears any leftover "Saving..." state.
+  resetKioskSaveButton();
+
   if (idField) idField.value = hotelId;
   if (nameEl) nameEl.textContent = hotelId;
   if (toggle) toggle.checked = true;
@@ -655,6 +675,7 @@ async function openKioskSettingsModal(hotelId) {
     if (!snap.exists()) {
       toast('Hotel not found', 'error');
       kioskHotelId = null;
+      resetKioskSaveButton();
       return;
     }
 
@@ -670,11 +691,14 @@ async function openKioskSettingsModal(hotelId) {
     if (toggle) toggle.checked = isKioskModeEnabled;
     if (packagesInput) packagesInput.value = allowedPackages.join(', ');
     syncKioskToggleLabel();
+
     openModal('kiosk-settings-modal');
+    resetKioskSaveButton();
   } catch (err) {
     console.error('[super-admin] open kiosk settings failed', err);
     toast(err.message || 'Could not load kiosk settings', 'error');
     kioskHotelId = null;
+    resetKioskSaveButton();
   }
 }
 
