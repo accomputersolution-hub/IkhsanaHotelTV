@@ -28,7 +28,7 @@ import java.util.concurrent.Executors
 import org.json.JSONObject
 
 /**
- * Force-update checker via a direct Google Drive JSON fetch (no Remote Config cache).
+ * Force-update checker via a direct HTTP JSON fetch (no Remote Config cache).
  *
  * Expected JSON shape:
  * ```
@@ -40,13 +40,20 @@ import org.json.JSONObject
  * }
  * ```
  *
- * Configure [BuildConfig.UPDATE_JSON_URL] (Drive `uc?export=download&id=...`).
+ * URL resolution: [BuildConfig.UPDATE_JSON_URL] if non-blank, else [DEFAULT_UPDATE_JSON_URL].
  */
 object UpdateManager {
 
     private const val TAG = "UpdateManager"
     private const val CONNECT_TIMEOUT_MS = 12_000
     private const val READ_TIMEOUT_MS = 12_000
+
+    /**
+     * Hardcoded fallback so the check never dies on an empty BuildConfig string.
+     * Swap to a Google Drive `uc?export=download&id=...` URL when ready.
+     */
+    private const val DEFAULT_UPDATE_JSON_URL =
+        "https://raw.githubusercontent.com/accomputersolution-hub/IkhsanaHotelTV/main/update-config.json"
 
     private val ioExecutor = Executors.newSingleThreadExecutor()
 
@@ -69,21 +76,22 @@ object UpdateManager {
         val apkUrl: String,
     )
 
+    /** Prefer BuildConfig; never return blank/null. */
+    private fun resolveUpdateJsonUrl(): String {
+        val fromBuild = BuildConfig.UPDATE_JSON_URL.trim()
+        if (fromBuild.isNotBlank() &&
+            !fromBuild.contains("YOUR_JSON_FILE_ID", ignoreCase = true)
+        ) {
+            return fromBuild
+        }
+        return DEFAULT_UPDATE_JSON_URL
+    }
+
     fun checkForUpdates(activity: Activity) {
         if (isChecking || activity.isFinishing || activity.isDestroyed) return
 
-        val jsonUrl = BuildConfig.UPDATE_JSON_URL.trim()
-        if (jsonUrl.isBlank() || jsonUrl.contains("YOUR_JSON_FILE_ID")) {
-            Log.w(TAG, "UPDATE_JSON_URL not configured — skip update check")
-            activity.runOnUiThread {
-                Toast.makeText(
-                    activity,
-                    "Update JSON URL not configured",
-                    Toast.LENGTH_LONG,
-                ).show()
-            }
-            return
-        }
+        val jsonUrl = resolveUpdateJsonUrl()
+        Log.i(TAG, "Update JSON URL → $jsonUrl")
 
         isChecking = true
         // Diagnostic before network work — always on the Activity UI thread.
@@ -106,15 +114,10 @@ object UpdateManager {
                     handleUpdateInfoOnUiThread(activity, info)
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Update JSON fetch failed — continuing without update gate", e)
+                // Network / parse failures: log only — do not block app launch with config toasts.
+                Log.e(TAG, "Update JSON fetch/parse failed url=$jsonUrl", e)
                 activity.runOnUiThread {
                     isChecking = false
-                    if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
-                    Toast.makeText(
-                        activity,
-                        "Update check failed (offline?) — continuing",
-                        Toast.LENGTH_LONG,
-                    ).show()
                 }
             }
         }
