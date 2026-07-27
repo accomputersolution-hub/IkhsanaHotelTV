@@ -68,15 +68,15 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTask"
+            android:launchMode="singleInstance"
             android:screenOrientation="landscape"
             android:configChanges="keyboard|keyboardHidden|navigation"
             android:defaultFocusHighlightEnabled="false"
             android:theme="@style/Theme.IkhsanaHotelTV">
             <!--
               Custom launcher / kiosk: register as HOME so the TV can set this app
-              as the default launcher. Priority biases our filter when multiple
-              HOME handlers exist (technician still confirms in system Home settings).
+              as the default launcher. singleInstance avoids recreate/flash when
+              Home is pressed and we reorder this activity to front.
             -->
             <intent-filter android:priority="999">
                 <action android:name="android.intent.action.MAIN" />

@@ -6,7 +6,7 @@ import { getDatabase } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-
 export const firebaseConfig = {
   apiKey: 'AIzaSyBEXhPG6aNiJ1S7pN4EDoBo6EYMtbNe-pQ',
   authDomain: 'ikhsana-hotel-tv.firebaseapp.com',
-  databaseURL: 'https://ikhsana-hotel-tv-default-rtdb.firebaseio.com',
+  databaseURL: 'https://ikhsana-hotel-tv-default-rtdb.asia-southeast1.firebasedatabase.app',
   projectId: 'ikhsana-hotel-tv',
   storageBucket: 'ikhsana-hotel-tv.firebasestorage.app',
 };
