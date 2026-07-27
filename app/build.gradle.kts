@@ -30,6 +30,8 @@ android {
 
         // Multi-tenant defaults — hotel id is paired at runtime via PairingActivity
         buildConfigField("String", "DEFAULT_ROOM_NUMBER", "\"101\"")
+        // Staff Master PIN for TV Admin Mode (in-memory session only; change per hotel build if needed)
+        buildConfigField("String", "DEFAULT_MASTER_PIN", "\"1234\"")
 
         vectorDrawables {
             useSupportLibrary = true

@@ -4,14 +4,16 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
 
 /**
- * Auto-launches the hotel TV app when the device powers on.
+ * Auto-launches [MainActivity] when the TV powers on (`BOOT_COMPLETED`).
  *
- * Does **not** relaunch when the user has minimized an already-created task.
- * Boot is treated as an allowed cold start (unless a visible task already exists).
+ * With kiosk / HOME-launcher mode this restores the guest dashboard immediately
+ * after reboot. When kiosk is off we still cold-start the app so pairing / guest
+ * UI is ready, but Watchdog bring-to-front stays gated by [KioskPolicy].
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -42,27 +44,25 @@ class BootReceiver : BroadcastReceiver() {
         // Clear stale minimize flag from a previous session after reboot.
         KioskPolicy.clearUserMinimized(context)
 
-        val launchIntent = context.packageManager
-            .getLaunchIntentForPackage(context.packageName)
-            ?.apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            }
-
-        if (launchIntent == null) {
-            Log.e(TAG, "No launch intent found for package ${context.packageName}")
-            return
+        val launchIntent = Intent(context, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
         }
 
         try {
             context.startActivity(launchIntent)
-            Log.i(TAG, "Boot launch → ${intent?.action}")
+            Log.i(
+                TAG,
+                "Boot launch → MainActivity action=${intent?.action} " +
+                    "kiosk=${KioskPolicy.isKioskModeEnabled(context)}",
+            )
             if (KioskPolicy.isKioskModeEnabled(context)) {
                 KioskWatchdogService.start(context)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch app after boot (${intent?.action})", e)
+            Log.e(TAG, "Failed to launch MainActivity after boot (${intent?.action})", e)
         }
     }
 }

@@ -9,33 +9,91 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 
 /**
- * Central gate for any code path that might call [Context.startActivity] to bring
- * the hotel TV UI to the foreground (BootReceiver, Splash delayed nav, Watchdog FGS).
+ * Central gate for kiosk / custom-launcher behaviour.
  *
- * Rules:
- * - Regular Home / minimize → do **not** relaunch.
- * - Bring-to-front only when **kiosk mode is ON** or a prior **crash/kill** needs recovery.
- * - Never launch if the process already has a visible / created task.
+ * Runtime flag: SharedPreferences key [KEY_KIOSK_ENABLED] (`is_kiosk_mode_enabled`).
+ * Default: **true** (hotel TVs lock to guest UI unless technicians disable it).
+ *
+ * Sources:
+ * - [KioskRemoteConfig] writes the flag from Firebase Remote Config on launch
+ * - Staff Admin Mode (Master PIN) can override locally and set [KEY_ADMIN_OVERRIDE]
+ *
+ * Also gates BootReceiver / Watchdog bring-to-front paths.
  */
 object KioskPolicy {
 
     private const val TAG = "KioskPolicy"
     private const val PREFS = "hotel_tv_kiosk"
-    private const val KEY_KIOSK_ENABLED = "kiosk_mode_enabled"
+
+    /** Product / Remote Config key name — also stored in SharedPreferences. */
+    const val KEY_KIOSK_ENABLED = "is_kiosk_mode_enabled"
+
+    /** Legacy key — migrated once to [KEY_KIOSK_ENABLED]. */
+    private const val KEY_KIOSK_ENABLED_LEGACY = "kiosk_mode_enabled"
+
+    private const val KEY_ADMIN_OVERRIDE = "kiosk_admin_override"
     private const val KEY_USER_MINIMIZED = "user_minimized"
     private const val KEY_EXITED_CLEANLY = "exited_cleanly"
     private const val KEY_PENDING_CRASH_RECOVERY = "pending_crash_recovery"
 
+    enum class KioskSource {
+        REMOTE_CONFIG,
+        LOCAL_ADMIN,
+        SYSTEM_DEFAULT,
+    }
+
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** Hotel kiosk lock — default OFF so staff can minimize without forced relaunch. */
-    fun isKioskModeEnabled(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_KIOSK_ENABLED, false)
+    private fun migrateIfNeeded(context: Context) {
+        val p = prefs(context)
+        if (p.contains(KEY_KIOSK_ENABLED)) return
+        if (p.contains(KEY_KIOSK_ENABLED_LEGACY)) {
+            val legacy = p.getBoolean(KEY_KIOSK_ENABLED_LEGACY, true)
+            p.edit()
+                .putBoolean(KEY_KIOSK_ENABLED, legacy)
+                .remove(KEY_KIOSK_ENABLED_LEGACY)
+                .apply()
+            Log.i(TAG, "Migrated legacy kiosk flag → $KEY_KIOSK_ENABLED=$legacy")
+        }
+    }
 
-    fun setKioskModeEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(KEY_KIOSK_ENABLED, enabled).apply()
-        Log.i(TAG, "kiosk_mode_enabled=$enabled")
+    /**
+     * Whether kiosk / custom-launcher lock is active.
+     * Default **true** when unset (first install / fresh prefs).
+     */
+    fun isKioskModeEnabled(context: Context): Boolean {
+        migrateIfNeeded(context)
+        return prefs(context).getBoolean(KEY_KIOSK_ENABLED, true)
+    }
+
+    fun setKioskModeEnabled(
+        context: Context,
+        enabled: Boolean,
+        source: KioskSource = KioskSource.LOCAL_ADMIN,
+    ) {
+        migrateIfNeeded(context)
+        val editor = prefs(context).edit().putBoolean(KEY_KIOSK_ENABLED, enabled)
+        if (source == KioskSource.LOCAL_ADMIN) {
+            editor.putBoolean(KEY_ADMIN_OVERRIDE, true)
+        }
+        editor.apply()
+        Log.i(TAG, "$KEY_KIOSK_ENABLED=$enabled source=$source")
+
+        // Keep watchdog aligned with the flag.
+        if (enabled) {
+            KioskWatchdogService.start(context.applicationContext)
+        } else {
+            KioskWatchdogService.stop(context.applicationContext)
+        }
+    }
+
+    fun hasAdminOverride(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_ADMIN_OVERRIDE, false)
+
+    fun clearAdminOverride(context: Context) {
+        prefs(context).edit().putBoolean(KEY_ADMIN_OVERRIDE, false).apply()
+        Log.i(TAG, "Admin override cleared — Remote Config may apply again")
     }
 
     fun markUserMinimized(context: Context) {
@@ -55,6 +113,7 @@ object KioskPolicy {
      * If the previous process did not exit cleanly, arm crash recovery once.
      */
     fun onProcessStart(context: Context) {
+        migrateIfNeeded(context)
         val p = prefs(context)
         val exitedCleanly = p.getBoolean(KEY_EXITED_CLEANLY, true)
         if (!exitedCleanly) {

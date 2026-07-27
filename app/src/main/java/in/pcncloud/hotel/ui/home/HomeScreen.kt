@@ -8,6 +8,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -34,9 +36,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -78,12 +86,15 @@ fun HomeScreen(
     onNavigateToDining: () -> Unit,
     onNavigateToAlerts: () -> Unit,
     onNavigateToServices: () -> Unit,
+    onNavigateToEntertainment: () -> Unit = {},
+    onNavigateToAdmin: () -> Unit = {},
 ) {
     val viewModel: HomeViewModel = viewModel(factory = viewModelFactory)
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
     val liveTvFocus = remember { FocusRequester() }
+    val entertainmentFocus = remember { FocusRequester() }
     val diningFocus = remember { FocusRequester() }
     val servicesFocus = remember { FocusRequester() }
     val alertsFocus = remember { FocusRequester() }
@@ -125,13 +136,16 @@ fun HomeScreen(
             salutation = uiState.guestProfile.salutation,
             unreadAlerts = uiState.alerts.count { !it.read && !it.revoked },
             liveTvFocus = liveTvFocus,
+            entertainmentFocus = entertainmentFocus,
             diningFocus = diningFocus,
             servicesFocus = servicesFocus,
             alertsFocus = alertsFocus,
             onLiveTv = { OnyxIptvLauncher.launch(context) },
+            onEntertainment = onNavigateToEntertainment,
             onDining = onNavigateToDining,
             onServices = onNavigateToServices,
             onAlerts = onNavigateToAlerts,
+            onOpenAdmin = onNavigateToAdmin,
         )
 
         uiState.serviceToastMessage?.let { message ->
@@ -278,13 +292,16 @@ private fun HomeForegroundContent(
     salutation: String,
     unreadAlerts: Int,
     liveTvFocus: FocusRequester,
+    entertainmentFocus: FocusRequester,
     diningFocus: FocusRequester,
     servicesFocus: FocusRequester,
     alertsFocus: FocusRequester,
     onLiveTv: () -> Unit,
+    onEntertainment: () -> Unit,
     onDining: () -> Unit,
     onServices: () -> Unit,
     onAlerts: () -> Unit,
+    onOpenAdmin: () -> Unit,
 ) {
     Column(
         modifier = modifier
@@ -296,6 +313,7 @@ private fun HomeForegroundContent(
             hotelLogoUrl = hotelLogoUrl,
             hotelName = hotelName,
             tagline = tagline,
+            onOpenAdmin = onOpenAdmin,
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -313,11 +331,13 @@ private fun HomeForegroundContent(
 
         NavigationCardsRow(
             liveTvFocus = liveTvFocus,
+            entertainmentFocus = entertainmentFocus,
             diningFocus = diningFocus,
             servicesFocus = servicesFocus,
             alertsFocus = alertsFocus,
             unreadAlerts = unreadAlerts,
             onLiveTv = onLiveTv,
+            onEntertainment = onEntertainment,
             onDining = onDining,
             onServices = onServices,
             onAlerts = onAlerts,
@@ -332,6 +352,7 @@ private fun HomeHeader(
     hotelLogoUrl: String,
     hotelName: String,
     tagline: String,
+    onOpenAdmin: () -> Unit,
 ) {
     val displayName = hotelName.ifBlank { stringResource(R.string.brand_name) }
     val displayTagline = tagline.trim()
@@ -382,7 +403,10 @@ private fun HomeHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            RoomBadge(roomNumber = roomNumber.ifBlank { "101" })
+            RoomBadge(
+                roomNumber = roomNumber.ifBlank { "101" },
+                onOpenAdmin = onOpenAdmin,
+            )
             WifiStatusIcon()
             LiveClockWidget()
         }
@@ -443,11 +467,45 @@ private fun isLegacyUnsafeImageUrl(url: String): Boolean {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun RoomBadge(roomNumber: String) {
+private fun RoomBadge(
+    roomNumber: String,
+    onOpenAdmin: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    var pressStartedAt by remember { mutableLongStateOf(0L) }
+
     Box(
         modifier = Modifier
-            .background(GoldPrimary.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
-            .border(1.dp, GoldPrimary.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+            .background(
+                if (focused) GoldPrimary.copy(alpha = 0.22f) else GoldPrimary.copy(alpha = 0.12f),
+                RoundedCornerShape(10.dp),
+            )
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) GoldPrimary else GoldPrimary.copy(alpha = 0.45f),
+                RoundedCornerShape(10.dp),
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .onKeyEvent { event ->
+                val isSelect = event.key == Key.Enter || event.key == Key.DirectionCenter
+                when {
+                    isSelect && event.type == KeyEventType.KeyDown -> {
+                        pressStartedAt = System.currentTimeMillis()
+                        false
+                    }
+                    isSelect && event.type == KeyEventType.KeyUp -> {
+                        val held = System.currentTimeMillis() - pressStartedAt
+                        if (held >= 2_000L) {
+                            onOpenAdmin()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    else -> false
+                }
+            }
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Text(
@@ -640,11 +698,13 @@ private fun GoldLine(modifier: Modifier = Modifier) {
 @Composable
 private fun NavigationCardsRow(
     liveTvFocus: FocusRequester,
+    entertainmentFocus: FocusRequester,
     diningFocus: FocusRequester,
     servicesFocus: FocusRequester,
     alertsFocus: FocusRequester,
     unreadAlerts: Int,
     onLiveTv: () -> Unit,
+    onEntertainment: () -> Unit,
     onDining: () -> Unit,
     onServices: () -> Unit,
     onAlerts: () -> Unit,
@@ -652,8 +712,8 @@ private fun NavigationCardsRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(208.dp),
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
+            .height(200.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         LuxuryNavCard(
             title = stringResource(R.string.feature_live_tv),
@@ -665,6 +725,17 @@ private fun NavigationCardsRow(
                 .fillMaxHeight()
                 .focusRequester(liveTvFocus),
             onClick = onLiveTv,
+        )
+        LuxuryNavCard(
+            title = stringResource(R.string.feature_entertainment),
+            subtitle = stringResource(R.string.feature_entertainment_subtitle),
+            iconRes = R.drawable.ic_nav_entertainment,
+            focusGlowColor = GoldLuxury,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .focusRequester(entertainmentFocus),
+            onClick = onEntertainment,
         )
         LuxuryNavCard(
             title = stringResource(R.string.feature_dining),

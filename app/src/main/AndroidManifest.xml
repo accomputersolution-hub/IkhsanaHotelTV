@@ -18,9 +18,26 @@
         android:name="android.software.leanback"
         android:required="true" />
 
-    <!-- Required on Android 11+ so PackageManager can resolve Onyx IPTV -->
+    <!-- Required on Android 11+ so PackageManager can resolve IPTV / OTT apps -->
     <queries>
         <package android:name="com.onnet.systems.iptv.esto" />
+        <package android:name="com.google.android.youtube.tv" />
+        <package android:name="com.netflix.ninja" />
+        <package android:name="com.amazon.amazonvideo.livingroom" />
+        <package android:name="in.startv.hotstar" />
+        <package android:name="com.graymatrix.did" />
+        <package android:name="com.jio.media.ondemand" />
+        <package android:name="com.sonyliv" />
+        <package android:name="com.spotify.tv.android" />
+        <package android:name="com.android.vending" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="market" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" android:host="play.google.com" />
+        </intent>
     </queries>
 
     <application
@@ -50,12 +67,23 @@
 
         <activity
             android:name=".MainActivity"
-            android:exported="false"
+            android:exported="true"
             android:launchMode="singleTask"
             android:screenOrientation="landscape"
             android:configChanges="keyboard|keyboardHidden|navigation"
             android:defaultFocusHighlightEnabled="false"
-            android:theme="@style/Theme.IkhsanaHotelTV" />
+            android:theme="@style/Theme.IkhsanaHotelTV">
+            <!--
+              Custom launcher / kiosk: register as HOME so the TV can set this app
+              as the default launcher. Priority biases our filter when multiple
+              HOME handlers exist (technician still confirms in system Home settings).
+            -->
+            <intent-filter android:priority="999">
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <activity
             android:name=".PairingActivity"
