@@ -39,6 +39,7 @@ coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coi
 coil = { group = "io.coil-kt", name = "coil", version.ref = "coil" }
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
 firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore-ktx" }
+firebase-database = { group = "com.google.firebase", name = "firebase-database-ktx" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

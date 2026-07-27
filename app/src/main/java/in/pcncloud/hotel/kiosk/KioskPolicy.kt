@@ -15,6 +15,7 @@ import androidx.lifecycle.ProcessLifecycleOwner
  * Default: **true** (hotel TVs lock to guest UI unless technicians disable it).
  *
  * Sources:
+ * - Firebase Realtime Database `app_config/is_kiosk_mode_enabled` (live Web Admin)
  * - [KioskRemoteConfig] writes the flag from Firebase Remote Config on launch
  * - Staff Admin Mode (Master PIN) can override locally and set [KEY_ADMIN_OVERRIDE]
  *
@@ -38,6 +39,7 @@ object KioskPolicy {
 
     enum class KioskSource {
         REMOTE_CONFIG,
+        REALTIME_DATABASE,
         LOCAL_ADMIN,
         SYSTEM_DEFAULT,
     }
