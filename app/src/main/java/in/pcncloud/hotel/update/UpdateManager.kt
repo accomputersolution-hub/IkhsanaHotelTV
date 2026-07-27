@@ -66,6 +66,10 @@ object UpdateManager {
     @Volatile
     private var observedDownloadId: Long = -1L
 
+    /** Last APK URL attempted — used to open browser if DownloadManager fails. */
+    @Volatile
+    private var lastApkUrl: String = ""
+
     @Volatile
     private var receiverRegistered = false
 
@@ -249,22 +253,28 @@ object UpdateManager {
     }
 
     private fun startDownload(activity: Activity, apkUrl: String, latestVersionName: String) {
+        lastApkUrl = apkUrl
         try {
             ensureReceiver(activity.applicationContext)
 
+            val fileName = "pcncloud-${latestVersionName.replace(Regex("[^A-Za-z0-9._-]"), "_")}.apk"
             val request = DownloadManager.Request(Uri.parse(apkUrl))
                 .setTitle(activity.getString(R.string.app_name))
                 .setDescription(activity.getString(R.string.update_downloading))
                 .setMimeType("application/vnd.android.package-archive")
-                .setNotificationVisibility(
-                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED,
+                .setAllowedNetworkTypes(
+                    DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE,
                 )
                 .setAllowedOverMetered(true)
                 .setAllowedOverRoaming(true)
+                .setNotificationVisibility(
+                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED,
+                )
+                .addRequestHeader("User-Agent", "Mozilla/5.0")
                 .setDestinationInExternalFilesDir(
                     activity,
                     Environment.DIRECTORY_DOWNLOADS,
-                    "pcncloud-$latestVersionName.apk",
+                    fileName,
                 )
 
             val manager = activity.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
@@ -272,8 +282,31 @@ object UpdateManager {
             Toast.makeText(activity, R.string.update_downloading, Toast.LENGTH_SHORT).show()
             Log.i(TAG, "APK download enqueued id=$observedDownloadId url=$apkUrl")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to enqueue APK download", e)
-            Toast.makeText(activity, R.string.update_download_failed, Toast.LENGTH_LONG).show()
+            Log.e(TAG, "DownloadManager enqueue failed — opening APK URL in browser", e)
+            openApkUrlInBrowser(activity, apkUrl)
+        }
+    }
+
+    /** Fallback when DownloadManager cannot pull Google Drive / CDN links. */
+    private fun openApkUrlInBrowser(context: Context, apkUrl: String) {
+        if (apkUrl.isBlank()) {
+            Toast.makeText(context, R.string.update_download_failed, Toast.LENGTH_LONG).show()
+            return
+        }
+        try {
+            val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(viewIntent)
+            Toast.makeText(
+                context,
+                "Opening download in browser…",
+                Toast.LENGTH_LONG,
+            ).show()
+            Log.i(TAG, "Opened APK URL in browser: $apkUrl")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open APK URL in browser", e)
+            Toast.makeText(context, R.string.update_download_failed, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -304,14 +337,29 @@ object UpdateManager {
                     cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS),
                 )
                 if (status != DownloadManager.STATUS_SUCCESSFUL) {
-                    Log.w(TAG, "Download failed for id=$downloadId status=$status")
-                    Toast.makeText(context, R.string.update_download_failed, Toast.LENGTH_LONG).show()
+                    val reason = cursor.getInt(
+                        cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON),
+                    )
+                    Log.w(
+                        TAG,
+                        "Download unsuccessful id=$downloadId status=$status reason=$reason — browser fallback",
+                    )
+                    Toast.makeText(
+                        context,
+                        "Download unsuccessful — opening browser",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    openApkUrlInBrowser(context, lastApkUrl)
                     return
                 }
 
                 val localUri = cursor.getString(
                     cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_URI),
-                ) ?: return
+                ) ?: run {
+                    Log.w(TAG, "Download succeeded but local URI missing — browser fallback")
+                    openApkUrlInBrowser(context, lastApkUrl)
+                    return
+                }
 
                 Toast.makeText(context, R.string.update_download_complete, Toast.LENGTH_SHORT).show()
                 openInstaller(context, Uri.parse(localUri))
