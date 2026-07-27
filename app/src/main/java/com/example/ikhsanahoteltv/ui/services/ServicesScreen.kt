@@ -35,10 +35,15 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
@@ -52,12 +57,16 @@ import com.example.ikhsanahoteltv.ui.components.luxuryBackHandler
 import com.example.ikhsanahoteltv.ui.theme.FocusCyan
 import com.example.ikhsanahoteltv.ui.theme.FocusTeal
 import com.example.ikhsanahoteltv.ui.theme.GoldLight
+import com.example.ikhsanahoteltv.ui.theme.GoldLuxury
 import com.example.ikhsanahoteltv.ui.theme.GoldPrimary
 import com.example.ikhsanahoteltv.ui.theme.NavyDeep
+import com.example.ikhsanahoteltv.ui.theme.NavySurface
 import com.example.ikhsanahoteltv.ui.theme.SansBody
 import com.example.ikhsanahoteltv.ui.theme.SerifDisplay
 import com.example.ikhsanahoteltv.ui.theme.TextMuted
 import com.example.ikhsanahoteltv.ui.theme.TextPrimary
+
+private val VacantRed = Color(0xFFEF4444)
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -97,7 +106,8 @@ fun ServicesScreen(
             items(viewModel.serviceOptions.withIndex().toList(), key = { it.value.serviceType }) { (index, option) ->
                 ServiceButton(
                     option = option,
-                    enabled = !uiState.isSubmitting,
+                    enabled = !uiState.isSubmitting && uiState.roomOccupied,
+                    roomOccupied = uiState.roomOccupied,
                     modifier = if (index == 0) Modifier.focusRequester(firstItemFocus) else Modifier,
                     onClick = { viewModel.requestService(option) },
                 )
@@ -128,6 +138,10 @@ fun ServicesScreen(
                     .align(Alignment.BottomEnd)
                     .padding(end = 36.dp, bottom = 36.dp),
             )
+        }
+
+        if (uiState.showVacantRoomDialog) {
+            VacantRoomDialog(onDismiss = viewModel::dismissVacantRoomDialog)
         }
     }
 }
@@ -176,6 +190,7 @@ private fun ActiveRequestRow(request: ServiceRequest) {
 private fun ServiceButton(
     option: ServiceOption,
     enabled: Boolean,
+    roomOccupied: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -184,22 +199,26 @@ private fun ServiceButton(
         targetValue = if (focused) 1.03f else 1f,
         label = "serviceScale",
     )
+    val shape = RoundedCornerShape(14.dp)
+    val borderColor = when {
+        !roomOccupied -> VacantRed.copy(alpha = 0.4f)
+        focused -> GoldPrimary
+        else -> Color.White.copy(alpha = 0.12f)
+    }
+    val bgColor = when {
+        !roomOccupied -> VacantRed.copy(alpha = 0.06f)
+        focused -> GoldPrimary.copy(alpha = 0.18f)
+        else -> NavyDeep.copy(alpha = 0.5f)
+    }
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .scale(scale)
             .onFocusChanged { focused = it.isFocused }
-            .focusable(enabled = enabled)
-            .background(
-                if (focused) GoldPrimary.copy(alpha = 0.18f) else NavyDeep.copy(alpha = 0.5f),
-                RoundedCornerShape(14.dp),
-            )
-            .border(
-                width = if (focused) 3.dp else 1.dp,
-                color = if (focused) GoldPrimary else Color.White.copy(alpha = 0.12f),
-                shape = RoundedCornerShape(14.dp),
-            )
+            .focusable(enabled = roomOccupied && !enabled.not())
+            .background(bgColor, shape)
+            .border(width = if (focused) 3.dp else 1.dp, color = borderColor, shape = shape)
             .onKeyEvent { event ->
                 if (enabled && event.type == KeyEventType.KeyDown &&
                     (event.key == Key.Enter || event.key == Key.DirectionCenter)
@@ -214,21 +233,112 @@ private fun ServiceButton(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        Text(text = option.icon, fontSize = 28.sp)
+        Text(text = if (roomOccupied) option.icon else "🔒", fontSize = 28.sp)
         Column {
             Text(
                 text = option.label,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = SansBody,
-                color = TextPrimary,
+                color = if (roomOccupied) TextPrimary else TextMuted.copy(alpha = 0.55f),
             )
             Text(
-                text = stringResource(R.string.service_tap_to_request),
+                text = if (roomOccupied) {
+                    stringResource(R.string.service_tap_to_request)
+                } else {
+                    stringResource(R.string.vacant_room_cta_hint)
+                },
                 fontSize = 13.sp,
                 fontFamily = SansBody,
-                color = TextMuted,
+                color = if (roomOccupied) TextMuted else VacantRed.copy(alpha = 0.8f),
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun VacantRoomDialog(onDismiss: () -> Unit) {
+    val dismissFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { dismissFocus.requestFocus() }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            modifier = Modifier
+                .background(NavySurface, RoundedCornerShape(24.dp))
+                .border(2.dp, VacantRed.copy(alpha = 0.55f), RoundedCornerShape(24.dp))
+                .padding(32.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(text = "🚫", fontSize = 40.sp)
+                Text(
+                    text = stringResource(R.string.vacant_room_dialog_title),
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = SerifDisplay,
+                    color = VacantRed,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    text = stringResource(R.string.vacant_room_dialog_message),
+                    fontSize = 14.sp,
+                    fontFamily = SansBody,
+                    color = TextMuted,
+                    textAlign = TextAlign.Center,
+                )
+                // Dismiss button
+                var btnFocused by remember { mutableStateOf(false) }
+                val btnScale by animateFloatAsState(
+                    targetValue = if (btnFocused) 1.04f else 1f,
+                    label = "vacantBtnScale",
+                )
+                val btnShape = RoundedCornerShape(12.dp)
+                val btnBrush = if (btnFocused) {
+                    Brush.verticalGradient(listOf(GoldLight, GoldLuxury))
+                } else {
+                    Brush.verticalGradient(
+                        listOf(GoldLuxury.copy(0.95f), GoldPrimary.copy(0.85f)),
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.65f)
+                        .graphicsLayer { scaleX = btnScale; scaleY = btnScale }
+                        .background(brush = btnBrush, shape = btnShape)
+                        .border(
+                            if (btnFocused) 2.dp else 1.dp,
+                            if (btnFocused) GoldLight else GoldLuxury.copy(0.7f),
+                            btnShape,
+                        )
+                        .focusRequester(dismissFocus)
+                        .onFocusChanged { btnFocused = it.isFocused }
+                        .focusable()
+                        .onKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyDown &&
+                                (event.key == Key.Enter || event.key == Key.DirectionCenter)
+                            ) {
+                                onDismiss(); true
+                            } else false
+                        }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(R.string.vacant_room_dialog_cta),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = SansBody,
+                        color = NavyDeep,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
     }
 }

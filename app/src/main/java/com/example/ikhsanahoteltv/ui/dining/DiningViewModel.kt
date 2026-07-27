@@ -11,6 +11,7 @@ import com.example.ikhsanahoteltv.data.model.MenuItem
 import com.example.ikhsanahoteltv.data.model.OrderLineItem
 import com.example.ikhsanahoteltv.data.model.OrderStatus
 import com.example.ikhsanahoteltv.data.model.PaymentMethod
+import com.example.ikhsanahoteltv.data.model.RoomStatus
 import com.example.ikhsanahoteltv.data.repository.FirestoreRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,6 +30,13 @@ data class DiningUiState(
     val selectedPayment: PaymentMethod = PaymentMethod.PAY_AT_CHECKOUT,
     /** Non-null while the QR dialog is shown. Carries the total so the dialog can display it. */
     val pendingQrTotal: Double? = null,
+    /**
+     * True once the room-status snapshot has arrived and the room is OCCUPIED.
+     * Defaults to true so the UI is never accidentally blocked before the first snapshot.
+     */
+    val roomOccupied: Boolean = true,
+    /** Show the "room not checked-in" blocking dialog. */
+    val showVacantRoomDialog: Boolean = false,
 ) {
     val filteredItems: List<MenuItem>
         get() = menuItems.filter { it.category == selectedCategory && it.available }
@@ -77,6 +85,11 @@ class DiningViewModel(
                 _uiState.update { it.copy(roomOrders = orders) }
             }
         }
+        viewModelScope.launch {
+            repository.observeThisRoomStatus().collect { roomStatus ->
+                _uiState.update { it.copy(roomOccupied = roomStatus.occupied) }
+            }
+        }
     }
 
     fun selectCategory(category: MenuCategory) {
@@ -115,6 +128,10 @@ class DiningViewModel(
         }
     }
 
+    fun dismissVacantRoomDialog() {
+        _uiState.update { it.copy(showVacantRoomDialog = false) }
+    }
+
     /**
      * Initiates checkout.
      * – PAY_AT_CHECKOUT → places order immediately.
@@ -123,6 +140,11 @@ class DiningViewModel(
     fun requestPlaceOrder() {
         val state = _uiState.value
         if (state.cart.isEmpty() || state.isPlacingOrder) return
+
+        if (!state.roomOccupied) {
+            _uiState.update { it.copy(showVacantRoomDialog = true) }
+            return
+        }
 
         if (state.selectedPayment == PaymentMethod.PAID_ONLINE) {
             _uiState.update { it.copy(pendingQrTotal = state.cartTotal, orderMessage = null) }
@@ -199,6 +221,7 @@ class DiningViewModel(
                 isPlacingOrder = false,
                 selectedPayment = PaymentMethod.PAY_AT_CHECKOUT,
                 pendingQrTotal = null,
+                showVacantRoomDialog = false,
             )
         }
     }

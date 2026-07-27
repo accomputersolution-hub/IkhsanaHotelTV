@@ -31,6 +31,10 @@ data class ServicesUiState(
     val toastMessage: String? = null,
     val toastType: ServiceToastType = ServiceToastType.SUCCESS,
     val activeRequests: List<ServiceRequest> = emptyList(),
+    /** True when the room's Firestore doc shows the room is OCCUPIED. Defaults to true (fail-open). */
+    val roomOccupied: Boolean = true,
+    /** Show the "room not checked-in" blocking dialog. */
+    val showVacantRoomDialog: Boolean = false,
 )
 
 class ServicesViewModel(
@@ -69,6 +73,11 @@ class ServicesViewModel(
                 handleRequestUpdates(requests)
             }
         }
+        viewModelScope.launch {
+            repository.observeThisRoomStatus().collect { roomStatus ->
+                _uiState.update { it.copy(roomOccupied = roomStatus.occupied) }
+            }
+        }
     }
 
     private suspend fun handleRequestUpdates(requests: List<ServiceRequest>) {
@@ -96,8 +105,17 @@ class ServicesViewModel(
         _uiState.update { it.copy(activeRequests = requests.filter { it.status != "cancelled" }) }
     }
 
+    fun dismissVacantRoomDialog() {
+        _uiState.update { it.copy(showVacantRoomDialog = false) }
+    }
+
     fun requestService(option: ServiceOption) {
         if (_uiState.value.isSubmitting) return
+
+        if (!_uiState.value.roomOccupied) {
+            _uiState.update { it.copy(showVacantRoomDialog = true) }
+            return
+        }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isSubmitting = true) }
@@ -139,6 +157,7 @@ class ServicesViewModel(
                 activeRequests = emptyList(),
                 toastMessage = null,
                 isSubmitting = false,
+                showVacantRoomDialog = false,
             )
         }
     }

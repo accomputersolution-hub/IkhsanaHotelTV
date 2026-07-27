@@ -182,6 +182,7 @@ fun DiningScreen(
                     roomOrders = uiState.roomOrders,
                     orderMessage = uiState.orderMessage,
                     isPlacingOrder = uiState.isPlacingOrder,
+                    roomOccupied = uiState.roomOccupied,
                     selectedPayment = uiState.selectedPayment,
                     onSelectPayment = viewModel::selectPayment,
                     orderFocus = orderFocus,
@@ -198,6 +199,11 @@ fun DiningScreen(
                         onConfirm = viewModel::confirmQrPayment,
                         onDismiss = viewModel::dismissQrDialog,
                     )
+                }
+
+                // ── Vacant room blocking dialog ───────────────────────────
+                if (uiState.showVacantRoomDialog) {
+                    VacantRoomDialog(onDismiss = viewModel::dismissVacantRoomDialog)
                 }
             }
         }
@@ -534,6 +540,7 @@ private fun OrderSummaryPanel(
     roomOrders: List<LiveOrder>,
     orderMessage: String?,
     isPlacingOrder: Boolean,
+    roomOccupied: Boolean,
     selectedPayment: PaymentMethod,
     onSelectPayment: (PaymentMethod) -> Unit,
     orderFocus: FocusRequester,
@@ -638,6 +645,7 @@ private fun OrderSummaryPanel(
 
             val hasItems = cart.isNotEmpty()
             val ctaText = when {
+                !roomOccupied -> stringResource(R.string.vacant_room_cta_hint)
                 isPlacingOrder -> stringResource(R.string.loading)
                 !hasItems -> stringResource(R.string.cart_add_items_cta)
                 selectedPayment == PaymentMethod.PAID_ONLINE ->
@@ -647,8 +655,8 @@ private fun OrderSummaryPanel(
 
             PlaceOrderCta(
                 text = ctaText,
-                enabled = hasItems && !isPlacingOrder,
-                highlighted = hasItems,
+                enabled = hasItems && !isPlacingOrder && roomOccupied,
+                highlighted = hasItems && roomOccupied,
                 modifier = Modifier.focusRequester(orderFocus),
                 onClick = onPlaceOrder,
             )
@@ -839,6 +847,61 @@ private fun OrderStatusBadge(status: OrderStatus) {
             maxLines = 1,
             overflow = TextOverflow.Clip,
         )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vacant Room Blocking Dialog
+// ─────────────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun VacantRoomDialog(onDismiss: () -> Unit) {
+    val dismissFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { dismissFocus.requestFocus() }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            modifier = Modifier
+                .background(NavySurface, RoundedCornerShape(24.dp))
+                .border(2.dp, NonVegRed.copy(alpha = 0.55f), RoundedCornerShape(24.dp))
+                .padding(32.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                // Warning icon
+                Text(text = "🚫", fontSize = 40.sp)
+
+                Text(
+                    text = stringResource(R.string.vacant_room_dialog_title),
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = SerifDisplay,
+                    color = NonVegRed,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    text = stringResource(R.string.vacant_room_dialog_message),
+                    fontSize = 14.sp,
+                    fontFamily = SansBody,
+                    color = TextMuted,
+                    textAlign = TextAlign.Center,
+                )
+
+                // Dismiss CTA — reuses QrDialogButton style
+                QrDialogButton(
+                    text = stringResource(R.string.vacant_room_dialog_cta),
+                    highlighted = true,
+                    modifier = Modifier
+                        .focusRequester(dismissFocus)
+                        .fillMaxWidth(0.6f),
+                    onClick = onDismiss,
+                )
+            }
+        }
     }
 }
 

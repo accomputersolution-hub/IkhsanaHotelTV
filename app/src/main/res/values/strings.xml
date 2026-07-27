@@ -49,6 +49,10 @@
     <string name="order_history">Recent Orders</string>
     <string name="no_orders_yet">No orders placed yet</string>
     <string name="menu_empty_category">No dishes in this category right now</string>
+    <string name="vacant_room_dialog_title">Room Not Checked-In</string>
+    <string name="vacant_room_dialog_message">This room is not currently checked in.\nRoom services are only available for occupied rooms.\n\nPlease contact the front desk to activate your room.</string>
+    <string name="vacant_room_dialog_cta">Understood</string>
+    <string name="vacant_room_cta_hint">Room not checked-in — contact reception</string>
     <string name="payment_method_title">Payment Method</string>
     <string name="pay_at_checkout">Pay at Checkout</string>
     <string name="pay_at_checkout_sub">Add to Room Bill</string>

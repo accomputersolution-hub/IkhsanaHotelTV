@@ -109,6 +109,59 @@ class FirestoreRepository(
     }
 
     /**
+     * Hotels/{hotelId}/Rooms/{room} — live occupancy status for *this* TV's room only.
+     * Emits [RoomStatus.occupied] = true only when status is "occupied" or guestName is set.
+     * Defaults to occupied=true so the UI is not blocked if Firestore is unreachable.
+     */
+    fun observeThisRoomStatus(): Flow<RoomStatus> = callbackFlow {
+        val docPath = FirestorePaths.roomDocument(hotelId, roomNumber)
+        Log.d(TAG, "LISTEN ThisRoom status → $docPath")
+
+        val listener = firestore
+            .collection(FirestorePaths.HOTELS)
+            .document(hotelId)
+            .collection(FirestorePaths.ROOMS)
+            .document(roomNumber)
+            .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "FAIL ThisRoom status listener: ${error.message}", error)
+                    // Fail-open: allow services when Firestore is down
+                    trySend(RoomStatus(roomNumber = roomNumber, occupied = true, status = "occupied"))
+                    return@addSnapshotListener
+                }
+                if (snapshot == null || !snapshot.exists()) {
+                    Log.d(TAG, "EMPTY ThisRoom doc missing: $docPath — defaulting occupied=true")
+                    trySend(RoomStatus(roomNumber = roomNumber, occupied = true, status = "occupied"))
+                    return@addSnapshotListener
+                }
+                val data = snapshot.data ?: emptyMap()
+                val guestName = data["guestName"] as? String ?: ""
+                val status = firstNonBlank(
+                    data["status"] as? String,
+                    data["roomStatus"] as? String,
+                ).lowercase()
+                val occupied = guestName.isNotBlank() ||
+                    (data["occupied"] as? Boolean == true) ||
+                    status == "occupied"
+                val roomStatus = RoomStatus(
+                    roomNumber = roomNumber,
+                    guestName = guestName,
+                    status = status.ifBlank { if (occupied) "occupied" else "vacant" },
+                    sessionKey = data["sessionKey"] as? String ?: "",
+                    occupied = occupied,
+                    checkInDate = data["checkInDate"] as? String ?: "",
+                    checkOutDate = data["checkOutDate"] as? String ?: "",
+                )
+                Log.d(TAG, "OK ThisRoom status → occupied=$occupied status=${roomStatus.status}")
+                trySend(roomStatus)
+            }
+        awaitClose {
+            Log.d(TAG, "UNLISTEN ThisRoom status → $docPath")
+            listener.remove()
+        }
+    }
+
+    /**
      * Hotels/{hotelId}/Rooms — live room and guest status for the whole tenant.
      */
     fun observeRooms(): Flow<List<RoomStatus>> = callbackFlow {
