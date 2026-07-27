@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.ikhsanahoteltv"
+    namespace = "in.pcncloud.hotel"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -13,7 +13,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.ikhsanahoteltv"
+        applicationId = "in.pcncloud.hotel"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
