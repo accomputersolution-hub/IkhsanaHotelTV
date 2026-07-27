@@ -46,6 +46,8 @@
     }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.5.2/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body class="auth-booting">
 
@@ -416,6 +418,71 @@
     </div>
   </div>
 
+  <!-- Bulk Menu Upload Modal -->
+  <div id="bulk-upload-modal" class="modal-overlay hidden">
+    <div class="modal-panel modal-panel-xl">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <h3 class="text-lg font-bold">Bulk Menu Upload</h3>
+          <p class="text-xs mt-0.5 opacity-70">Import CSV / XLSX → Hotels/{hotelId}/Menu</p>
+        </div>
+        <button id="bulk-upload-close" type="button" class="modal-close-btn">&times;</button>
+      </div>
+
+      <div class="bulk-upload-toolbar">
+        <button id="bulk-download-sample-btn" type="button" class="btn-gold btn-secondary-outline">Download Sample CSV</button>
+        <span class="bulk-upload-hint">Columns: category, name, price, description, is_veg, image_url</span>
+      </div>
+
+      <div id="bulk-dropzone" class="bulk-dropzone" tabindex="0">
+        <input id="bulk-file-input" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" class="hidden" />
+        <div class="bulk-dropzone-icon">📄</div>
+        <p class="bulk-dropzone-title">Drag &amp; drop CSV / XLSX here</p>
+        <p class="bulk-dropzone-sub">or click to browse files</p>
+      </div>
+
+      <div id="bulk-error" class="bulk-error hidden" role="alert"></div>
+
+      <div id="bulk-preview-wrap" class="bulk-preview-wrap hidden">
+        <div class="bulk-preview-header">
+          <h4 class="text-sm font-semibold">Preview</h4>
+          <span id="bulk-preview-count" class="count-badge">0</span>
+        </div>
+        <div class="bulk-preview-scroll">
+          <table class="bulk-preview-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Category</th>
+                <th>Name</th>
+                <th>Price</th>
+                <th>Veg</th>
+                <th>Description</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="bulk-preview-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="bulk-progress-wrap" class="bulk-progress-wrap hidden">
+        <div class="bulk-progress-label">
+          <span id="bulk-progress-text">Importing…</span>
+          <span id="bulk-progress-pct">0%</span>
+        </div>
+        <div class="bulk-progress-track">
+          <div id="bulk-progress-bar" class="bulk-progress-bar" style="width:0%"></div>
+        </div>
+      </div>
+
+      <div class="bulk-upload-actions">
+        <button id="bulk-import-btn" type="button" class="btn-gold" disabled>Import to Firestore</button>
+        <button id="bulk-clear-btn" type="button" class="btn-gold btn-secondary-outline">Clear</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Add Category Modal -->
   <div id="add-category-modal" class="modal-overlay hidden">
     <div class="modal-panel">
@@ -672,6 +739,8 @@
               </div>
               <div class="flex items-center gap-2 flex-wrap">
                 <span id="menu-count" class="count-badge">0</span>
+                <button id="download-sample-csv-btn" type="button" class="btn-gold btn-secondary-outline">Download Sample CSV</button>
+                <button id="bulk-upload-btn" type="button" class="btn-gold">⬆ Bulk Upload</button>
                 <button id="add-category-btn" type="button" class="btn-gold">+ Add Category</button>
                 <button id="add-menu-item-btn" type="button" class="btn-gold">+ Add Food Item</button>
               </div>

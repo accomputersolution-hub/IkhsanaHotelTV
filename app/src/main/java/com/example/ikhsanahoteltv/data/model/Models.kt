@@ -2,6 +2,8 @@ package com.example.ikhsanahoteltv.data.model
 
 data class GuestProfile(
     val guestName: String = "Guest",
+    /** Optional honorific from PMS, e.g. "Mr.", "Ms.", "Mrs.", "Dr." — empty = no prefix. */
+    val salutation: String = "",
     val roomNumber: String = "",
     val hotelName: String = "",
     val hotelLogoUrl: String = "",

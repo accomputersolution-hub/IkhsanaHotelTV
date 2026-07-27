@@ -80,6 +80,12 @@ class FirestoreRepository(
                     currentSessionKey = sessionKey
                     val profile = GuestProfile(
                         guestName = data["guestName"] as? String ?: "Guest",
+                        salutation = firstNonBlank(
+                            data["salutation"] as? String,
+                            data["title"] as? String,
+                            data["guestTitle"] as? String,
+                            data["guest_title"] as? String,
+                        ),
                         roomNumber = roomNumber,
                         hotelName = data["hotelName"] as? String ?: "",
                         hotelLogoUrl = data["hotelLogoUrl"] as? String ?: "",

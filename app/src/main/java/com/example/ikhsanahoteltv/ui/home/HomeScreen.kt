@@ -122,6 +122,7 @@ fun HomeScreen(
                 .ifBlank { uiState.guestProfile.welcomeMessage }
                 .ifBlank { uiState.guestProfile.hotelInfo },
             guestName = uiState.guestProfile.guestName,
+            salutation = uiState.guestProfile.salutation,
             unreadAlerts = uiState.alerts.count { !it.read && !it.revoked },
             liveTvFocus = liveTvFocus,
             diningFocus = diningFocus,
@@ -274,6 +275,7 @@ private fun HomeForegroundContent(
     tagline: String,
     welcomeMessage: String,
     guestName: String,
+    salutation: String,
     unreadAlerts: Int,
     liveTvFocus: FocusRequester,
     diningFocus: FocusRequester,
@@ -302,6 +304,7 @@ private fun HomeForegroundContent(
 
         WelcomeBanner(
             guestName = guestName,
+            salutation = salutation,
             roomNumber = roomNumber,
             welcomeMessage = welcomeMessage,
         )
@@ -536,6 +539,7 @@ private fun GoldSeparatorLine() {
 @Composable
 private fun WelcomeBanner(
     guestName: String,
+    salutation: String,
     roomNumber: String,
     welcomeMessage: String,
 ) {
@@ -557,7 +561,7 @@ private fun WelcomeBanner(
         Spacer(modifier = Modifier.height(12.dp))
 
         AnimatedContent(
-            targetState = formatGuestDisplayName(guestName),
+            targetState = formatGuestDisplayName(guestName, salutation),
             transitionSpec = {
                 (slideInVertically { it / 3 } + fadeIn())
                     .togetherWith(slideOutVertically { -it / 3 } + fadeOut())
@@ -702,15 +706,30 @@ private fun NavigationCardsRow(
     }
 }
 
-private fun formatGuestDisplayName(raw: String): String {
-    val trimmed = raw.trim().ifBlank { "Guest" }
-    if (trimmed.equals("Guest", ignoreCase = true)) return "Guest"
-    if (trimmed.startsWith("Mr.", ignoreCase = true) ||
-        trimmed.startsWith("Mrs.", ignoreCase = true) ||
-        trimmed.startsWith("Ms.", ignoreCase = true) ||
-        trimmed.startsWith("Dr.", ignoreCase = true)
-    ) {
-        return trimmed.uppercase(Locale.getDefault())
+/**
+ * Dashboard greeting name.
+ * - Vacant / missing name → "Guest"
+ * - Salutation present → "Ms. SANA CHAUDHARY"
+ * - Salutation missing → name only (never force "Mr.")
+ */
+private fun formatGuestDisplayName(rawName: String, salutation: String): String {
+    val name = rawName.trim()
+    if (name.isBlank() || name.equals("Guest", ignoreCase = true)) {
+        return "Guest"
     }
-    return "Mr. ${trimmed.uppercase(Locale.getDefault())}"
+
+    val displayName = name.uppercase(Locale.getDefault())
+    val prefix = salutation.trim()
+    if (prefix.isBlank()) {
+        return displayName
+    }
+
+    // Avoid "Ms. Ms. NAME" if PMS already embedded the title in guestName.
+    val knownTitles = listOf("Mr.", "Mrs.", "Ms.", "Miss", "Dr.", "Prof.")
+    if (knownTitles.any { displayName.startsWith(it.uppercase(Locale.getDefault()), ignoreCase = true) }) {
+        return displayName
+    }
+
+    val normalizedPrefix = if (prefix.endsWith(".")) prefix else "$prefix."
+    return "${normalizedPrefix.uppercase(Locale.getDefault())} $displayName"
 }

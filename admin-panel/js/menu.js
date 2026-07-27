@@ -8,6 +8,7 @@ import {
   deleteDoc,
   onSnapshot,
   serverTimestamp,
+  writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 import {
   escapeHtml,
@@ -45,10 +46,29 @@ let settingsSeeded = false;
 let menuSettingsUnsub = null;
 let menuUnsub = null;
 
+/** Parsed rows ready for import (valid only). */
+let bulkParsedRows = [];
+let bulkImporting = false;
+
+const SAMPLE_CSV = `category,name,price,description,is_veg,image_url
+starters,Paneer Tikka,280,Grilled cottage cheese with spices,true,
+starters,Chicken Seekh Kebab,320,Minced chicken skewers,false,
+main_course,Butter Chicken,450,Creamy tomato gravy with chicken,false,
+main_course,Aloo Mutter,280,Potato and peas curry,true,
+beverages,Masala Chai,80,Spiced Indian tea,true,
+beverages,Fresh Lime Soda,120,Sweet or salted,true,
+desserts,Gulab Jamun,150,Warm milk dumplings in syrup,true,
+desserts,Chocolate Brownie,200,Warm brownie with ice cream,true,
+`;
+
+const REQUIRED_COLUMNS = ['category', 'name', 'price'];
+const BATCH_LIMIT = 400;
+
 export function initMenu() {
   renderFilterTabs();
   setupMenuItemModal();
   setupAddCategoryModal();
+  setupBulkUpload();
   onHotelChange(() => {
     settingsSeeded = false;
     listenMenuSettings();
@@ -456,4 +476,471 @@ function slugify(text) {
     .trim()
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_|_$/g, '');
+}
+
+// ── Bulk CSV / XLSX Upload ───────────────────────────────────────────────────
+
+function setupBulkUpload() {
+  setupModalClose('bulk-upload-modal', 'bulk-upload-close');
+
+  document.getElementById('bulk-upload-btn')?.addEventListener('click', () => {
+    resetBulkUploadUi();
+    openModal('bulk-upload-modal');
+  });
+
+  document.getElementById('download-sample-csv-btn')?.addEventListener('click', downloadSampleCsv);
+  document.getElementById('bulk-download-sample-btn')?.addEventListener('click', downloadSampleCsv);
+  document.getElementById('bulk-clear-btn')?.addEventListener('click', resetBulkUploadUi);
+  document.getElementById('bulk-import-btn')?.addEventListener('click', () => {
+    importBulkRows().catch((err) => {
+      console.error('[Bulk Upload] Import failed:', err);
+      toast(err.message || 'Import failed', 'error');
+      setBulkImporting(false);
+    });
+  });
+
+  const dropzone = document.getElementById('bulk-dropzone');
+  const fileInput = document.getElementById('bulk-file-input');
+  if (!dropzone || !fileInput) return;
+
+  dropzone.addEventListener('click', () => {
+    if (!bulkImporting) fileInput.click();
+  });
+  dropzone.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && !bulkImporting) {
+      e.preventDefault();
+      fileInput.click();
+    }
+  });
+
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files?.[0];
+    if (file) handleBulkFile(file);
+    fileInput.value = '';
+  });
+
+  ['dragenter', 'dragover'].forEach((evt) => {
+    dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.add('is-dragover');
+    });
+  });
+  ['dragleave', 'drop'].forEach((evt) => {
+    dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzone.classList.remove('is-dragover');
+    });
+  });
+  dropzone.addEventListener('drop', (e) => {
+    const file = e.dataTransfer?.files?.[0];
+    if (file) handleBulkFile(file);
+  });
+}
+
+function downloadSampleCsv() {
+  const blob = new Blob([SAMPLE_CSV], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'menu_items_sample.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  toast('Sample CSV downloaded');
+}
+
+function resetBulkUploadUi() {
+  bulkParsedRows = [];
+  bulkImporting = false;
+  setBulkError('');
+  const previewWrap = document.getElementById('bulk-preview-wrap');
+  const progressWrap = document.getElementById('bulk-progress-wrap');
+  const body = document.getElementById('bulk-preview-body');
+  const importBtn = document.getElementById('bulk-import-btn');
+  if (previewWrap) previewWrap.classList.add('hidden');
+  if (progressWrap) progressWrap.classList.add('hidden');
+  if (body) body.innerHTML = '';
+  if (importBtn) {
+    importBtn.disabled = true;
+    importBtn.textContent = 'Import to Firestore';
+  }
+  updateBulkProgress(0, 0);
+}
+
+function setBulkError(message) {
+  const el = document.getElementById('bulk-error');
+  if (!el) return;
+  if (!message) {
+    el.classList.add('hidden');
+    el.textContent = '';
+    return;
+  }
+  el.textContent = message;
+  el.classList.remove('hidden');
+}
+
+function setBulkImporting(active) {
+  bulkImporting = active;
+  const importBtn = document.getElementById('bulk-import-btn');
+  const clearBtn = document.getElementById('bulk-clear-btn');
+  if (importBtn) {
+    importBtn.disabled = active || !bulkParsedRows.some((r) => r.valid);
+    importBtn.textContent = active ? 'Importing…' : 'Import to Firestore';
+  }
+  if (clearBtn) clearBtn.disabled = active;
+}
+
+async function handleBulkFile(file) {
+  if (bulkImporting) return;
+  setBulkError('');
+  bulkParsedRows = [];
+
+  const name = (file.name || '').toLowerCase();
+  const isCsv = name.endsWith('.csv') || file.type === 'text/csv';
+  const isXlsx =
+    name.endsWith('.xlsx') ||
+    name.endsWith('.xls') ||
+    file.type.includes('spreadsheet') ||
+    file.type.includes('excel');
+
+  if (!isCsv && !isXlsx) {
+    setBulkError('Please upload a .csv or .xlsx file.');
+    toast('Unsupported file type', 'error');
+    return;
+  }
+
+  try {
+    let rows;
+    if (isCsv) {
+      rows = await parseCsvFile(file);
+    } else {
+      rows = await parseXlsxFile(file);
+    }
+    const { parsed, errors } = validateBulkRows(rows);
+    bulkParsedRows = parsed;
+    renderBulkPreview(parsed);
+
+    if (errors.length) {
+      setBulkError(errors.slice(0, 8).join(' · ') + (errors.length > 8 ? ` (+${errors.length - 8} more)` : ''));
+    }
+
+    const validCount = parsed.filter((r) => r.valid).length;
+    const importBtn = document.getElementById('bulk-import-btn');
+    if (importBtn) {
+      importBtn.disabled = validCount === 0;
+      importBtn.textContent = validCount
+        ? `Import ${validCount} item${validCount === 1 ? '' : 's'} to Firestore`
+        : 'Import to Firestore';
+    }
+
+    if (!validCount) {
+      toast('No valid rows to import', 'error');
+    } else {
+      toast(`Parsed ${validCount} valid item${validCount === 1 ? '' : 's'}`);
+    }
+  } catch (err) {
+    console.error('[Bulk Upload] Parse failed:', err);
+    setBulkError(err.message || 'Failed to parse file');
+    toast('Failed to parse file', 'error');
+  }
+}
+
+function parseCsvFile(file) {
+  return new Promise((resolve, reject) => {
+    const PapaLib = window.Papa;
+    if (!PapaLib) {
+      reject(new Error('PapaParse library not loaded'));
+      return;
+    }
+    PapaLib.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (h) => normalizeHeader(h),
+      complete: (result) => {
+        if (result.errors?.length) {
+          const fatal = result.errors.filter((e) => e.type === 'Delimiter' || e.type === 'Quotes');
+          if (fatal.length) {
+            reject(new Error(fatal[0].message || 'CSV parse error'));
+            return;
+          }
+        }
+        resolve(result.data || []);
+      },
+      error: (err) => reject(err || new Error('CSV parse error')),
+    });
+  });
+}
+
+function parseXlsxFile(file) {
+  return new Promise((resolve, reject) => {
+    const XLSXLib = window.XLSX;
+    if (!XLSXLib) {
+      reject(new Error('XLSX library not loaded'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSXLib.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        if (!sheetName) {
+          reject(new Error('Workbook has no sheets'));
+          return;
+        }
+        const sheet = workbook.Sheets[sheetName];
+        const rows = XLSXLib.utils.sheet_to_json(sheet, { defval: '', raw: false });
+        const normalized = rows.map((row) => {
+          const out = {};
+          Object.keys(row).forEach((key) => {
+            out[normalizeHeader(key)] = row[key];
+          });
+          return out;
+        });
+        resolve(normalized);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(new Error('Failed to read Excel file'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function normalizeHeader(header) {
+  return String(header || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '');
+}
+
+function validateBulkRows(rawRows) {
+  const errors = [];
+  const parsed = [];
+
+  if (!Array.isArray(rawRows) || !rawRows.length) {
+    errors.push('File is empty or has no data rows');
+    return { parsed, errors };
+  }
+
+  const first = rawRows[0] || {};
+  const headers = Object.keys(first);
+  const missingCols = REQUIRED_COLUMNS.filter((col) => !headers.includes(col));
+  if (missingCols.length) {
+    // Also accept if later rows somehow have keys — but typically header row defines keys
+    const anyHasRequired = REQUIRED_COLUMNS.every((col) =>
+      rawRows.some((r) => Object.prototype.hasOwnProperty.call(r, col)),
+    );
+    if (!anyHasRequired) {
+      errors.push(`Missing required column(s): ${missingCols.join(', ')}`);
+      return { parsed, errors };
+    }
+  }
+
+  rawRows.forEach((row, index) => {
+    const rowNum = index + 2; // header is row 1
+    const name = String(row.name ?? '').trim();
+    const categoryRaw = String(row.category ?? '').trim();
+    const category = normalizeCategoryKey(categoryRaw);
+    const priceRaw = row.price;
+    const price = parsePrice(priceRaw);
+    const description = String(row.description ?? '').trim();
+    const imageUrl = String(row.image_url ?? row.imageurl ?? row.imageUrl ?? '').trim();
+    const isVeg = parseBoolean(row.is_veg ?? row.isveg ?? row.isVeg, true);
+    const available = parseBoolean(
+      row.is_available ?? row.available ?? row.isavailable,
+      true,
+    );
+
+    const rowErrors = [];
+    if (!name) rowErrors.push('name required');
+    if (!categoryRaw) rowErrors.push('category required');
+    if (price === null) rowErrors.push(`invalid price "${priceRaw}"`);
+    if (price !== null && price < 0) rowErrors.push('price cannot be negative');
+
+    const valid = rowErrors.length === 0;
+    if (!valid) {
+      errors.push(`Row ${rowNum}: ${rowErrors.join(', ')}`);
+    }
+
+    parsed.push({
+      rowNum,
+      valid,
+      error: rowErrors.join(', '),
+      payload: {
+        name,
+        category,
+        price: price ?? 0,
+        description,
+        imageUrl,
+        isVeg,
+        available,
+      },
+    });
+  });
+
+  return { parsed, errors };
+}
+
+function normalizeCategoryKey(raw) {
+  const s = String(raw || '').trim().toLowerCase();
+  if (!s) return '';
+  const aliases = {
+    starter: 'starters',
+    starters: 'starters',
+    'main course': 'main_course',
+    maincourse: 'main_course',
+    main_course: 'main_course',
+    beverage: 'beverages',
+    beverages: 'beverages',
+    drink: 'beverages',
+    drinks: 'beverages',
+    dessert: 'desserts',
+    desserts: 'desserts',
+    breakfast: 'starters',
+    snacks: 'starters',
+  };
+  if (aliases[s]) return aliases[s];
+  const slug = slugify(s);
+  return aliases[slug] || slug;
+}
+
+function parsePrice(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const cleaned = String(value).replace(/[₹,\s]/g, '').trim();
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseBoolean(value, defaultValue) {
+  if (value === null || value === undefined || value === '') return defaultValue;
+  if (typeof value === 'boolean') return value;
+  const s = String(value).trim().toLowerCase();
+  if (['true', '1', 'yes', 'y', 'veg'].includes(s)) return true;
+  if (['false', '0', 'no', 'n', 'non-veg', 'nonveg', 'non_veg'].includes(s)) return false;
+  return defaultValue;
+}
+
+function renderBulkPreview(rows) {
+  const wrap = document.getElementById('bulk-preview-wrap');
+  const body = document.getElementById('bulk-preview-body');
+  const count = document.getElementById('bulk-preview-count');
+  if (!wrap || !body) return;
+
+  wrap.classList.remove('hidden');
+  if (count) {
+    const valid = rows.filter((r) => r.valid).length;
+    count.textContent = `${valid}/${rows.length}`;
+  }
+
+  body.innerHTML = rows
+    .map((row) => {
+      const p = row.payload;
+      const statusClass = row.valid ? 'bulk-row-ok' : 'bulk-row-bad';
+      const statusLabel = row.valid ? 'OK' : escapeHtml(row.error || 'Invalid');
+      return `
+        <tr class="${statusClass}">
+          <td>${row.rowNum}</td>
+          <td>${escapeHtml(p.category)}</td>
+          <td>${escapeHtml(p.name || '—')}</td>
+          <td>${row.valid ? `₹${Number(p.price).toFixed(0)}` : '—'}</td>
+          <td>${p.isVeg ? 'Veg' : 'Non-Veg'}</td>
+          <td class="bulk-desc-cell">${escapeHtml(p.description || '—')}</td>
+          <td>${statusLabel}</td>
+        </tr>`;
+    })
+    .join('');
+}
+
+function updateBulkProgress(done, total) {
+  const wrap = document.getElementById('bulk-progress-wrap');
+  const bar = document.getElementById('bulk-progress-bar');
+  const text = document.getElementById('bulk-progress-text');
+  const pct = document.getElementById('bulk-progress-pct');
+  if (!wrap) return;
+
+  if (!total) {
+    wrap.classList.add('hidden');
+    if (bar) bar.style.width = '0%';
+    if (text) text.textContent = 'Importing…';
+    if (pct) pct.textContent = '0%';
+    return;
+  }
+
+  wrap.classList.remove('hidden');
+  const percent = Math.min(100, Math.round((done / total) * 100));
+  if (bar) bar.style.width = `${percent}%`;
+  if (text) text.textContent = `Importing ${done} of ${total} items…`;
+  if (pct) pct.textContent = `${percent}%`;
+}
+
+async function importBulkRows() {
+  const hotelId = getHotelId();
+  if (!hotelId) {
+    toast('No hotel selected', 'error');
+    return;
+  }
+
+  const validRows = bulkParsedRows.filter((r) => r.valid);
+  if (!validRows.length) {
+    setBulkError('No valid rows to import.');
+    return;
+  }
+
+  setBulkImporting(true);
+  setBulkError('');
+  updateBulkProgress(0, validRows.length);
+
+  try {
+    let written = 0;
+    for (let i = 0; i < validRows.length; i += BATCH_LIMIT) {
+      const chunk = validRows.slice(i, i + BATCH_LIMIT);
+      const batch = writeBatch(db);
+
+      chunk.forEach((row) => {
+        const ref = doc(collection(db, 'Hotels', hotelId, 'Menu'));
+        const payload = {
+          name: row.payload.name,
+          category: row.payload.category,
+          price: Number(row.payload.price),
+          description: row.payload.description,
+          imageUrl: row.payload.imageUrl,
+          isVeg: Boolean(row.payload.isVeg),
+          available: row.payload.available !== false,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          source: 'bulk_upload',
+        };
+        batch.set(ref, payload);
+      });
+
+      await batch.commit();
+      written += chunk.length;
+      updateBulkProgress(written, validRows.length);
+      logFirestoreWrite(
+        'Menu Bulk Import',
+        `${paths.menuCollection()} (+${chunk.length})`,
+        { count: chunk.length, totalWritten: written },
+      );
+    }
+
+    toast(`Imported ${written} menu item${written === 1 ? '' : 's'} — live on TV`);
+    updateBulkProgress(written, validRows.length);
+    const text = document.getElementById('bulk-progress-text');
+    if (text) text.textContent = `Done — imported ${written} of ${validRows.length} items`;
+    closeModal('bulk-upload-modal');
+    resetBulkUploadUi();
+  } catch (err) {
+    console.error('[Firestore ERROR] Bulk menu import failed:', err);
+    setBulkError(err.message || 'Firestore write failed');
+    toast('Bulk import failed', 'error');
+  } finally {
+    setBulkImporting(false);
+  }
 }
