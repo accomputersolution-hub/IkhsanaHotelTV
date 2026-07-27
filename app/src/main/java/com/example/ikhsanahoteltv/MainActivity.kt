@@ -16,12 +16,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.ViewCompat
 import com.example.ikhsanahoteltv.config.HotelConfig
 import com.example.ikhsanahoteltv.data.FirestorePaths
 import com.example.ikhsanahoteltv.data.model.HotelBranding
 import com.example.ikhsanahoteltv.data.repository.FirestoreRepository
+import com.example.ikhsanahoteltv.kiosk.KioskPolicy
 import com.example.ikhsanahoteltv.ui.HotelViewModelFactory
 import com.example.ikhsanahoteltv.ui.components.ServiceSuspendedScreen
 import com.example.ikhsanahoteltv.ui.navigation.HotelNavGraph
@@ -37,7 +37,6 @@ class MainActivity : ComponentActivity() {
     private val syncListeners = mutableListOf<ListenerRegistration>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
         super.onCreate(savedInstanceState)
 
         if (FirebaseApp.getApps(this).isEmpty()) {
@@ -47,8 +46,8 @@ class MainActivity : ComponentActivity() {
         hotelConfig = HotelConfig(applicationContext)
         val hotelId = hotelConfig.getHotelId()
         if (hotelId.isNullOrBlank()) {
-            Log.i(TAG, "No paired hotelId — opening PairingActivity")
-            startActivity(Intent(this, PairingActivity::class.java))
+            Log.i(TAG, "No paired hotelId — opening SplashActivity")
+            startActivity(Intent(this, SplashActivity::class.java))
             finish()
             return
         }
@@ -114,6 +113,18 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        KioskPolicy.clearUserMinimized(this)
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        // Explicit Home / app-switch — do not allow watchdog to pull us back unless kiosk ON.
+        KioskPolicy.markUserMinimized(this)
+        Log.d(TAG, "onUserLeaveHint — marked minimized")
     }
 
     override fun onDestroy() {

@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/splash_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/splash_background"
+    android:keepScreenOn="true">
+
+    <!-- Soft gold radial atmosphere -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/bg_splash_vignette"
+        android:importantForAccessibility="no" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingHorizontal="48dp"
+        android:paddingVertical="32dp">
+
+        <ImageView
+            android:id="@+id/splash_logo"
+            android:layout_width="160dp"
+            android:layout_height="96dp"
+            android:adjustViewBounds="true"
+            android:contentDescription="@string/splash_logo_content_description"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_logo"
+            tools:src="@drawable/ic_logo" />
+
+        <TextView
+            android:id="@+id/splash_welcome"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:fontFamily="serif"
+            android:gravity="center"
+            android:letterSpacing="0.04"
+            android:maxLines="2"
+            android:text="@string/splash_welcome_generic"
+            android:textColor="@color/splash_text_primary"
+            android:textSize="34sp"
+            android:textStyle="bold"
+            tools:text="Welcome to Ikhsana Resort &amp; Spa" />
+
+        <TextView
+            android:id="@+id/splash_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:letterSpacing="0.08"
+            android:text="@string/splash_status_loading"
+            android:textAllCaps="false"
+            android:textColor="@color/splash_text_muted"
+            android:textSize="14sp"
+            tools:text="Preparing your guest experience…" />
+
+        <ProgressBar
+            android:id="@+id/splash_progress"
+            style="?android:attr/progressBarStyleLarge"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginTop="36dp"
+            android:indeterminate="true"
+            android:indeterminateTint="@color/splash_gold"
+            android:indeterminateTintMode="src_in" />
+
+    </LinearLayout>
+
+</FrameLayout>

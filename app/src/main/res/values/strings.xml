@@ -58,4 +58,19 @@
     <string name="service_suspended_title">Service Suspended</string>
     <string name="service_suspended_message">This hotel account is currently inactive. Guest services on this TV are temporarily unavailable.</string>
     <string name="service_suspended_hint">Please contact the front desk or your platform administrator.</string>
+    <string name="splash_logo_content_description">Hotel logo</string>
+    <string name="splash_welcome_generic">Welcome</string>
+    <string name="splash_welcome_loading">Welcome</string>
+    <string name="splash_welcome_to">Welcome to %1$s</string>
+    <string name="splash_status_loading">Preparing your guest experience…</string>
+    <string name="splash_status_pairing">Opening hotel pairing…</string>
+    <string name="splash_status_ready">Ready</string>
+    <string name="splash_overlay_request">Allow “Display over other apps” to continue…</string>
+    <string name="splash_overlay_granted">Overlay permission granted</string>
+    <string name="splash_overlay_denied">Overlay permission not enabled — continuing…</string>
+    <string name="splash_overlay_denied_toast">Display over other apps was not enabled. Some background features may be limited.</string>
+    <string name="kiosk_notification_channel">Hotel TV keep-alive</string>
+    <string name="kiosk_notification_channel_desc">Optional kiosk foreground service — does not reopen the app on minimize</string>
+    <string name="kiosk_notification_title">Hotel TV</string>
+    <string name="kiosk_notification_text">Running in the background</string>
 </resources>

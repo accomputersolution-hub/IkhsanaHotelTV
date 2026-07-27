@@ -4,10 +4,14 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.example.ikhsanahoteltv.kiosk.KioskPolicy
+import com.example.ikhsanahoteltv.kiosk.KioskWatchdogService
 
 /**
  * Auto-launches the hotel TV app when the device powers on.
- * Requires RECEIVE_BOOT_COMPLETED permission (see AndroidManifest.xml).
+ *
+ * Does **not** relaunch when the user has minimized an already-created task.
+ * Boot is treated as an allowed cold start (unless a visible task already exists).
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -25,6 +29,19 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action !in BOOT_ACTIONS) return
 
+        // Already running in foreground — do not spawn a duplicate activity.
+        if (KioskPolicy.isProcessLifecycleStarted()) {
+            Log.i(TAG, "Skip boot launch — process already STARTED")
+            return
+        }
+        if (KioskPolicy.hasExistingTask(context) && !KioskPolicy.isKioskModeEnabled(context)) {
+            Log.i(TAG, "Skip boot launch — task already exists (non-kiosk)")
+            return
+        }
+
+        // Clear stale minimize flag from a previous session after reboot.
+        KioskPolicy.clearUserMinimized(context)
+
         val launchIntent = context.packageManager
             .getLaunchIntentForPackage(context.packageName)
             ?.apply {
@@ -40,6 +57,10 @@ class BootReceiver : BroadcastReceiver() {
 
         try {
             context.startActivity(launchIntent)
+            Log.i(TAG, "Boot launch → ${intent?.action}")
+            if (KioskPolicy.isKioskModeEnabled(context)) {
+                KioskWatchdogService.start(context)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch app after boot (${intent?.action})", e)
         }

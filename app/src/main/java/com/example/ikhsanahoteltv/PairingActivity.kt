@@ -1,8 +1,10 @@
 package com.example.ikhsanahoteltv
 
 import android.content.Intent
+import android.graphics.Rect
 import android.os.Bundle
 import android.util.Log
+import android.util.TypedValue
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
@@ -18,9 +20,10 @@ import com.google.firebase.firestore.FirebaseFirestore
 
 /**
  * First-run / unpaired TV setup: staff enters Hotel ID (slug), we verify
- * `Hotels/{id}` exists via Firestore get listeners, save prefs, then open [MainActivity].
+ * `Hotels/{id}` exists via Firestore get listeners, save prefs, then open [SplashActivity].
  *
- * Uses ScrollView + adjustResize so the soft keyboard does not cover Room / Pair controls.
+ * Uses ScrollView + `adjustPan` so the soft keyboard pans the window and focused
+ * fields stay visible for D-pad / soft-keyboard entry on Android TV.
  */
 class PairingActivity : AppCompatActivity() {
 
@@ -32,6 +35,9 @@ class PairingActivity : AppCompatActivity() {
     private lateinit var tvPairError: TextView
 
     private var pairingInFlight = false
+    private var baseBottomPadding = 0
+    private var imePaddingPx = 0
+    private var pendingScrollPass: Runnable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,8 +48,8 @@ class PairingActivity : AppCompatActivity() {
 
         hotelConfig = HotelConfig(applicationContext)
         if (hotelConfig.isPaired()) {
-            Log.d(TAG, "Already paired → ${hotelConfig.getHotelId()}, opening MainActivity")
-            openMainActivity()
+            Log.d(TAG, "Already paired → ${hotelConfig.getHotelId()}, opening SplashActivity")
+            openSplashActivity()
             return
         }
 
@@ -55,21 +61,30 @@ class PairingActivity : AppCompatActivity() {
         btnPair = findViewById(R.id.btnPair)
         tvPairError = findViewById(R.id.tvPairError)
 
+        baseBottomPadding = scrollView.paddingBottom
+        imePaddingPx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            IME_EXTRA_BOTTOM_DP,
+            resources.displayMetrics,
+        ).toInt()
+
         etRoomNumber.setText(hotelConfig.roomNumber)
 
         // Hotel ID → Next moves focus to Room Number on TV remote / soft keyboard.
-        etHotelId.imeOptions = EditorInfo.IME_ACTION_NEXT
+        etHotelId.imeOptions = EditorInfo.IME_ACTION_NEXT or EditorInfo.IME_FLAG_NO_EXTRACT_UI
         etHotelId.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_NEXT) {
                 etRoomNumber.requestFocus()
-                scrollFocusedIntoView(etRoomNumber)
+                applyImeFocusPadding(true)
+                ensureFocusedFieldVisible(etRoomNumber)
                 true
             } else {
                 false
             }
         }
 
-        etRoomNumber.imeOptions = EditorInfo.IME_ACTION_DONE
+        etRoomNumber.imeOptions = EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+        etRoomNumber.inputType = EditorInfo.TYPE_CLASS_NUMBER
         etRoomNumber.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) {
                 beginPairing()
@@ -79,21 +94,64 @@ class PairingActivity : AppCompatActivity() {
             }
         }
 
-        etHotelId.setOnFocusChangeListener { v, hasFocus ->
-            if (hasFocus) scrollFocusedIntoView(v)
+        val focusListener = View.OnFocusChangeListener { v, hasFocus ->
+            applyImeFocusPadding(hasFocus && (v === etHotelId || v === etRoomNumber))
+            if (hasFocus) {
+                ensureFocusedFieldVisible(v)
+            }
         }
-        etRoomNumber.setOnFocusChangeListener { v, hasFocus ->
-            if (hasFocus) scrollFocusedIntoView(v)
-        }
+        etHotelId.onFocusChangeListener = focusListener
+        etRoomNumber.onFocusChangeListener = focusListener
 
         btnPair.setOnClickListener { beginPairing() }
         etHotelId.requestFocus()
     }
 
-    private fun scrollFocusedIntoView(view: View) {
-        scrollView.post {
-            scrollView.smoothScrollTo(0, (view.parent as? View)?.top ?: view.top)
+    override fun onDestroy() {
+        pendingScrollPass?.let { pass ->
+            if (::scrollView.isInitialized) {
+                scrollView.removeCallbacks(pass)
+            }
         }
+        pendingScrollPass = null
+        super.onDestroy()
+    }
+
+    /**
+     * Extra bottom padding while an EditText is focused so the field (and Pair button)
+     * can scroll above the soft keyboard under adjustPan.
+     */
+    private fun applyImeFocusPadding(focused: Boolean) {
+        val bottom = if (focused) baseBottomPadding + imePaddingPx else baseBottomPadding
+        if (scrollView.paddingBottom == bottom) return
+        scrollView.setPadding(
+            scrollView.paddingLeft,
+            scrollView.paddingTop,
+            scrollView.paddingRight,
+            bottom,
+        )
+    }
+
+    private fun ensureFocusedFieldVisible(view: View) {
+        pendingScrollPass?.let { scrollView.removeCallbacks(it) }
+
+        val scrollPass = Runnable {
+            if (isFinishing || isDestroyed) return@Runnable
+            if (currentFocus !== view) return@Runnable
+
+            val rect = Rect()
+            view.getDrawingRect(rect)
+            // Expand downward so Room Number + Pair button clear the IME together.
+            if (view === etHotelId || view === etRoomNumber) {
+                rect.bottom += btnPair.height + (imePaddingPx / 3)
+            }
+            // Walks ViewParents (ScrollView) so the focused rect stays on-screen under adjustPan.
+            view.requestRectangleOnScreen(rect, false)
+        }
+        pendingScrollPass = scrollPass
+        // Immediate pass + delayed pass after the IME finishes animating in.
+        scrollView.post(scrollPass)
+        scrollView.postDelayed(scrollPass, IME_SETTLE_MS)
     }
 
     /** Immediately disable button → "Pairing..." then run Firestore check. */
@@ -131,7 +189,7 @@ class PairingActivity : AppCompatActivity() {
                             resetPairButton(getString(R.string.pairing_hotel_inactive))
                             return@runOnUiThread
                         }
-                        Log.i(TAG, "Hotels/$hotelId exists (status=$status) — saving prefs and launching MainActivity")
+                        Log.i(TAG, "Hotels/$hotelId exists (status=$status) — saving prefs and launching SplashActivity")
                         try {
                             hotelConfig.setHotelId(hotelId)
                             hotelConfig.setRoomNumber(roomNumber)
@@ -140,7 +198,7 @@ class PairingActivity : AppCompatActivity() {
                             resetPairButton(e.message ?: "Could not save hotel settings")
                             return@runOnUiThread
                         }
-                        openMainActivity()
+                        openSplashActivity()
                     } else {
                         Log.w(TAG, "Hotels/$hotelId does not exist")
                         resetPairButton("Hotel ID does not exist in database")
@@ -167,10 +225,10 @@ class PairingActivity : AppCompatActivity() {
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
-    private fun openMainActivity() {
+    private fun openSplashActivity() {
         pairingInFlight = false
         startActivity(
-            Intent(this, MainActivity::class.java).apply {
+            Intent(this, SplashActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             },
         )
@@ -179,5 +237,8 @@ class PairingActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "PairingActivity"
+        /** Extra ScrollView bottom inset while typing so fields clear the IME. */
+        private const val IME_EXTRA_BOTTOM_DP = 220f
+        private const val IME_SETTLE_MS = 180L
     }
 }

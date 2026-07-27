@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <uses-feature
         android:name="android.hardware.touchscreen"
@@ -19,6 +22,7 @@
     </queries>
 
     <application
+        android:name=".HotelTvApplication"
         android:allowBackup="true"
         android:banner="@mipmap/ic_launcher"
         android:icon="@mipmap/ic_launcher"
@@ -28,7 +32,7 @@
         tools:ignore="GoogleAppIndexingWarning">
 
         <activity
-            android:name=".MainActivity"
+            android:name=".SplashActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:screenOrientation="landscape"
@@ -43,13 +47,22 @@
         </activity>
 
         <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:configChanges="keyboard|keyboardHidden|navigation"
+            android:defaultFocusHighlightEnabled="false"
+            android:theme="@style/Theme.IkhsanaHotelTV" />
+
+        <activity
             android:name=".PairingActivity"
             android:exported="false"
             android:launchMode="singleTop"
             android:screenOrientation="landscape"
             android:configChanges="keyboard|keyboardHidden|navigation"
             android:defaultFocusHighlightEnabled="false"
-            android:windowSoftInputMode="adjustResize"
+            android:windowSoftInputMode="adjustPan|stateHidden"
             android:theme="@style/Theme.IkhsanaHotelTV" />
 
         <receiver
@@ -65,6 +78,20 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </receiver>
+
+        <!--
+          Optional kiosk keep-alive. START_STICKY must never relaunch UI on its own;
+          bring-to-front is gated by KioskPolicy (kiosk ON or crash recovery only).
+        -->
+        <service
+            android:name=".kiosk.KioskWatchdogService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Hotel TV optional kiosk keep-alive; does not relaunch UI on minimize" />
+        </service>
 
     </application>
 
