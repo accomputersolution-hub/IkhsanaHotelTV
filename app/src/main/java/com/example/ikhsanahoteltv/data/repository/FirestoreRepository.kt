@@ -303,14 +303,23 @@ class FirestoreRepository(
                 val items = snapshot?.documents?.mapNotNull { doc ->
                     val data = doc.data ?: return@mapNotNull null
                     val categoryKey = data["category"] as? String ?: "starters"
+                    val name = data["name"] as? String ?: ""
+                    val explicitVeg = data["isVeg"] as? Boolean
+                        ?: data["is_veg"] as? Boolean
+                        ?: data["veg"] as? Boolean
                     MenuItem(
                         id = doc.id,
-                        name = data["name"] as? String ?: "",
+                        name = name,
                         description = data["description"] as? String ?: "",
                         price = (data["price"] as? Number)?.toDouble() ?: 0.0,
                         category = MenuCategory.fromKey(categoryKey),
-                        imageUrl = data["imageUrl"] as? String ?: "",
+                        imageUrl = firstNonBlank(
+                            data["imageUrl"] as? String,
+                            data["image_url"] as? String,
+                            data["photoUrl"] as? String,
+                        ),
                         available = data["available"] as? Boolean ?: true,
+                        isVeg = explicitVeg ?: inferIsVeg(name),
                     )
                 } ?: emptyList()
 
@@ -600,15 +609,49 @@ class FirestoreRepository(
     )
 
     private fun defaultMenuItems(): List<MenuItem> = listOf(
-        MenuItem("s1", "Soup of the Day", "Chef's seasonal starter", 220.0, MenuCategory.STARTERS),
-        MenuItem("s2", "Veg Spring Rolls", "Crispy rolls with dip", 180.0, MenuCategory.STARTERS),
-        MenuItem("m1", "Butter Chicken", "Rich tomato gravy", 450.0, MenuCategory.MAIN_COURSE),
-        MenuItem("m2", "Paneer Tikka Masala", "Cottage cheese curry", 380.0, MenuCategory.MAIN_COURSE),
-        MenuItem("v1", "Fresh Orange Juice", "250 ml", 120.0, MenuCategory.BEVERAGES),
-        MenuItem("v2", "Masala Chai", "Traditional spiced tea", 80.0, MenuCategory.BEVERAGES),
-        MenuItem("d1", "Gulab Jamun", "2 pcs with rabri", 150.0, MenuCategory.DESSERTS),
-        MenuItem("d2", "Chocolate Brownie", "Warm with ice cream", 200.0, MenuCategory.DESSERTS),
+        MenuItem(
+            "s1", "Soup of the Day", "Seasonal broth finished with garden herbs",
+            220.0, MenuCategory.STARTERS, isVeg = true,
+        ),
+        MenuItem(
+            "s2", "Veg Spring Rolls", "Crispy rolls with sweet chilli dipping sauce",
+            180.0, MenuCategory.STARTERS, isVeg = true,
+        ),
+        MenuItem(
+            "m1", "Butter Chicken", "Tender chicken cooked in rich tomato spices",
+            450.0, MenuCategory.MAIN_COURSE, isVeg = false,
+        ),
+        MenuItem(
+            "m2", "Paneer Tikka Masala", "Charred cottage cheese in silky gravy",
+            380.0, MenuCategory.MAIN_COURSE, isVeg = true,
+        ),
+        MenuItem(
+            "v1", "Fresh Orange Juice", "Cold-pressed, served chilled (250 ml)",
+            120.0, MenuCategory.BEVERAGES, isVeg = true,
+        ),
+        MenuItem(
+            "v2", "Masala Chai", "Traditional spiced tea with aromatic spices",
+            80.0, MenuCategory.BEVERAGES, isVeg = true,
+        ),
+        MenuItem(
+            "d1", "Gulab Jamun", "Warm milk dumplings with rabri (2 pcs)",
+            150.0, MenuCategory.DESSERTS, isVeg = true,
+        ),
+        MenuItem(
+            "d2", "Chocolate Brownie", "Warm fudge brownie with vanilla ice cream",
+            200.0, MenuCategory.DESSERTS, isVeg = true,
+        ),
     )
+
+    /** Best-effort veg flag when Firestore omits isVeg / is_veg. */
+    private fun inferIsVeg(name: String): Boolean {
+        val n = name.lowercase()
+        val nonVegHints = listOf(
+            "chicken", "mutton", "lamb", "beef", "fish", "prawn", "shrimp",
+            "egg", "bacon", "meat", "kebab", "keema", "biryani",
+        )
+        return nonVegHints.none { n.contains(it) }
+    }
 
     companion object {
         private const val TAG = "FirestoreRepository"

@@ -48,6 +48,8 @@ data class MenuItem(
     val category: MenuCategory = MenuCategory.STARTERS,
     val imageUrl: String = "",
     val available: Boolean = true,
+    /** True = vegetarian (green badge); false = non-veg (red badge). */
+    val isVeg: Boolean = true,
 )
 
 enum class MenuCategory(val displayName: String, val firestoreKey: String) {

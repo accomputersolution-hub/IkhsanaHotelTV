@@ -27,8 +27,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -45,6 +47,10 @@ import androidx.annotation.DrawableRes
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import com.example.ikhsanahoteltv.ui.services.ServiceToastType
+import com.example.ikhsanahoteltv.ui.theme.GoldGlassBorder
+import com.example.ikhsanahoteltv.ui.theme.GoldGlassFill
+import com.example.ikhsanahoteltv.ui.theme.GoldLight
+import com.example.ikhsanahoteltv.ui.theme.GoldLuxury
 import com.example.ikhsanahoteltv.ui.theme.GoldPrimary
 import com.example.ikhsanahoteltv.ui.theme.NavyDeep
 import com.example.ikhsanahoteltv.ui.theme.SansBody
@@ -117,7 +123,7 @@ fun LuxuryNavCard(
     title: String,
     subtitle: String,
     @DrawableRes iconRes: Int,
-    focusGlowColor: Color,
+    focusGlowColor: Color = GoldLuxury,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -152,7 +158,8 @@ fun LuxuryNavCard(
                     Brush.linearGradient(
                         listOf(
                             focusGlowColor,
-                            focusGlowColor.copy(alpha = 0.6f),
+                            focusGlowColor.copy(alpha = 0.55f),
+                            GoldLight.copy(alpha = 0.9f),
                             focusGlowColor,
                         ),
                     )
@@ -178,20 +185,18 @@ fun LuxuryNavCard(
                     false
                 }
             }
-            .padding(horizontal = 16.dp, vertical = 20.dp),
+            .padding(horizontal = 16.dp, vertical = 18.dp),
         contentAlignment = Alignment.Center,
     ) {
-        // No background / no clip on inner children — prevents square black focus artifact
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            Image(
-                painter = painterResource(iconRes),
+            LuxuryIconBadge(
+                iconRes = iconRes,
                 contentDescription = title,
-                modifier = Modifier.size(40.dp),
-                contentScale = ContentScale.Fit,
+                focused = isFocused,
             )
             Text(
                 text = title,
@@ -214,9 +219,99 @@ fun LuxuryNavCard(
                 text = "›",
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Light,
-                color = if (isFocused) focusGlowColor else TextMuted.copy(alpha = 0.5f),
+                color = if (isFocused) GoldLuxury else TextMuted.copy(alpha = 0.5f),
             )
         }
+    }
+}
+
+/**
+ * Glowing gold glassmorphism disc for dashboard nav icons.
+ * Idle: soft gold wash + hairline border.
+ * Focused (D-pad): elevated amber shadow / glow so the icon reads as selected.
+ */
+@Composable
+fun LuxuryIconBadge(
+    @DrawableRes iconRes: Int,
+    contentDescription: String,
+    focused: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val elevation by animateFloatAsState(
+        targetValue = if (focused) 14f else 0f,
+        animationSpec = tween(durationMillis = 200),
+        label = "iconBadgeElevation",
+    )
+    val badgeScale by animateFloatAsState(
+        targetValue = if (focused) 1.08f else 1f,
+        animationSpec = tween(durationMillis = 200),
+        label = "iconBadgeScale",
+    )
+    val borderColor = if (focused) {
+        GoldLuxury.copy(alpha = 0.55f)
+    } else {
+        GoldGlassBorder
+    }
+    val fillBrush = if (focused) {
+        Brush.radialGradient(
+            colors = listOf(
+                GoldLuxury.copy(alpha = 0.28f),
+                GoldGlassFill,
+                GoldLuxury.copy(alpha = 0.08f),
+            ),
+        )
+    } else {
+        Brush.radialGradient(
+            colors = listOf(
+                GoldLuxury.copy(alpha = 0.16f),
+                GoldGlassFill,
+            ),
+        )
+    }
+
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = badgeScale
+                scaleY = badgeScale
+            }
+            .shadow(
+                elevation = elevation.dp,
+                shape = CircleShape,
+                ambientColor = GoldLuxury.copy(alpha = 0.45f),
+                spotColor = GoldLuxury.copy(alpha = 0.65f),
+                clip = false,
+            )
+            .size(64.dp)
+            .clip(CircleShape)
+            .background(brush = fillBrush, shape = CircleShape)
+            .border(
+                width = if (focused) 1.5.dp else 1.dp,
+                color = borderColor,
+                shape = CircleShape,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        // Soft inner glow ring when focused (reads even if parent card clips elevation).
+        if (focused) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(3.dp)
+                    .border(
+                        width = 1.dp,
+                        color = GoldLuxury.copy(alpha = 0.35f),
+                        shape = CircleShape,
+                    ),
+            )
+        }
+        Image(
+            painter = painterResource(iconRes),
+            contentDescription = contentDescription,
+            modifier = Modifier.size(30.dp),
+            contentScale = ContentScale.Fit,
+            colorFilter = ColorFilter.tint(GoldLuxury, BlendMode.SrcIn),
+        )
     }
 }
 

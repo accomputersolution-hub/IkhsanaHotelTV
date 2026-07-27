@@ -57,11 +57,8 @@ import com.example.ikhsanahoteltv.ui.HotelViewModelFactory
 import com.example.ikhsanahoteltv.ui.components.BroadcastAlertOverlay
 import com.example.ikhsanahoteltv.ui.components.LuxuryNavCard
 import com.example.ikhsanahoteltv.ui.components.ServiceToast
-import com.example.ikhsanahoteltv.ui.theme.FocusBlueTeal
-import com.example.ikhsanahoteltv.ui.theme.FocusCyan
-import com.example.ikhsanahoteltv.ui.theme.FocusRoyalBlue
-import com.example.ikhsanahoteltv.ui.theme.FocusTeal
 import com.example.ikhsanahoteltv.ui.theme.GoldLight
+import com.example.ikhsanahoteltv.ui.theme.GoldLuxury
 import com.example.ikhsanahoteltv.ui.theme.GoldPrimary
 import com.example.ikhsanahoteltv.ui.theme.NavyDeep
 import com.example.ikhsanahoteltv.ui.theme.NavyMain
@@ -657,8 +654,8 @@ private fun NavigationCardsRow(
         LuxuryNavCard(
             title = stringResource(R.string.feature_live_tv),
             subtitle = stringResource(R.string.feature_live_tv_subtitle),
-            iconRes = R.drawable.ic_live_tv,
-            focusGlowColor = FocusCyan,
+            iconRes = R.drawable.ic_nav_live_tv,
+            focusGlowColor = GoldLuxury,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
@@ -668,8 +665,8 @@ private fun NavigationCardsRow(
         LuxuryNavCard(
             title = stringResource(R.string.feature_dining),
             subtitle = stringResource(R.string.feature_dining_subtitle),
-            iconRes = R.drawable.ic_dining,
-            focusGlowColor = FocusTeal,
+            iconRes = R.drawable.ic_nav_dining,
+            focusGlowColor = GoldLuxury,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
@@ -679,8 +676,8 @@ private fun NavigationCardsRow(
         LuxuryNavCard(
             title = stringResource(R.string.feature_services),
             subtitle = stringResource(R.string.feature_services_subtitle),
-            iconRes = R.drawable.ic_services,
-            focusGlowColor = FocusBlueTeal,
+            iconRes = R.drawable.ic_nav_services,
+            focusGlowColor = GoldLuxury,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
@@ -694,8 +691,8 @@ private fun NavigationCardsRow(
             } else {
                 stringResource(R.string.feature_alerts_subtitle)
             },
-            iconRes = R.drawable.ic_alerts,
-            focusGlowColor = FocusRoyalBlue,
+            iconRes = R.drawable.ic_nav_alerts,
+            focusGlowColor = GoldLuxury,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()

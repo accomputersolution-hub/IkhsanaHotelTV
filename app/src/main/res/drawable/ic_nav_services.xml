@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Luxury monoline concierge bell — warm amber for dashboard tiles -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#D4AF37"
+        android:pathData="M12,3.2c0.7,0 1.2,0.5 1.2,1.2v0.6c3.2,0.5 5.6,3.2 5.6,6.5v0.4H5.2v-0.4c0,-3.3 2.4,-6 5.6,-6.5V4.4c0,-0.7 0.5,-1.2 1.2,-1.2zM6.9,13.4h10.2c0.8,1.1 1.3,2.4 1.4,3.8H5.5c0.1,-1.4 0.6,-2.7 1.4,-3.8z" />
+    <path
+        android:fillColor="#D4AF37"
+        android:pathData="M4,18.4h16c0.6,0 1,0.4 1,1s-0.4,1 -1,1H4c-0.6,0 -1,-0.4 -1,-1s0.4,-1 1,-1z" />
+</vector>

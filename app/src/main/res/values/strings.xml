@@ -27,6 +27,7 @@
     <string name="status_in_progress">In Progress</string>
     <string name="status_completed">Completed</string>
     <string name="dining_title">In-Room Dining</string>
+    <string name="dining_subtitle">Curated room service · press OK to add</string>
     <string name="place_order">Place Order</string>
     <string name="order_placed">Order sent to kitchen!</string>
     <string name="order_failed">Could not place order. Please try again.</string>
@@ -40,9 +41,14 @@
     <string name="category_beverages">Beverages</string>
     <string name="loading">Loading…</string>
     <string name="cart_empty">Select items to order</string>
+    <string name="cart_add_items_cta">Add Items to Continue</string>
+    <string name="cart_confirm_cta">Confirm &amp; Place Order · ₹%1$.0f</string>
     <string name="cart_items">%1$d item(s) — ₹%2$.0f</string>
-    <string name="order_history">Order History</string>
+    <string name="your_order">Your Order</string>
+    <string name="order_total">Total</string>
+    <string name="order_history">Recent Orders</string>
     <string name="no_orders_yet">No orders placed yet</string>
+    <string name="menu_empty_category">No dishes in this category right now</string>
     <string name="status_pending">Pending</string>
     <string name="status_preparing">Preparing</string>
     <string name="status_delivered">Delivered</string>

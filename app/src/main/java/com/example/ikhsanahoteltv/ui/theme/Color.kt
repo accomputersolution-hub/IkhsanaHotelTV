@@ -9,6 +9,10 @@ val NavySurface = Color(0xFF1B2838)
 val GoldPrimary = Color(0xFFC9A962)
 val GoldLight = Color(0xFFE8D5A3)
 val GoldMuted = Color(0xFF8B7355)
+/** Warm amber used for luxury nav icons / glass badges (#D4AF37). */
+val GoldLuxury = Color(0xFFD4AF37)
+val GoldGlassFill = Color(0x1AD4AF37) // rgba(212, 175, 55, 0.1)
+val GoldGlassBorder = Color(0x33D4AF37) // rgba(212, 175, 55, 0.2)
 
 val FocusCyan = Color(0xFF22D3EE)
 val FocusTeal = Color(0xFF34D399)
