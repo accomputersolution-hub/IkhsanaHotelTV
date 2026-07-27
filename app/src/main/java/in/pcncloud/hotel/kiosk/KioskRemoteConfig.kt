@@ -28,7 +28,8 @@ object KioskRemoteConfig {
 
         remoteConfig.setConfigSettingsAsync(
             remoteConfigSettings {
-                minimumFetchIntervalInSeconds = 3_600
+                // 0 = fetch on every sync (testing only; raise for production).
+                minimumFetchIntervalInSeconds = 0
             },
         )
         remoteConfig.setDefaultsAsync(

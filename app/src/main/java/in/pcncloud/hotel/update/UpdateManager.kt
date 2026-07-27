@@ -27,10 +27,10 @@ import java.io.File
  * Firebase Remote Config driven in-app updater.
  *
  * Remote Config keys:
- * - latest_version_code (Long)
+ * - latest_version_code (Number or String — both are parsed safely)
  * - latest_version_name (String)
  * - apk_url (String)
- * - force_update (Boolean) — when true, dialog cannot be dismissed without updating
+ * - force_update (Boolean) — when true and remote > current, shows mandatory update dialog
  */
 object UpdateManager {
 
@@ -59,7 +59,8 @@ object UpdateManager {
         val remoteConfig = FirebaseRemoteConfig.getInstance().apply {
             setConfigSettingsAsync(
                 remoteConfigSettings {
-                    minimumFetchIntervalInSeconds = 3600
+                    // 0 = fetch on every check (testing only; raise for production).
+                    minimumFetchIntervalInSeconds = 0
                 },
             )
             setDefaultsAsync(
@@ -80,25 +81,54 @@ object UpdateManager {
                     return@addOnCompleteListener
                 }
 
-                val latestCode = remoteConfig.getLong(KEY_LATEST_VERSION_CODE)
+                var remoteVersionCode = try {
+                    remoteConfig.getLong(KEY_LATEST_VERSION_CODE)
+                } catch (e: Exception) {
+                    Log.w(TAG, "getLong($KEY_LATEST_VERSION_CODE) failed — trying String", e)
+                    remoteConfig.getString(KEY_LATEST_VERSION_CODE).trim().toLongOrNull() ?: 0L
+                }
+                // Firebase often returns 0 when the parameter is typed as String in console.
+                if (remoteVersionCode == 0L) {
+                    remoteVersionCode = remoteConfig.getString(KEY_LATEST_VERSION_CODE)
+                        .trim()
+                        .toLongOrNull()
+                        ?: 0L
+                }
+
+                val currentVersionCode = BuildConfig.VERSION_CODE.toLong()
+                val isForceUpdate = remoteConfig.getBoolean(KEY_FORCE_UPDATE)
                 val latestName = remoteConfig.getString(KEY_LATEST_VERSION_NAME).ifBlank {
-                    "v$latestCode"
+                    "v$remoteVersionCode"
                 }
                 val apkUrl = remoteConfig.getString(KEY_APK_URL).trim()
-                val forceUpdate = remoteConfig.getBoolean(KEY_FORCE_UPDATE)
 
                 Log.d(
                     TAG,
-                    "Remote Config → latestCode=$latestCode latestName=$latestName " +
-                        "forceUpdate=$forceUpdate apkUrl=${apkUrl.take(80)}",
+                    "Remote Config → remoteVersionCode=$remoteVersionCode " +
+                        "currentVersionCode=$currentVersionCode " +
+                        "forceUpdate=$isForceUpdate latestName=$latestName " +
+                        "apkUrl=${apkUrl.take(80)}",
                 )
 
-                if (latestCode <= BuildConfig.VERSION_CODE || apkUrl.isBlank()) return@addOnCompleteListener
-                // Soft updates: show once per version. Force updates: always re-prompt.
-                if (!forceUpdate && shownForVersionCode == latestCode) return@addOnCompleteListener
-
-                shownForVersionCode = latestCode
-                showUpdateDialog(activity, latestName, apkUrl, forceUpdate)
+                if (remoteVersionCode > currentVersionCode && isForceUpdate) {
+                    if (apkUrl.isBlank()) {
+                        Log.w(TAG, "Force update skipped — apk_url is blank")
+                        Toast.makeText(
+                            activity,
+                            "Current: $currentVersionCode | Remote: $remoteVersionCode (no apk_url)",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                        return@addOnCompleteListener
+                    }
+                    shownForVersionCode = remoteVersionCode
+                    showUpdateDialog(activity, latestName, apkUrl, forceUpdate = true)
+                } else {
+                    Toast.makeText(
+                        activity,
+                        "Current: $currentVersionCode | Remote: $remoteVersionCode",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
             }
     }
 
