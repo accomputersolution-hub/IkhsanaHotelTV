@@ -36,6 +36,10 @@ object KioskPolicy {
     private const val KEY_USER_MINIMIZED = "user_minimized"
     private const val KEY_EXITED_CLEANLY = "exited_cleanly"
     private const val KEY_PENDING_CRASH_RECOVERY = "pending_crash_recovery"
+    private const val KEY_EXTERNAL_APP_UNTIL = "external_app_until_ms"
+
+    /** How long [onUserLeaveHint] may skip reclaim after launching YouTube / IPTV / etc. */
+    private const val EXTERNAL_APP_SESSION_MS = 4 * 60 * 60 * 1000L // 4 hours of OTT viewing
 
     enum class KioskSource {
         REMOTE_CONFIG,
@@ -109,6 +113,29 @@ object KioskPolicy {
 
     fun wasUserMinimized(context: Context): Boolean =
         prefs(context).getBoolean(KEY_USER_MINIMIZED, false)
+
+    /**
+     * Call before launching YouTube / IPTV / other allowlisted apps so
+     * [android.app.Activity.onUserLeaveHint] does not immediately reclaim MainActivity.
+     * Home presses after the session window expires (or from those apps via HOME intent)
+     * still return to the hotel UI.
+     */
+    fun markExternalAppSession(context: Context, durationMs: Long = EXTERNAL_APP_SESSION_MS) {
+        val until = System.currentTimeMillis() + durationMs
+        prefs(context).edit().putLong(KEY_EXTERNAL_APP_UNTIL, until).apply()
+        // Leaving for OTT is intentional — do not treat as "user minimized for Home".
+        clearUserMinimized(context)
+        Log.i(TAG, "External app session until=$until (${durationMs}ms)")
+    }
+
+    fun isExternalAppSessionActive(context: Context): Boolean {
+        val until = prefs(context).getLong(KEY_EXTERNAL_APP_UNTIL, 0L)
+        return until > System.currentTimeMillis()
+    }
+
+    fun clearExternalAppSession(context: Context) {
+        prefs(context).edit().remove(KEY_EXTERNAL_APP_UNTIL).apply()
+    }
 
     /**
      * Call from [android.app.Application.onCreate] before UI starts.

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import `in`.pcncloud.hotel.R
+import `in`.pcncloud.hotel.kiosk.KioskPolicy
 
 object OnyxIptvLauncher {
 
@@ -12,6 +13,7 @@ object OnyxIptvLauncher {
     fun launch(context: Context) {
         val launchIntent = context.packageManager.getLaunchIntentForPackage(PACKAGE_NAME)
         if (launchIntent != null) {
+            KioskPolicy.markExternalAppSession(context)
             context.startActivity(
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )

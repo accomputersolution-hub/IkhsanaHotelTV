@@ -60,14 +60,71 @@ class MainActivity : ComponentActivity() {
     /** Firestore listener on Hotels/{hotelId} for live kiosk / Lock Task control. */
     private var hotelKioskListener: ListenerRegistration? = null
 
-    /** Last value applied from Firestore (also mirrored in [KioskPolicy]). */
-    private var isKioskModeEnabled: Boolean = true
+    /**
+     * Latest kiosk flag from Firestore (null until first cloud snapshot).
+     * Prefer this over defaults so Admin unlock is not overwritten on resume.
+     */
+    private var currentKioskState: Boolean? = null
+
+    /** @deprecated Prefer [resolveKioskEnabled] — kept in sync for existing call sites. */
+    private var isKioskModeEnabled: Boolean = false
 
     /** Bumped on any remote / touch interaction so the idle timer restarts. */
     private var lastInteractionAt by mutableLongStateOf(System.currentTimeMillis())
 
     /** When true, [ScreensaverOverlay] is shown; nav graph underneath stays composed. */
     private var screensaverVisible by mutableStateOf(false)
+
+    private fun kioskPrefs() =
+        applicationContext.getSharedPreferences(KIOSK_PREFS, Context.MODE_PRIVATE)
+
+    /**
+     * Authoritative local kiosk flag: in-memory Firestore value, else SharedPreferences.
+     * Default **false** so a missing/stale preference never re-locks after Admin unlock.
+     */
+    private fun resolveKioskEnabled(): Boolean =
+        currentKioskState ?: kioskPrefs().getBoolean(PREF_KIOSK_ENABLED, false)
+
+    /** Persist cloud kiosk flag locally so resume/focus cannot re-enable after unlock. */
+    private fun persistKioskState(enabled: Boolean) {
+        currentKioskState = enabled
+        isKioskModeEnabled = enabled
+        kioskPrefs().edit().putBoolean(PREF_KIOSK_ENABLED, enabled).apply()
+        KioskPolicy.setKioskModeEnabled(
+            context = this,
+            enabled = enabled,
+            source = KioskPolicy.KioskSource.REALTIME_DATABASE,
+        )
+        Log.i(TAG, "persistKioskState → $enabled")
+    }
+
+    /**
+     * Apply Lock Task from persisted state — never force-enable blindly.
+     * Used by onResume / onWindowFocusChanged.
+     */
+    private fun applyLockTaskFromPersistedState(reason: String) {
+        val isKioskEnabled = resolveKioskEnabled()
+        isKioskModeEnabled = isKioskEnabled
+        applyKeepScreenOn(isKioskEnabled)
+        Log.d(TAG, "applyLockTaskFromPersistedState($reason) → $isKioskEnabled")
+        if (isKioskEnabled) {
+            try {
+                startLockTask()
+                Log.d("KioskMode", "Lock Task Mode ENABLED ($reason)")
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Log.w(TAG, "startLockTask failed ($reason)", e)
+            }
+        } else {
+            try {
+                stopLockTask()
+                Log.d("KioskMode", "Lock Task Mode DISABLED ($reason)")
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Log.w(TAG, "stopLockTask failed ($reason)", e)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -76,19 +133,21 @@ class MainActivity : ComponentActivity() {
             FirebaseApp.initializeApp(this)
         }
 
-        // Seed from local policy immediately so idle / focus reclaim works before cloud sync.
-        isKioskModeEnabled = KioskPolicy.isKioskModeEnabled(this)
+        // Seed from last persisted Admin/Firestore value (default unlocked until cloud says otherwise).
+        isKioskModeEnabled = resolveKioskEnabled()
         applyKeepScreenOn(isKioskModeEnabled)
-        if (isKioskModeEnabled) {
-            applyLockTaskMode(true)
-        }
+        applyLockTaskFromPersistedState("onCreate")
 
-        // Sync is_kiosk_mode_enabled from Remote Config → SharedPreferences (unless admin override).
+        // Remote Config is fallback only — never override a Firestore-delivered unlock.
         KioskRemoteConfig.syncOnLaunch(this) { enabled ->
+            if (currentKioskState != null) {
+                Log.i(TAG, "Skip Remote Config kiosk=$enabled — Firestore already set $currentKioskState")
+                return@syncOnLaunch
+            }
             Log.i(TAG, "Kiosk mode after Remote Config sync → $enabled")
-            isKioskModeEnabled = enabled
+            persistKioskState(enabled)
             applyKeepScreenOn(enabled)
-            applyLockTaskMode(enabled)
+            applyLockTaskFromPersistedState("remoteConfig")
         }
 
         installKioskBackSafetyNet()
@@ -215,15 +274,11 @@ class MainActivity : ComponentActivity() {
                             "allowedPackages=${allowedPackages.size} $allowedPackages",
                     )
 
-                    isKioskModeEnabled = isKioskEnabled
+                    // Persist so onResume / focus cannot re-lock after Admin unlock.
                     if (KioskPolicy.hasAdminOverride(this)) {
                         KioskPolicy.clearAdminOverride(this)
                     }
-                    KioskPolicy.setKioskModeEnabled(
-                        context = this,
-                        enabled = isKioskEnabled,
-                        source = KioskPolicy.KioskSource.REALTIME_DATABASE,
-                    )
+                    persistKioskState(isKioskEnabled)
                     applyKeepScreenOn(isKioskEnabled)
                     applyLockTaskPackages(allowedPackages)
 
@@ -253,22 +308,33 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Apply Lock Task package whitelist via [DevicePolicyManager.setLockTaskPackages].
-     * Always includes this app's [packageName] so we cannot lock ourselves out.
+     * Combines Firebase [allowedPackages] + this app + YouTube TV so guests can leave
+     * Lock Task into allowlisted OTT apps without being blocked by the system.
      * No-op (safe) when not device owner.
      */
-    private fun applyLockTaskPackages(packageList: List<String>) {
+    private fun applyLockTaskPackages(allowedPackagesList: List<String>) {
         try {
-            val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             val adminName = ComponentName(this, MyDeviceAdminReceiver::class.java)
+            val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
 
             if (!dpm.isDeviceOwnerApp(packageName)) {
                 Log.w(TAG, "Not device owner — skip setLockTaskPackages")
                 return
             }
 
-            val finalArray = (packageList + packageName).distinct().toTypedArray()
-            dpm.setLockTaskPackages(adminName, finalArray)
-            Log.i(TAG, "setLockTaskPackages → ${finalArray.toList()}")
+            // Combine our app package + allowed packages from Firebase (+ YouTube TV baseline).
+            val packagesToAllow = (
+                allowedPackagesList +
+                    packageName +
+                    YOUTUBE_TV_PACKAGE
+                )
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+                .toTypedArray()
+
+            dpm.setLockTaskPackages(adminName, packagesToAllow)
+            Log.i(TAG, "setLockTaskPackages → ${packagesToAllow.toList()}")
         } catch (e: SecurityException) {
             Log.w(TAG, "setLockTaskPackages security exception", e)
         } catch (e: IllegalArgumentException) {
@@ -324,9 +390,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** True when local cache or SharedPreferences say kiosk Lock Task should be active. */
-    private fun isKioskActive(): Boolean =
-        isKioskModeEnabled || KioskPolicy.isKioskModeEnabled(this)
+    /** True when local cache / SharedPreferences say kiosk Lock Task should be active. */
+    private fun isKioskActive(): Boolean = resolveKioskEnabled()
 
     /**
      * Fallback when Compose [androidx.activity.compose.BackHandler] is not in the tree
@@ -367,23 +432,13 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Soft Lock Task re-assert when focus returns / is lost.
-     * Do NOT send ACTION_CLOSE_SYSTEM_DIALOGS or startActivity here — those cause
-     * continuous System UI redraw loops / Home flicker on Android TV.
+     * Soft Lock Task sync when focus returns.
+     * Never force-enable — honor Admin unlock via [resolveKioskEnabled].
      */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (!isKioskActive()) return
-        if (!hasFocus) {
-            Log.d(TAG, "Window lost focus while kiosk ON — waiting for Home reclaim path")
-            return
-        }
-        // Focus restored — quietly re-assert Lock Task without system broadcasts.
-        try {
-            startLockTask()
-        } catch (e: Exception) {
-            Log.w(TAG, "startLockTask after focus restore failed", e)
-        }
+        if (!hasFocus) return
+        applyLockTaskFromPersistedState("onWindowFocusChanged")
     }
 
     override fun onResume() {
@@ -391,43 +446,59 @@ class MainActivity : ComponentActivity() {
         if (!screensaverVisible) {
             lastInteractionAt = System.currentTimeMillis()
         }
-
-        // Always re-evaluate kiosk and re-assert Lock Task after idle / sleep / pause.
-        isKioskModeEnabled = KioskPolicy.isKioskModeEnabled(this)
-        applyKeepScreenOn(isKioskModeEnabled)
-        if (isKioskModeEnabled) {
-            applyLockTaskMode(true)
-        }
+        // Re-evaluate from persisted Admin/Firestore state — do NOT blind startLockTask().
+        applyLockTaskFromPersistedState("onResume")
     }
 
     override fun onStart() {
         super.onStart()
         KioskPolicy.clearUserMinimized(this)
+        // Returning from YouTube / Live TV / Home — end external session suppress.
+        if (!KioskPolicy.isExternalAppSessionActive(this)) {
+            KioskPolicy.clearExternalAppSession(this)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // HOME category relaunch (Home pressed from YouTube / Live TV / stock UI).
+        if (intent.categories?.contains(Intent.CATEGORY_HOME) == true ||
+            intent.action == Intent.ACTION_MAIN
+        ) {
+            Log.i(TAG, "onNewIntent HOME/MAIN — hotel launcher reclaim")
+            KioskPolicy.clearExternalAppSession(this)
+            KioskPolicy.clearUserMinimized(this)
+            applyLockTaskFromPersistedState("onNewIntent")
+        }
     }
 
     /**
-     * Clean Home / app-switch intercept: bring the existing [MainActivity] instance
-     * to front without recreating windows (pairs with launchMode=singleInstance).
+     * Hotel app is the primary launcher interface (locked OR unlocked).
+     * Home / leave reclaim brings [MainActivity] to front, except while an
+     * intentional OTT / IPTV session is active (YouTube, Live TV, etc.).
+     * Pressing Home from those apps routes here via the HOME intent-filter.
      */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (isKioskModeEnabled || KioskPolicy.isKioskModeEnabled(this)) {
-            Log.d(TAG, "onUserLeaveHint — kiosk ON, reordering existing MainActivity")
-            try {
-                val intent = Intent(this, MainActivity::class.java).apply {
-                    addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or
-                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT,
-                    )
-                }
-                startActivity(intent)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to bring MainActivity to front after Home", e)
+
+        if (KioskPolicy.isExternalAppSessionActive(this)) {
+            Log.d(TAG, "onUserLeaveHint — external OTT/IPTV session, skip reclaim")
+            return
+        }
+
+        Log.d(TAG, "onUserLeaveHint — reclaiming hotel launcher (kiosk=${resolveKioskEnabled()})")
+        try {
+            val intent = Intent(this, MainActivity::class.java).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT,
+                )
             }
-        } else {
-            KioskPolicy.markUserMinimized(this)
-            Log.d(TAG, "onUserLeaveHint — marked minimized (kiosk OFF)")
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to bring MainActivity to front after leave/Home", e)
         }
     }
 
@@ -456,6 +527,11 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
+        private const val KIOSK_PREFS = "hotel_tv_kiosk"
+        /** SharedPreferences key — matches Admin Panel field name. */
+        private const val PREF_KIOSK_ENABLED = "isKioskModeEnabled"
+        /** Always allowlisted for Lock Task so Entertainment → YouTube works under kiosk. */
+        private const val YOUTUBE_TV_PACKAGE = "com.google.android.youtube.tv"
         /** 10 minutes of no remote / touch input before the screen saver appears. */
         private const val INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000L
     }

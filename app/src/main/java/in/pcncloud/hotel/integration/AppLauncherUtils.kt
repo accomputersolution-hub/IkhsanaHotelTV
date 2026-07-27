@@ -8,6 +8,7 @@ import android.net.Uri
 import android.util.Log
 import android.widget.Toast
 import `in`.pcncloud.hotel.R
+import `in`.pcncloud.hotel.kiosk.KioskPolicy
 
 /**
  * Launches an installed OTT / entertainment app, or opens its Play Store page
@@ -55,6 +56,8 @@ object AppLauncherUtils {
         }
 
         try {
+            // Allow leave without Home reclaim so OTT can stay in foreground.
+            KioskPolicy.markExternalAppSession(context)
             context.startActivity(
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
@@ -83,6 +86,7 @@ object AppLauncherUtils {
         ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
         try {
+            KioskPolicy.markExternalAppSession(context)
             context.startActivity(marketIntent)
         } catch (_: ActivityNotFoundException) {
             val webIntent = Intent(
@@ -90,6 +94,7 @@ object AppLauncherUtils {
                 Uri.parse("https://play.google.com/store/apps/details?id=$packageName"),
             ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             try {
+                KioskPolicy.markExternalAppSession(context)
                 context.startActivity(webIntent)
             } catch (e: Exception) {
                 Log.e(TAG, "Could not open Play Store for $packageName", e)
