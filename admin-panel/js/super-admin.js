@@ -1,4 +1,4 @@
-import { db } from './firebase-config.js';
+import { db, rtdb } from './firebase-config.js';
 import {
   collection,
   doc,
@@ -13,6 +13,7 @@ import {
   onSnapshot,
   serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
+import { ref as rtdbRef, set as rtdbSet } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js';
 import { createHotelAdminAccount, isSuperAdmin } from './auth.js';
 import { TenantManager, clearHotelContext, getHotelId } from './tenant-context.js';
 import { escapeHtml, toast, openModal, closeModal, setupModalClose } from './utils.js';
@@ -28,11 +29,14 @@ let hotelsCache = [];
 let pendingDeleteHotel = null;
 /** @type {string | null} */
 let editingHotelId = null;
+/** @type {string | null} */
+let kioskHotelId = null;
 
 export function initSuperAdmin() {
   setupAddHotelModal();
   setupEditHotelModal();
   setupDeleteHotelModal();
+  setupKioskSettingsModal();
   setupImpersonationSelect();
   document.getElementById('add-hotel-btn')?.addEventListener('click', () => {
     openModal('add-hotel-modal');
@@ -164,6 +168,9 @@ function renderHotelsTable(hotels) {
           <div class="hotel-row-actions">
             <button type="button" class="quick-btn quick-btn-primary" data-open-hotel="${escapeHtml(h.id)}">Open PMS</button>
             <button type="button" class="quick-btn quick-btn-edit" data-edit-hotel="${escapeHtml(h.id)}">Edit</button>
+            <button type="button" class="btn-secondary kiosk-settings-btn" data-id="${escapeHtml(h.id)}">
+              Kiosk Settings
+            </button>
             <button type="button" class="quick-btn quick-btn-danger" data-delete-hotel="${escapeHtml(h.id)}" title="Delete hotel">
               Delete
             </button>
@@ -186,6 +193,13 @@ function renderHotelsTable(hotels) {
       const id = btn.getAttribute('data-edit-hotel');
       const hotel = hotelsCache.find((h) => h.id === id);
       if (hotel) openEditHotelModal(hotel);
+    });
+  });
+
+  tbody.querySelectorAll('.kiosk-settings-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-id');
+      if (id) openKioskSettingsModal(id);
     });
   });
 
@@ -306,6 +320,12 @@ function setupAddHotelModal() {
         adminUid,
         status: 'active',
         activeTvScreens: 0,
+        isKioskModeEnabled: true,
+        allowedPackages: [
+          'com.google.android.youtube.tv',
+          'com.netflix.ninja',
+          'com.amazon.amazonvideo.livingroom',
+        ],
         branding: {
           logoUrl,
           themeColor,
@@ -522,6 +542,140 @@ function syncActiveToggleLabel() {
   if (!toggle || !label) return;
   label.textContent = toggle.checked ? 'Active' : 'Inactive';
   label.classList.toggle('is-inactive', !toggle.checked);
+}
+
+function parseAllowedPackagesInput(raw) {
+  return [
+    ...new Set(
+      String(raw || '')
+        .split(/[,\n]+/)
+        .map((p) => p.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+function syncKioskToggleLabel() {
+  const toggle = document.getElementById('kiosk-mode-toggle');
+  const label = document.getElementById('kiosk-mode-toggle-label');
+  if (!toggle || !label) return;
+  label.textContent = toggle.checked ? 'Enabled' : 'Disabled';
+  label.classList.toggle('is-inactive', !toggle.checked);
+}
+
+function setupKioskSettingsModal() {
+  setupModalClose('kiosk-settings-modal', 'kiosk-settings-close');
+  document.getElementById('kiosk-settings-x')?.addEventListener('click', () => {
+    closeModal('kiosk-settings-modal');
+    kioskHotelId = null;
+  });
+
+  document.getElementById('kiosk-mode-toggle')?.addEventListener('change', () => {
+    syncKioskToggleLabel();
+  });
+
+  document.getElementById('save-kiosk-settings-btn')?.addEventListener('click', async () => {
+    if (!kioskHotelId) {
+      toast('No hotel selected', 'error');
+      return;
+    }
+
+    const isKioskModeEnabled = Boolean(document.getElementById('kiosk-mode-toggle')?.checked);
+    const allowedPackages = parseAllowedPackagesInput(
+      document.getElementById('kiosk-packages-input')?.value,
+    );
+
+    const saveBtn = document.getElementById('save-kiosk-settings-btn');
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+    }
+
+    try {
+      await updateDoc(doc(db, 'Hotels', kioskHotelId), {
+        isKioskModeEnabled,
+        allowedPackages,
+        updatedAt: serverTimestamp(),
+      });
+
+      // Mirror to RTDB so paired Android TVs receive instant Lock Task updates.
+      try {
+        const base = `hotels/${kioskHotelId}/config`;
+        await Promise.all([
+          rtdbSet(rtdbRef(rtdb, `${base}/is_kiosk_mode_enabled`), isKioskModeEnabled),
+          rtdbSet(rtdbRef(rtdb, `${base}/allowed_packages`), allowedPackages),
+        ]);
+      } catch (rtdbErr) {
+        console.warn('[super-admin] RTDB kiosk mirror skipped', rtdbErr);
+      }
+
+      // Refresh local cache so table / re-open stays current until next snapshot.
+      const cached = hotelsCache.find((h) => h.id === kioskHotelId);
+      if (cached) {
+        cached.isKioskModeEnabled = isKioskModeEnabled;
+        cached.allowedPackages = allowedPackages;
+      }
+
+      closeModal('kiosk-settings-modal');
+      toast(`Kiosk settings saved for ${kioskHotelId}`);
+      kioskHotelId = null;
+    } catch (err) {
+      console.error('[super-admin] save kiosk settings failed', err);
+      toast(err.message || 'Failed to save kiosk settings', 'error');
+    } finally {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Changes';
+      }
+    }
+  });
+}
+
+/**
+ * Open Kiosk Settings for Hotels/{hotelId}.
+ * Loads isKioskModeEnabled + allowedPackages from the hotel document.
+ */
+async function openKioskSettingsModal(hotelId) {
+  if (!hotelId) return;
+  kioskHotelId = hotelId;
+
+  const nameEl = document.getElementById('kiosk-hotel-name');
+  const idField = document.getElementById('kiosk-hotel-id');
+  const toggle = document.getElementById('kiosk-mode-toggle');
+  const packagesInput = document.getElementById('kiosk-packages-input');
+
+  if (idField) idField.value = hotelId;
+  if (nameEl) nameEl.textContent = hotelId;
+  if (toggle) toggle.checked = true;
+  if (packagesInput) packagesInput.value = '';
+  syncKioskToggleLabel();
+
+  try {
+    const snap = await getDoc(doc(db, 'Hotels', hotelId));
+    if (!snap.exists()) {
+      toast('Hotel not found', 'error');
+      kioskHotelId = null;
+      return;
+    }
+
+    const data = snap.data() || {};
+    const hotelName = data.name || hotelId;
+    const isKioskModeEnabled =
+      typeof data.isKioskModeEnabled === 'boolean' ? data.isKioskModeEnabled : true;
+    const allowedPackages = Array.isArray(data.allowedPackages)
+      ? data.allowedPackages.map((p) => String(p).trim()).filter(Boolean)
+      : [];
+
+    if (nameEl) nameEl.textContent = hotelName;
+    if (toggle) toggle.checked = isKioskModeEnabled;
+    if (packagesInput) packagesInput.value = allowedPackages.join(', ');
+    syncKioskToggleLabel();
+    openModal('kiosk-settings-modal');
+  } catch (err) {
+    console.error('[super-admin] open kiosk settings failed', err);
+    toast(err.message || 'Could not load kiosk settings', 'error');
+    kioskHotelId = null;
+  }
 }
 
 function setupDeleteHotelModal() {

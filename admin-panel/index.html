@@ -378,6 +378,61 @@
     </div>
   </div>
 
+  <!-- TV Kiosk Settings Modal -->
+  <div id="kiosk-settings-modal" class="modal-overlay hidden">
+    <div class="modal-panel modal-panel-wide">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-lg font-bold">
+          TV Kiosk Settings - <span id="kiosk-hotel-name"></span>
+        </h3>
+        <button id="kiosk-settings-x" type="button" class="modal-close-btn" aria-label="Close">&times;</button>
+      </div>
+      <input type="hidden" id="kiosk-hotel-id" />
+
+      <div class="space-y-5">
+        <div class="sa-status-toggle-row">
+          <div>
+            <label for="kiosk-mode-toggle" class="text-sm font-medium">
+              Enable Kiosk Lock Mode (Lock Home/Back Buttons)
+            </label>
+            <p class="text-xs mt-0.5" style="color:var(--text-dim)">
+              Saved on <code>Hotels/{hotelId}.isKioskModeEnabled</code>
+            </p>
+          </div>
+          <label class="sa-toggle">
+            <input id="kiosk-mode-toggle" type="checkbox" checked />
+            <span class="sa-toggle-track"></span>
+            <span id="kiosk-mode-toggle-label" class="sa-toggle-label">Enabled</span>
+          </label>
+        </div>
+
+        <div>
+          <label for="kiosk-packages-input" class="block text-sm font-medium mb-1">
+            Whitelisted App Packages
+          </label>
+          <textarea
+            id="kiosk-packages-input"
+            rows="4"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="com.google.android.youtube.tv, com.example.livetv"
+            class="sa-field w-full outline-none resize-y"
+          ></textarea>
+          <p class="text-xs mt-1.5" style="color:var(--text-dim)">
+            Enter comma-separated package names to allow in Kiosk mode.
+          </p>
+        </div>
+
+        <div class="hotel-row-actions" style="justify-content:flex-end">
+          <button id="kiosk-settings-close" type="button" class="quick-btn">Cancel</button>
+          <button id="save-kiosk-settings-btn" type="button" class="btn-gold px-5 py-2.5 rounded-xl font-semibold">
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Menu Item Modal (Add / Edit) -->
   <div id="menu-item-modal" class="modal-overlay hidden">
     <div class="modal-panel modal-panel-wide">

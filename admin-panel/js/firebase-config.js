@@ -1,10 +1,12 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js';
 import { getAuth } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js';
 import { getFirestore } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
+import { getDatabase } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js';
 
 export const firebaseConfig = {
   apiKey: 'AIzaSyBEXhPG6aNiJ1S7pN4EDoBo6EYMtbNe-pQ',
   authDomain: 'ikhsana-hotel-tv.firebaseapp.com',
+  databaseURL: 'https://ikhsana-hotel-tv-default-rtdb.firebaseio.com',
   projectId: 'ikhsana-hotel-tv',
   storageBucket: 'ikhsana-hotel-tv.firebasestorage.app',
 };
@@ -33,6 +35,8 @@ export function normalizeHotelId(raw) {
 
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
+/** Realtime Database — TV kiosk Lock Task flags (`hotels/{hotelId}/config/…`) */
+export const rtdb = getDatabase(app);
 
 /**
  * Primary Auth instance — Email/Password must be enabled in Firebase Console.

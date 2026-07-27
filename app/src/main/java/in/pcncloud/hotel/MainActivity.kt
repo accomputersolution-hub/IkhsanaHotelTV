@@ -51,7 +51,8 @@ import kotlinx.coroutines.delay
  * Activity callback is a safety net when Compose has not consumed the event.
  *
  * Lock Task Mode and its package whitelist are driven live from Firebase Realtime
- * Database (`app_config/is_kiosk_mode_enabled`, `app_config/allowed_packages`).
+ * Database (`hotels/{hotelId}/config/is_kiosk_mode_enabled`,
+ * `hotels/{hotelId}/config/allowed_packages`).
  */
 class MainActivity : ComponentActivity() {
 
@@ -90,10 +91,6 @@ class MainActivity : ComponentActivity() {
             applyLockTaskMode(enabled)
         }
 
-        // Live Web Admin control via Realtime Database.
-        attachKioskModeRealtimeListener()
-        attachAllowedPackagesRealtimeListener()
-
         installKioskBackSafetyNet()
 
         hotelConfig = HotelConfig(applicationContext)
@@ -104,6 +101,10 @@ class MainActivity : ComponentActivity() {
             finish()
             return
         }
+
+        // Live Web Admin control via Realtime Database (per-hotel).
+        attachKioskModeRealtimeListener(hotelId)
+        attachAllowedPackagesRealtimeListener(hotelId)
 
         repository = FirestoreRepository(hotelConfig)
         val viewModelFactory = HotelViewModelFactory(repository, hotelConfig)
@@ -183,13 +184,13 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Firebase Realtime Database listener for `app_config/is_kiosk_mode_enabled`.
+     * Firebase Realtime Database listener for `hotels/{hotelId}/config/is_kiosk_mode_enabled`.
      * Web Admin toggles this node to enable/disable Lock Task Mode instantly.
      */
-    private fun attachKioskModeRealtimeListener() {
+    private fun attachKioskModeRealtimeListener(hotelId: String) {
         try {
-            val ref = FirebaseDatabase.getInstance()
-                .getReference(RTDB_KIOSK_PATH)
+            val path = "hotels/$hotelId/config/is_kiosk_mode_enabled"
+            val ref = FirebaseDatabase.getInstance().getReference(path)
             val listener = object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     val enabled = when (val raw = snapshot.value) {
@@ -201,7 +202,7 @@ class MainActivity : ComponentActivity() {
                             return
                         }
                     }
-                    Log.i(TAG, "RTDB $RTDB_KIOSK_PATH → $enabled")
+                    Log.i(TAG, "RTDB $path → $enabled")
                     isKioskModeEnabled = enabled
                     // Web Admin is authoritative — clear any local technician override.
                     if (KioskPolicy.hasAdminOverride(this@MainActivity)) {
@@ -222,20 +223,20 @@ class MainActivity : ComponentActivity() {
             ref.addValueEventListener(listener)
             kioskModeRef = ref
             kioskModeListener = listener
-            Log.i(TAG, "Attached RTDB listener → $RTDB_KIOSK_PATH")
+            Log.i(TAG, "Attached RTDB listener → $path")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to attach kiosk RTDB listener", e)
         }
     }
 
     /**
-     * Firebase Realtime Database listener for `app_config/allowed_packages`.
+     * Firebase Realtime Database listener for `hotels/{hotelId}/config/allowed_packages`.
      * Web Admin updates this list to control which apps may run under Lock Task Mode.
      */
-    private fun attachAllowedPackagesRealtimeListener() {
+    private fun attachAllowedPackagesRealtimeListener(hotelId: String) {
         try {
-            val ref = FirebaseDatabase.getInstance()
-                .getReference(RTDB_ALLOWED_PACKAGES_PATH)
+            val path = "hotels/$hotelId/config/allowed_packages"
+            val ref = FirebaseDatabase.getInstance().getReference(path)
             val listener = object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     val packageList = snapshot.children.mapNotNull { child ->
@@ -243,7 +244,7 @@ class MainActivity : ComponentActivity() {
                     }
                     Log.i(
                         TAG,
-                        "RTDB $RTDB_ALLOWED_PACKAGES_PATH → count=${packageList.size} $packageList",
+                        "RTDB $path → count=${packageList.size} $packageList",
                     )
                     applyLockTaskPackages(packageList)
                 }
@@ -255,7 +256,7 @@ class MainActivity : ComponentActivity() {
             ref.addValueEventListener(listener)
             allowedPackagesRef = ref
             allowedPackagesListener = listener
-            Log.i(TAG, "Attached RTDB listener → $RTDB_ALLOWED_PACKAGES_PATH")
+            Log.i(TAG, "Attached RTDB listener → $path")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to attach allowed packages RTDB listener", e)
         }
@@ -430,10 +431,6 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
-        /** Firebase Realtime Database path controlled by the Web Admin Panel. */
-        private const val RTDB_KIOSK_PATH = "app_config/is_kiosk_mode_enabled"
-        /** Lock Task package whitelist controlled by the Web Admin Panel. */
-        private const val RTDB_ALLOWED_PACKAGES_PATH = "app_config/allowed_packages"
         /** 10 minutes of no remote / touch input before the screen saver appears. */
         private const val INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000L
     }
