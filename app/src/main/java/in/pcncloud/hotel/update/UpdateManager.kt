@@ -11,6 +11,8 @@ import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
@@ -19,32 +21,43 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
-import com.google.firebase.remoteconfig.FirebaseRemoteConfig
-import com.google.firebase.remoteconfig.ktx.remoteConfigSettings
+import java.io.BufferedReader
 import java.io.File
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.Executors
+import org.json.JSONObject
 
 /**
- * Firebase Remote Config driven in-app updater.
+ * Force-update checker via a direct Google Drive JSON fetch (no Remote Config cache).
  *
- * Remote Config keys:
- * - latest_version_code (Number or String — both are parsed safely)
- * - latest_version_name (String)
- * - apk_url (String)
- * - force_update (Boolean) — when true and remote > current, shows mandatory update dialog
+ * Expected JSON shape:
+ * ```
+ * {
+ *   "latest_version_code": 2,
+ *   "latest_version_name": "1.1",
+ *   "force_update": true,
+ *   "apk_url": "https://..."
+ * }
+ * ```
+ *
+ * Configure [BuildConfig.UPDATE_JSON_URL] (Drive `uc?export=download&id=...`).
  */
 object UpdateManager {
 
     private const val TAG = "UpdateManager"
-    private const val KEY_LATEST_VERSION_CODE = "latest_version_code"
-    private const val KEY_LATEST_VERSION_NAME = "latest_version_name"
-    private const val KEY_APK_URL = "apk_url"
-    private const val KEY_FORCE_UPDATE = "force_update"
+    private const val CONNECT_TIMEOUT_MS = 12_000
+    private const val READ_TIMEOUT_MS = 12_000
+
+    private val ioExecutor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile
     private var isChecking = false
 
     @Volatile
-    private var shownForVersionCode = -1L
+    private var shownForVersionCode = -1
 
     @Volatile
     private var observedDownloadId: Long = -1L
@@ -52,113 +65,150 @@ object UpdateManager {
     @Volatile
     private var receiverRegistered = false
 
+    data class UpdateInfo(
+        val latestVersionCode: Int,
+        val latestVersionName: String,
+        val forceUpdate: Boolean,
+        val apkUrl: String,
+    )
+
     fun checkForUpdates(activity: Activity) {
         if (isChecking || activity.isFinishing || activity.isDestroyed) return
-        isChecking = true
 
-        val remoteConfig = FirebaseRemoteConfig.getInstance().apply {
-            setConfigSettingsAsync(
-                remoteConfigSettings {
-                    // 0 = fetch on every check (testing only; raise for production).
-                    minimumFetchIntervalInSeconds = 0
-                },
-            )
-            setDefaultsAsync(
-                mapOf(
-                    KEY_LATEST_VERSION_CODE to BuildConfig.VERSION_CODE.toLong(),
-                    KEY_LATEST_VERSION_NAME to BuildConfig.VERSION_NAME,
-                    KEY_APK_URL to "",
-                    KEY_FORCE_UPDATE to false,
-                ),
-            )
+        val jsonUrl = BuildConfig.UPDATE_JSON_URL.trim()
+        if (jsonUrl.isBlank() || jsonUrl.contains("YOUR_JSON_FILE_ID")) {
+            Log.w(TAG, "UPDATE_JSON_URL not configured — skip update check")
+            return
         }
 
-        remoteConfig.fetchAndActivate()
-            .addOnCompleteListener(activity) { task ->
-                isChecking = false
-                if (!task.isSuccessful) {
-                    Log.w(TAG, "Remote Config fetch failed", task.exception)
-                    return@addOnCompleteListener
+        isChecking = true
+        ioExecutor.execute {
+            try {
+                val body = fetchJson(jsonUrl)
+                val info = parseUpdateJson(body)
+                mainHandler.post {
+                    isChecking = false
+                    if (activity.isFinishing || activity.isDestroyed) return@post
+                    handleUpdateInfo(activity, info)
                 }
-
-                var remoteVersionCode = try {
-                    remoteConfig.getLong(KEY_LATEST_VERSION_CODE)
-                } catch (e: Exception) {
-                    Log.w(TAG, "getLong($KEY_LATEST_VERSION_CODE) failed — trying String", e)
-                    remoteConfig.getString(KEY_LATEST_VERSION_CODE).trim().toLongOrNull() ?: 0L
-                }
-                // Firebase often returns 0 when the parameter is typed as String in console.
-                if (remoteVersionCode == 0L) {
-                    remoteVersionCode = remoteConfig.getString(KEY_LATEST_VERSION_CODE)
-                        .trim()
-                        .toLongOrNull()
-                        ?: 0L
-                }
-
-                val currentVersionCode = BuildConfig.VERSION_CODE.toLong()
-                val isForceUpdate = remoteConfig.getBoolean(KEY_FORCE_UPDATE)
-                val latestName = remoteConfig.getString(KEY_LATEST_VERSION_NAME).ifBlank {
-                    "v$remoteVersionCode"
-                }
-                val apkUrl = remoteConfig.getString(KEY_APK_URL).trim()
-
-                Log.d(
-                    TAG,
-                    "Remote Config → remoteVersionCode=$remoteVersionCode " +
-                        "currentVersionCode=$currentVersionCode " +
-                        "forceUpdate=$isForceUpdate latestName=$latestName " +
-                        "apkUrl=${apkUrl.take(80)}",
-                )
-
-                if (remoteVersionCode > currentVersionCode && isForceUpdate) {
-                    if (apkUrl.isBlank()) {
-                        Log.w(TAG, "Force update skipped — apk_url is blank")
-                        Toast.makeText(
-                            activity,
-                            "Current: $currentVersionCode | Remote: $remoteVersionCode (no apk_url)",
-                            Toast.LENGTH_LONG,
-                        ).show()
-                        return@addOnCompleteListener
-                    }
-                    shownForVersionCode = remoteVersionCode
-                    showUpdateDialog(activity, latestName, apkUrl, forceUpdate = true)
-                } else {
-                    Toast.makeText(
-                        activity,
-                        "Current: $currentVersionCode | Remote: $remoteVersionCode",
-                        Toast.LENGTH_LONG,
-                    ).show()
+            } catch (e: Exception) {
+                Log.w(TAG, "Update JSON fetch failed — continuing without update gate", e)
+                mainHandler.post {
+                    isChecking = false
+                    // Offline / network error: do not block app launch.
                 }
             }
+        }
     }
 
-    private fun showUpdateDialog(
+    private fun handleUpdateInfo(activity: Activity, info: UpdateInfo) {
+        val installedVc = BuildConfig.VERSION_CODE
+        val onlineVc = info.latestVersionCode
+        val debugMsg = "Installed VC: $installedVc | Online VC: $onlineVc"
+
+        Log.i(
+            TAG,
+            "$debugMsg force=${info.forceUpdate} name=${info.latestVersionName} " +
+                "apk=${info.apkUrl.take(80)}",
+        )
+        Toast.makeText(activity, debugMsg, Toast.LENGTH_LONG).show()
+
+        if (onlineVc > installedVc && info.forceUpdate) {
+            if (info.apkUrl.isBlank()) {
+                Log.w(TAG, "Force update skipped — apk_url is blank")
+                return
+            }
+            if (shownForVersionCode == onlineVc) return
+            shownForVersionCode = onlineVc
+            showForceUpdateDialog(
+                activity = activity,
+                latestVersionName = info.latestVersionName.ifBlank { "v$onlineVc" },
+                apkUrl = info.apkUrl,
+            )
+        }
+    }
+
+    private fun fetchJson(jsonUrl: String): String {
+        val connection = (URL(jsonUrl).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            instanceFollowRedirects = true
+            connectTimeout = CONNECT_TIMEOUT_MS
+            readTimeout = READ_TIMEOUT_MS
+            setRequestProperty("Accept", "application/json,text/plain,*/*")
+            setRequestProperty("User-Agent", "PCNCloudHotelTV/${BuildConfig.VERSION_NAME}")
+        }
+
+        try {
+            val code = connection.responseCode
+            val stream = if (code in 200..299) {
+                connection.inputStream
+            } else {
+                connection.errorStream
+            } ?: throw IllegalStateException("HTTP $code with empty body")
+
+            val body = BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).use { reader ->
+                reader.readText()
+            }
+
+            if (code !in 200..299) {
+                throw IllegalStateException("HTTP $code: ${body.take(200)}")
+            }
+            // Drive sometimes returns an HTML interstitial for virus scan / confirm.
+            if (body.trimStart().startsWith("<")) {
+                throw IllegalStateException(
+                    "Google Drive returned HTML instead of JSON — " +
+                        "share the file as \"Anyone with the link\" and use a small JSON file.",
+                )
+            }
+            return body
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun parseUpdateJson(raw: String): UpdateInfo {
+        val json = JSONObject(raw)
+        val code = when (val value = json.opt("latest_version_code")) {
+            is Number -> value.toInt()
+            is String -> value.trim().toIntOrNull() ?: 0
+            else -> 0
+        }
+        val name = json.optString("latest_version_name", "").trim()
+        val force = when (val value = json.opt("force_update")) {
+            is Boolean -> value
+            is Number -> value.toInt() != 0
+            is String -> value.trim().equals("true", ignoreCase = true) || value.trim() == "1"
+            else -> false
+        }
+        val apkUrl = json.optString("apk_url", "").trim()
+        return UpdateInfo(
+            latestVersionCode = code,
+            latestVersionName = name,
+            forceUpdate = force,
+            apkUrl = apkUrl,
+        )
+    }
+
+    private fun showForceUpdateDialog(
         activity: Activity,
         latestVersionName: String,
         apkUrl: String,
-        forceUpdate: Boolean,
     ) {
         if (activity.isFinishing || activity.isDestroyed) return
 
-        val builder = AlertDialog.Builder(activity)
+        val dialog = AlertDialog.Builder(activity)
             .setTitle(R.string.update_available_title)
             .setMessage(activity.getString(R.string.update_available_message, latestVersionName))
-            .setCancelable(!forceUpdate)
+            .setCancelable(false)
             .setPositiveButton(R.string.update_button_now) { _, _ ->
                 startDownload(activity, apkUrl, latestVersionName)
             }
+            .create()
 
-        if (!forceUpdate) {
-            builder.setNegativeButton(R.string.update_button_later, null)
-        }
-
-        val dialog = builder.create()
-        if (forceUpdate) {
-            dialog.setCanceledOnTouchOutside(false)
-            dialog.setOnKeyListener { _, keyCode, _ ->
-                // Block Back while force update is required; allow D-pad for Update.
-                keyCode == KeyEvent.KEYCODE_BACK
-            }
+        dialog.setCanceledOnTouchOutside(false)
+        dialog.setOnKeyListener { _, keyCode, _ ->
+            // Block Back while force update is required; allow D-pad for Update.
+            keyCode == KeyEvent.KEYCODE_BACK
         }
         dialog.show()
     }

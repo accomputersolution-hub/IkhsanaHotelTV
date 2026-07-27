@@ -32,6 +32,12 @@ android {
         buildConfigField("String", "DEFAULT_ROOM_NUMBER", "\"101\"")
         // Staff Master PIN for TV Admin Mode (in-memory session only; change per hotel build if needed)
         buildConfigField("String", "DEFAULT_MASTER_PIN", "\"1234\"")
+        // Google Drive JSON for force updates — replace YOUR_JSON_FILE_ID with the real file id.
+        buildConfigField(
+            "String",
+            "UPDATE_JSON_URL",
+            "\"https://drive.google.com/uc?export=download&id=YOUR_JSON_FILE_ID\"",
+        )
 
         vectorDrawables {
             useSupportLibrary = true
