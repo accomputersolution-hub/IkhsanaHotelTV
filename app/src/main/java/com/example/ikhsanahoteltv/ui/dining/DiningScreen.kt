@@ -20,7 +20,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -118,34 +120,40 @@ fun DiningScreen(
                 subtitle = stringResource(R.string.dining_subtitle),
             )
 
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // ── Top category bar (horizontal) ─────────────────────────────
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                itemsIndexed(
+                    items = MenuCategory.entries.toList(),
+                    key = { _, category -> category.name },
+                ) { index, category ->
+                    CategoryTab(
+                        label = category.displayName,
+                        isSelected = uiState.selectedCategory == category,
+                        modifier = if (index == 0) {
+                            Modifier.focusRequester(categoryFocus)
+                        } else {
+                            Modifier
+                        },
+                        onClick = { viewModel.selectCategory(category) },
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
+            // ── Content: full-width menu list + order panel ───────────────
             Row(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                // ── Category sidebar ──────────────────────────────────────
-                Column(
-                    modifier = Modifier
-                        .width(188.dp)
-                        .fillMaxHeight(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    MenuCategory.entries.forEachIndexed { index, category ->
-                        CategoryTab(
-                            label = category.displayName,
-                            isSelected = uiState.selectedCategory == category,
-                            modifier = if (index == 0) {
-                                Modifier.focusRequester(categoryFocus)
-                            } else {
-                                Modifier
-                            },
-                            onClick = { viewModel.selectCategory(category) },
-                        )
-                    }
-                }
-
-                // ── Menu cards ────────────────────────────────────────────
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)
@@ -175,7 +183,6 @@ fun DiningScreen(
                     }
                 }
 
-                // ── Order summary panel ───────────────────────────────────
                 OrderSummaryPanel(
                     cart = uiState.cart,
                     cartTotal = uiState.cartTotal,
@@ -191,21 +198,19 @@ fun DiningScreen(
                         .width(300.dp)
                         .fillMaxHeight(),
                 )
-
-                // ── QR Payment dialog ─────────────────────────────────────
-                uiState.pendingQrTotal?.let { total ->
-                    QrPaymentDialog(
-                        total = total,
-                        onConfirm = viewModel::confirmQrPayment,
-                        onDismiss = viewModel::dismissQrDialog,
-                    )
-                }
-
-                // ── Vacant room blocking dialog ───────────────────────────
-                if (uiState.showVacantRoomDialog) {
-                    VacantRoomDialog(onDismiss = viewModel::dismissVacantRoomDialog)
-                }
             }
+        }
+
+        // ── Overlays (outside content row so focus/layout stay clean) ────
+        uiState.pendingQrTotal?.let { total ->
+            QrPaymentDialog(
+                total = total,
+                onConfirm = viewModel::confirmQrPayment,
+                onDismiss = viewModel::dismissQrDialog,
+            )
+        }
+        if (uiState.showVacantRoomDialog) {
+            VacantRoomDialog(onDismiss = viewModel::dismissVacantRoomDialog)
         }
     }
 }
@@ -220,22 +225,22 @@ private fun CategoryTab(
 ) {
     var isFocused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.04f else 1f,
-        animationSpec = tween(160),
+        targetValue = if (isFocused) 1.05f else 1f,
+        animationSpec = tween(150),
         label = "tabScale",
     )
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(999.dp)
     val borderColor = when {
         isFocused -> GoldLuxury
-        isSelected -> GoldLuxury.copy(alpha = 0.75f)
-        else -> Color.White.copy(alpha = 0.10f)
+        isSelected -> GoldLuxury.copy(alpha = 0.85f)
+        else -> Color.White.copy(alpha = 0.12f)
     }
     val fill = when {
         isSelected -> Brush.horizontalGradient(
-            listOf(GoldLuxury.copy(alpha = 0.22f), GoldGlassFill),
+            listOf(GoldLuxury.copy(alpha = 0.28f), GoldGlassFill),
         )
         isFocused -> Brush.horizontalGradient(
-            listOf(GoldLuxury.copy(alpha = 0.12f), NavyDeep.copy(alpha = 0.55f)),
+            listOf(GoldLuxury.copy(alpha = 0.14f), NavyDeep.copy(alpha = 0.55f)),
         )
         else -> Brush.horizontalGradient(
             listOf(NavyDeep.copy(alpha = 0.55f), NavyDeep.copy(alpha = 0.45f)),
@@ -248,7 +253,7 @@ private fun CategoryTab(
                 scaleX = scale
                 scaleY = scale
             }
-            .fillMaxWidth()
+            .wrapContentWidth()
             .onFocusChanged { isFocused = it.isFocused }
             .focusable()
             .onKeyEvent { event ->
@@ -267,30 +272,17 @@ private fun CategoryTab(
                 color = borderColor,
                 shape = shape,
             )
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        contentAlignment = Alignment.CenterStart,
+            .padding(horizontal = 22.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            if (isSelected) {
-                Box(
-                    modifier = Modifier
-                        .width(3.dp)
-                        .height(18.dp)
-                        .background(GoldLuxury, RoundedCornerShape(2.dp)),
-                )
-            }
-            Text(
-                text = label,
-                fontSize = 15.sp,
-                fontWeight = if (isSelected || isFocused) FontWeight.Bold else FontWeight.Normal,
-                fontFamily = SansBody,
-                color = if (isSelected || isFocused) GoldLight else TextPrimary,
-                maxLines = 1,
-            )
-        }
+        Text(
+            text = label,
+            fontSize = 15.sp,
+            fontWeight = if (isSelected || isFocused) FontWeight.Bold else FontWeight.Medium,
+            fontFamily = SansBody,
+            color = if (isSelected || isFocused) GoldLight else TextPrimary,
+            maxLines = 1,
+        )
     }
 }
 
@@ -304,8 +296,8 @@ private fun MenuItemCard(
 ) {
     var rowFocused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (rowFocused) 1.02f else 1f,
-        animationSpec = tween(160),
+        targetValue = if (rowFocused) 1.015f else 1f,
+        animationSpec = tween(150),
         label = "cardScale",
     )
     val shape = RoundedCornerShape(16.dp)
@@ -333,14 +325,14 @@ private fun MenuItemCard(
                 color = if (rowFocused) GoldLuxury else Color.White.copy(alpha = 0.10f),
                 shape = shape,
             )
-            .padding(12.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // Food image with veg badge overlay
         Box(
             modifier = Modifier
-                .size(92.dp)
+                .size(96.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(NavyDeep.copy(alpha = 0.85f)),
         ) {
@@ -365,10 +357,7 @@ private fun MenuItemCard(
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = "🍽",
-                        fontSize = 28.sp,
-                    )
+                    Text(text = "🍽", fontSize = 28.sp)
                 }
             }
 
@@ -380,29 +369,32 @@ private fun MenuItemCard(
             )
         }
 
-        // Title / description / price
+        // Title / description / price — full width, no title truncation
         Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             Text(
                 text = item.name,
-                fontSize = 18.sp,
+                fontSize = 19.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = SansBody,
                 color = TextPrimary,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                softWrap = false,
+                overflow = TextOverflow.Visible,
             )
             if (item.description.isNotBlank()) {
                 Text(
                     text = item.description,
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     fontFamily = SansBody,
                     color = TextMuted,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    lineHeight = 17.sp,
+                    lineHeight = 18.sp,
                 )
             }
             Text(
@@ -415,7 +407,7 @@ private fun MenuItemCard(
             )
         }
 
-        // Quantity stepper (dark glass)
+        // Quantity stepper pinned to the far right
         QuantityStepper(
             quantity = quantity,
             onAdd = onAdd,
