@@ -11,8 +11,6 @@ import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
-import android.os.Handler
-import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
@@ -51,7 +49,6 @@ object UpdateManager {
     private const val READ_TIMEOUT_MS = 12_000
 
     private val ioExecutor = Executors.newSingleThreadExecutor()
-    private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile
     private var isChecking = false
@@ -78,54 +75,113 @@ object UpdateManager {
         val jsonUrl = BuildConfig.UPDATE_JSON_URL.trim()
         if (jsonUrl.isBlank() || jsonUrl.contains("YOUR_JSON_FILE_ID")) {
             Log.w(TAG, "UPDATE_JSON_URL not configured — skip update check")
+            activity.runOnUiThread {
+                Toast.makeText(
+                    activity,
+                    "Update JSON URL not configured",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
             return
         }
 
         isChecking = true
+        // Diagnostic before network work — always on the Activity UI thread.
+        activity.runOnUiThread {
+            Toast.makeText(
+                activity,
+                "Checking Update... Local VC: ${BuildConfig.VERSION_CODE}",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+
         ioExecutor.execute {
             try {
                 val body = fetchJson(jsonUrl)
                 val info = parseUpdateJson(body)
-                mainHandler.post {
+                // All Toasts / AlertDialog must use Activity context on the main thread.
+                activity.runOnUiThread {
                     isChecking = false
-                    if (activity.isFinishing || activity.isDestroyed) return@post
-                    handleUpdateInfo(activity, info)
+                    if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+                    handleUpdateInfoOnUiThread(activity, info)
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Update JSON fetch failed — continuing without update gate", e)
-                mainHandler.post {
+                activity.runOnUiThread {
                     isChecking = false
-                    // Offline / network error: do not block app launch.
+                    if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+                    Toast.makeText(
+                        activity,
+                        "Update check failed (offline?) — continuing",
+                        Toast.LENGTH_LONG,
+                    ).show()
                 }
             }
         }
     }
 
-    private fun handleUpdateInfo(activity: Activity, info: UpdateInfo) {
-        val installedVc = BuildConfig.VERSION_CODE
-        val onlineVc = info.latestVersionCode
-        val debugMsg = "Installed VC: $installedVc | Online VC: $onlineVc"
+    private fun handleUpdateInfoOnUiThread(activity: Activity, info: UpdateInfo) {
+        val remoteVersionCode = info.latestVersionCode
+        val localVersionCode = BuildConfig.VERSION_CODE
+        val isUpdateNeeded = remoteVersionCode > localVersionCode
 
         Log.i(
             TAG,
-            "$debugMsg force=${info.forceUpdate} name=${info.latestVersionName} " +
-                "apk=${info.apkUrl.take(80)}",
+            "remoteVersionCode=$remoteVersionCode localVersionCode=$localVersionCode " +
+                "isUpdateNeeded=$isUpdateNeeded force_update=${info.forceUpdate} " +
+                "name=${info.latestVersionName} apk=${info.apkUrl.take(80)}",
         )
-        Toast.makeText(activity, debugMsg, Toast.LENGTH_LONG).show()
 
-        if (onlineVc > installedVc && info.forceUpdate) {
-            if (info.apkUrl.isBlank()) {
-                Log.w(TAG, "Force update skipped — apk_url is blank")
-                return
-            }
-            if (shownForVersionCode == onlineVc) return
-            shownForVersionCode = onlineVc
-            showForceUpdateDialog(
-                activity = activity,
-                latestVersionName = info.latestVersionName.ifBlank { "v$onlineVc" },
-                apkUrl = info.apkUrl,
-            )
+        Toast.makeText(
+            activity,
+            "Local: $localVersionCode | Server: $remoteVersionCode | NeedsUpdate: $isUpdateNeeded",
+            Toast.LENGTH_LONG,
+        ).show()
+
+        if (!isUpdateNeeded) {
+            Log.d(TAG, "App is up to date — no dialog")
+            return
         }
+
+        if (info.apkUrl.isBlank()) {
+            Log.w(TAG, "Update needed but apk_url is blank")
+            Toast.makeText(activity, "Update needed but apk_url is empty", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        shownForVersionCode = remoteVersionCode
+        showForceUpdateDialog(
+            activity = activity,
+            latestVersionName = info.latestVersionName.ifBlank { "v$remoteVersionCode" },
+            apkUrl = info.apkUrl,
+        )
+    }
+
+    private fun showForceUpdateDialog(
+        activity: Activity,
+        latestVersionName: String,
+        apkUrl: String,
+    ) {
+        if (activity.isFinishing || activity.isDestroyed) return
+
+        Log.i(TAG, "Showing force update AlertDialog on UI thread activity=${activity.javaClass.simpleName}")
+
+        // Must use Activity context (not applicationContext) for dialog window token.
+        val dialog = AlertDialog.Builder(activity)
+            .setTitle("Update Available")
+            .setMessage("Please update to the latest version ($latestVersionName).")
+            .setCancelable(false)
+            .setPositiveButton("UPDATE") { _, _ ->
+                startDownload(activity, apkUrl, latestVersionName)
+            }
+            .create()
+
+        dialog.setCanceledOnTouchOutside(false)
+        dialog.setOnKeyListener { _, keyCode, _ ->
+            // Block Back while update is required; allow D-pad focus on UPDATE.
+            keyCode == KeyEvent.KEYCODE_BACK
+        }
+        dialog.show()
     }
 
     private fun fetchJson(jsonUrl: String): String {
@@ -187,30 +243,6 @@ object UpdateManager {
             forceUpdate = force,
             apkUrl = apkUrl,
         )
-    }
-
-    private fun showForceUpdateDialog(
-        activity: Activity,
-        latestVersionName: String,
-        apkUrl: String,
-    ) {
-        if (activity.isFinishing || activity.isDestroyed) return
-
-        val dialog = AlertDialog.Builder(activity)
-            .setTitle(R.string.update_available_title)
-            .setMessage(activity.getString(R.string.update_available_message, latestVersionName))
-            .setCancelable(false)
-            .setPositiveButton(R.string.update_button_now) { _, _ ->
-                startDownload(activity, apkUrl, latestVersionName)
-            }
-            .create()
-
-        dialog.setCanceledOnTouchOutside(false)
-        dialog.setOnKeyListener { _, keyCode, _ ->
-            // Block Back while force update is required; allow D-pad for Update.
-            keyCode == KeyEvent.KEYCODE_BACK
-        }
-        dialog.show()
     }
 
     private fun startDownload(activity: Activity, apkUrl: String, latestVersionName: String) {
