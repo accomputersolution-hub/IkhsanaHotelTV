@@ -21,6 +21,10 @@
     <string name="services_title">Guest Services &amp; Housekeeping</string>
     <string name="services_subtitle">Select a service — our team will assist you shortly</string>
     <string name="service_tap_to_request">Press OK to request</string>
+    <string name="service_desc_cleaning">Request room cleanup or turndown service</string>
+    <string name="service_desc_towels">Fresh towels, linen, and bedding refill</string>
+    <string name="service_desc_amenities">Bottled water, toiletries, and room amenities</string>
+    <string name="service_desc_concierge">Call front desk or request concierge assistance</string>
     <string name="active_requests">Your Active Requests</string>
     <string name="request_sent">Request sent to Front Desk!</string>
     <string name="request_failed">Could not send request. Please try again.</string>

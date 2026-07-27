@@ -17,6 +17,7 @@ data class ServiceOption(
     val serviceType: String,
     val label: String,
     val icon: String,
+    val subtitle: String,
 )
 
 enum class ServiceToastType {
@@ -45,10 +46,34 @@ class ServicesViewModel(
     val uiState: StateFlow<ServicesUiState> = _uiState.asStateFlow()
 
     val serviceOptions = listOf(
-        ServiceOption("housekeeping", "housekeeping", "Room Cleaning", "🧹"),
-        ServiceOption("housekeeping", "extra_towels", "Extra Towels & Linen", "🧻"),
-        ServiceOption("housekeeping", "amenities", "Bottled Water / Amenities", "🍾"),
-        ServiceOption("concierge", "concierge_call", "Concierge / Front Desk Call", "🚖"),
+        ServiceOption(
+            department = "housekeeping",
+            serviceType = "housekeeping",
+            label = "Room Cleaning",
+            icon = "🧹",
+            subtitle = "Request room cleanup or turndown service",
+        ),
+        ServiceOption(
+            department = "housekeeping",
+            serviceType = "extra_towels",
+            label = "Extra Towels & Linen",
+            icon = "🧻",
+            subtitle = "Fresh towels, linen, and bedding refill",
+        ),
+        ServiceOption(
+            department = "housekeeping",
+            serviceType = "amenities",
+            label = "Bottled Water / Amenities",
+            icon = "🍾",
+            subtitle = "Bottled water, toiletries, and room amenities",
+        ),
+        ServiceOption(
+            department = "concierge",
+            serviceType = "concierge_call",
+            label = "Concierge / Front Desk Call",
+            icon = "🚖",
+            subtitle = "Call front desk or request concierge assistance",
+        ),
     )
 
     private val knownRequestStatuses = mutableMapOf<String, String>()

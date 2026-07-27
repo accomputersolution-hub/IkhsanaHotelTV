@@ -126,8 +126,20 @@ export async function markRoomCleanAndReady(roomNumber) {
   await writeRoom(roomNumber, {
     status: 'vacant',
     guestName: 'Guest',
+    guest_name: 'Guest',
+    salutation: '',
     guestPhone: '',
+    phone: '',
+    email: '',
+    idType: '',
+    id_type: '',
+    idNumber: '',
+    id_number: '',
     checkOutDate: '',
+    expected_checkout: '',
+    checkInDate: '',
+    occupied: false,
+    is_occupied: false,
     cleaned: true,
     cleanedAt: serverTimestamp(),
     roomNumber,
@@ -169,9 +181,14 @@ function formatCheckOut(dateStr) {
 
 function guestSubtitle(room, status) {
   if (status === 'occupied') {
-    const parts = [room.guestName || 'Guest'];
-    if (room.guestPhone) parts.push(room.guestPhone);
-    if (room.checkOutDate) parts.push(`Out: ${formatCheckOut(room.checkOutDate)}`);
+    const salutation = (room.salutation || room.title || '').trim();
+    const rawName = room.guestName || room.guest_name || 'Guest';
+    const displayName = salutation ? `${salutation} ${rawName}` : rawName;
+    const parts = [displayName];
+    const phone = room.guestPhone || room.phone;
+    if (phone) parts.push(phone);
+    const checkout = room.checkOutDate || room.expected_checkout;
+    if (checkout) parts.push(`Out: ${formatCheckOut(checkout)}`);
     return parts.join(' · ');
   }
   if (status === 'housekeeping' || status === 'maintenance') {
@@ -263,12 +280,16 @@ function setupCheckInModal() {
     btn.textContent = 'Checking in…';
 
     const roomNumber = normalizeRoom(document.getElementById('check-in-room').value);
+    const salutation = document.getElementById('check-in-salutation')?.value.trim() || '';
     const guestName = document.getElementById('check-in-guest-name').value.trim();
-    const guestPhone = document.getElementById('check-in-phone').value.trim();
-    const checkOutDate = document.getElementById('check-in-checkout').value;
+    const phone = document.getElementById('check-in-phone').value.trim();
+    const email = document.getElementById('check-in-email')?.value.trim() || '';
+    const idType = document.getElementById('check-in-id-type')?.value.trim() || '';
+    const idNumber = document.getElementById('check-in-id-number')?.value.trim() || '';
+    const expectedCheckout = document.getElementById('check-in-checkout').value;
 
-    if (!roomNumber || !guestName || !checkOutDate) {
-      toast('Guest name and check-out date are required', 'error');
+    if (!roomNumber || !guestName || !expectedCheckout) {
+      toast('Guest name and expected check-out date are required', 'error');
       btn.disabled = false;
       btn.textContent = 'Confirm Check-In';
       return;
@@ -283,19 +304,37 @@ function setupCheckInModal() {
         await flushRoomSession(roomNumber);
       }
 
+      const today = new Date().toISOString().split('T')[0];
       await writeRoom(roomNumber, {
+        // Canonical fields used by TV + existing PMS
+        salutation,
         guestName,
-        guestPhone,
-        checkOutDate,
-        checkInDate: new Date().toISOString().split('T')[0],
+        guestPhone: phone,
+        email,
+        idType,
+        idNumber,
+        checkOutDate: expectedCheckout,
+        checkInDate: today,
         status: 'occupied',
+        occupied: true,
         sessionKey,
         activeOrdersCount: 0,
         activeMessagesCount: 0,
         roomNumber,
         hotelName: 'Ikhsana Hotel',
+        cleaned: false,
+        // Explicit aliases requested for payload / reporting
+        guest_name: guestName,
+        phone,
+        id_type: idType,
+        id_number: idNumber,
+        is_occupied: true,
+        checked_in_at: serverTimestamp(),
+        expected_checkout: expectedCheckout,
       });
-      toast(`Room ${roomNumber} checked in — Welcome, ${guestName}!`);
+
+      const greeting = salutation ? `${salutation} ${guestName}` : guestName;
+      toast(`Room ${roomNumber} checked in — Welcome, ${greeting}!`);
       closeModal('check-in-modal');
       e.target.reset();
     } catch (err) {
@@ -366,23 +405,40 @@ function setupAddRoomModal() {
 function openCheckInModal(roomNumber, isEdit = false) {
   const room = roomsCache.find((r) => String(r.id) === roomNumber);
   document.getElementById('check-in-room').value = roomNumber;
-  document.getElementById('check-in-guest-name').value = room?.guestName || '';
-  document.getElementById('check-in-phone').value = room?.guestPhone || '';
-  document.getElementById('check-in-checkout').value = room?.checkOutDate || '';
+
+  const salutationEl = document.getElementById('check-in-salutation');
+  const nameEl = document.getElementById('check-in-guest-name');
+  const phoneEl = document.getElementById('check-in-phone');
+  const emailEl = document.getElementById('check-in-email');
+  const idTypeEl = document.getElementById('check-in-id-type');
+  const idNumberEl = document.getElementById('check-in-id-number');
+  const checkoutEl = document.getElementById('check-in-checkout');
+
+  if (salutationEl) salutationEl.value = room?.salutation || room?.title || '';
+  if (nameEl) {
+    const existingName = room?.guestName || room?.guest_name || '';
+    nameEl.value = existingName === 'Guest' && !isEdit ? '' : existingName;
+  }
+  if (phoneEl) phoneEl.value = room?.guestPhone || room?.phone || '';
+  if (emailEl) emailEl.value = room?.email || '';
+  if (idTypeEl) idTypeEl.value = room?.idType || room?.id_type || '';
+  if (idNumberEl) idNumberEl.value = room?.idNumber || room?.id_number || '';
+  if (checkoutEl) checkoutEl.value = room?.checkOutDate || room?.expected_checkout || '';
 
   const title = document.getElementById('check-in-modal-title');
   if (title) title.textContent = isEdit ? `Edit Guest — Room ${roomNumber}` : `Check-In — Room ${roomNumber}`;
 
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const checkoutInput = document.getElementById('check-in-checkout');
-  if (checkoutInput && !checkoutInput.value) {
-    checkoutInput.min = new Date().toISOString().split('T')[0];
-    checkoutInput.value = tomorrow.toISOString().split('T')[0];
+  if (checkoutEl) {
+    checkoutEl.min = new Date().toISOString().split('T')[0];
+    if (!checkoutEl.value) {
+      checkoutEl.value = tomorrow.toISOString().split('T')[0];
+    }
   }
 
   openModal('check-in-modal');
-  document.getElementById('check-in-guest-name')?.focus();
+  (salutationEl || nameEl)?.focus();
 }
 
 async function handleCheckOut(roomNumber, btn) {
@@ -396,10 +452,21 @@ async function handleCheckOut(roomNumber, btn) {
     await flushRoomSession(roomNumber);
     await writeRoom(roomNumber, {
       guestName: 'Guest',
+      guest_name: 'Guest',
+      salutation: '',
       guestPhone: '',
+      phone: '',
+      email: '',
+      idType: '',
+      id_type: '',
+      idNumber: '',
+      id_number: '',
       checkOutDate: '',
+      expected_checkout: '',
       checkInDate: '',
       status: 'housekeeping',
+      occupied: false,
+      is_occupied: false,
       sessionKey: '',
       activeOrdersCount: 0,
       activeMessagesCount: 0,

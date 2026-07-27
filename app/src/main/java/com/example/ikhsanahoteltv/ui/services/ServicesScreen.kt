@@ -1,20 +1,27 @@
 package com.example.ikhsanahoteltv.ui.services
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,18 +32,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -56,6 +63,8 @@ import com.example.ikhsanahoteltv.ui.components.ServiceToast
 import com.example.ikhsanahoteltv.ui.components.luxuryBackHandler
 import com.example.ikhsanahoteltv.ui.theme.FocusCyan
 import com.example.ikhsanahoteltv.ui.theme.FocusTeal
+import com.example.ikhsanahoteltv.ui.theme.GoldGlassBorder
+import com.example.ikhsanahoteltv.ui.theme.GoldGlassFill
 import com.example.ikhsanahoteltv.ui.theme.GoldLight
 import com.example.ikhsanahoteltv.ui.theme.GoldLuxury
 import com.example.ikhsanahoteltv.ui.theme.GoldPrimary
@@ -67,6 +76,7 @@ import com.example.ikhsanahoteltv.ui.theme.TextMuted
 import com.example.ikhsanahoteltv.ui.theme.TextPrimary
 
 private val VacantRed = Color(0xFFEF4444)
+private val GlassCardFill = Color(0xCC0B1325)
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -89,22 +99,30 @@ fun ServicesScreen(
     ) {
         LuxuryScreenBackground(modifier = Modifier.fillMaxSize())
 
-        LazyColumn(
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
             modifier = Modifier
                 .fillMaxSize()
-                .padding(36.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 36.dp, vertical = 28.dp),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+            contentPadding = PaddingValues(bottom = 24.dp),
         ) {
-            item {
-                LuxuryScreenHeader(
-                    title = stringResource(R.string.services_title),
-                    subtitle = stringResource(R.string.services_subtitle),
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Column {
+                    LuxuryScreenHeader(
+                        title = stringResource(R.string.services_title),
+                        subtitle = stringResource(R.string.services_subtitle),
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
             }
 
-            items(viewModel.serviceOptions.withIndex().toList(), key = { it.value.serviceType }) { (index, option) ->
-                ServiceButton(
+            itemsIndexed(
+                items = viewModel.serviceOptions,
+                key = { _, option -> option.serviceType },
+            ) { index, option ->
+                ServiceCard(
                     option = option,
                     enabled = !uiState.isSubmitting && uiState.roomOccupied,
                     roomOccupied = uiState.roomOccupied,
@@ -114,17 +132,23 @@ fun ServicesScreen(
             }
 
             if (uiState.activeRequests.isNotEmpty()) {
-                item {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = stringResource(R.string.active_requests),
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = SerifDisplay,
-                        color = GoldLight,
-                    )
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Column {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.active_requests),
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = SerifDisplay,
+                            color = GoldLight,
+                        )
+                    }
                 }
-                items(uiState.activeRequests, key = { it.id }) { request ->
+                itemsIndexed(
+                    items = uiState.activeRequests,
+                    key = { _, request -> request.id },
+                    span = { _, _ -> GridItemSpan(maxLineSpan) },
+                ) { _, request ->
                     ActiveRequestRow(request = request)
                 }
             }
@@ -143,6 +167,185 @@ fun ServicesScreen(
         if (uiState.showVacantRoomDialog) {
             VacantRoomDialog(onDismiss = viewModel::dismissVacantRoomDialog)
         }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun ServiceCard(
+    option: ServiceOption,
+    enabled: Boolean,
+    roomOccupied: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (focused && roomOccupied) 1.05f else 1f,
+        animationSpec = tween(150),
+        label = "serviceCardScale",
+    )
+    val elevation by animateFloatAsState(
+        targetValue = if (focused && roomOccupied) 14f else 0f,
+        animationSpec = tween(150),
+        label = "serviceCardElevation",
+    )
+    val shape = RoundedCornerShape(16.dp)
+    val borderColor = when {
+        !roomOccupied -> VacantRed.copy(alpha = 0.35f)
+        focused -> GoldLuxury
+        else -> Color.White.copy(alpha = 0.10f)
+    }
+    val fillBrush = when {
+        !roomOccupied -> Brush.verticalGradient(
+            listOf(VacantRed.copy(alpha = 0.08f), GlassCardFill.copy(alpha = 0.7f)),
+        )
+        focused -> Brush.verticalGradient(
+            listOf(
+                GoldLuxury.copy(alpha = 0.22f),
+                NavySurface.copy(alpha = 0.88f),
+                NavyDeep.copy(alpha = 0.92f),
+            ),
+        )
+        else -> Brush.verticalGradient(
+            listOf(
+                NavySurface.copy(alpha = 0.82f),
+                GlassCardFill,
+                NavyDeep.copy(alpha = 0.78f),
+            ),
+        )
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 168.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .shadow(
+                elevation = elevation.dp,
+                shape = shape,
+                ambientColor = GoldLuxury.copy(alpha = 0.4f),
+                spotColor = GoldLuxury.copy(alpha = 0.55f),
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .focusable(enabled = roomOccupied)
+            .background(brush = fillBrush, shape = shape)
+            .border(
+                width = if (focused && roomOccupied) 2.dp else 1.dp,
+                color = borderColor,
+                shape = shape,
+            )
+            .onKeyEvent { event ->
+                if (enabled && event.type == KeyEventType.KeyDown &&
+                    (event.key == Key.Enter || event.key == Key.DirectionCenter)
+                ) {
+                    onClick()
+                    true
+                } else {
+                    false
+                }
+            }
+            .padding(horizontal = 22.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        ServiceIconBadge(
+            icon = if (roomOccupied) option.icon else "🔒",
+            focused = focused && roomOccupied,
+            disabled = !roomOccupied,
+        )
+
+        Text(
+            text = option.label,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = SansBody,
+            color = if (roomOccupied) {
+                if (focused) GoldLight else TextPrimary
+            } else {
+                TextMuted.copy(alpha = 0.55f)
+            },
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            lineHeight = 24.sp,
+        )
+
+        Text(
+            text = if (roomOccupied) {
+                option.subtitle
+            } else {
+                stringResource(R.string.vacant_room_cta_hint)
+            },
+            fontSize = 13.sp,
+            fontFamily = SansBody,
+            color = if (roomOccupied) TextMuted else VacantRed.copy(alpha = 0.8f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            lineHeight = 18.sp,
+        )
+
+        if (roomOccupied) {
+            Text(
+                text = stringResource(R.string.service_tap_to_request),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                fontFamily = SansBody,
+                color = if (focused) GoldLuxury.copy(alpha = 0.9f) else TextMuted.copy(alpha = 0.65f),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun ServiceIconBadge(
+    icon: String,
+    focused: Boolean,
+    disabled: Boolean,
+) {
+    val badgeScale by animateFloatAsState(
+        targetValue = if (focused) 1.06f else 1f,
+        animationSpec = tween(150),
+        label = "serviceIconScale",
+    )
+    val borderColor = when {
+        disabled -> VacantRed.copy(alpha = 0.35f)
+        focused -> GoldLuxury.copy(alpha = 0.55f)
+        else -> GoldGlassBorder
+    }
+    val fillBrush = when {
+        disabled -> Brush.radialGradient(
+            listOf(VacantRed.copy(alpha = 0.12f), Color.White.copy(alpha = 0.04f)),
+        )
+        focused -> Brush.radialGradient(
+            listOf(
+                GoldLuxury.copy(alpha = 0.28f),
+                GoldGlassFill,
+                GoldLuxury.copy(alpha = 0.08f),
+            ),
+        )
+        else -> Brush.radialGradient(
+            listOf(
+                GoldLuxury.copy(alpha = 0.16f),
+                GoldGlassFill,
+            ),
+        )
+    }
+
+    Box(
+        modifier = Modifier
+            .size(56.dp)
+            .graphicsLayer {
+                scaleX = badgeScale
+                scaleY = badgeScale
+            }
+            .background(brush = fillBrush, shape = CircleShape)
+            .border(1.dp, borderColor, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = icon, fontSize = 26.sp)
     }
 }
 
@@ -187,77 +390,6 @@ private fun ActiveRequestRow(request: ServiceRequest) {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun ServiceButton(
-    option: ServiceOption,
-    enabled: Boolean,
-    roomOccupied: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (focused) 1.03f else 1f,
-        label = "serviceScale",
-    )
-    val shape = RoundedCornerShape(14.dp)
-    val borderColor = when {
-        !roomOccupied -> VacantRed.copy(alpha = 0.4f)
-        focused -> GoldPrimary
-        else -> Color.White.copy(alpha = 0.12f)
-    }
-    val bgColor = when {
-        !roomOccupied -> VacantRed.copy(alpha = 0.06f)
-        focused -> GoldPrimary.copy(alpha = 0.18f)
-        else -> NavyDeep.copy(alpha = 0.5f)
-    }
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .onFocusChanged { focused = it.isFocused }
-            .focusable(enabled = roomOccupied && !enabled.not())
-            .background(bgColor, shape)
-            .border(width = if (focused) 3.dp else 1.dp, color = borderColor, shape = shape)
-            .onKeyEvent { event ->
-                if (enabled && event.type == KeyEventType.KeyDown &&
-                    (event.key == Key.Enter || event.key == Key.DirectionCenter)
-                ) {
-                    onClick()
-                    true
-                } else {
-                    false
-                }
-            }
-            .padding(horizontal = 24.dp, vertical = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(20.dp),
-    ) {
-        Text(text = if (roomOccupied) option.icon else "🔒", fontSize = 28.sp)
-        Column {
-            Text(
-                text = option.label,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.SemiBold,
-                fontFamily = SansBody,
-                color = if (roomOccupied) TextPrimary else TextMuted.copy(alpha = 0.55f),
-            )
-            Text(
-                text = if (roomOccupied) {
-                    stringResource(R.string.service_tap_to_request)
-                } else {
-                    stringResource(R.string.vacant_room_cta_hint)
-                },
-                fontSize = 13.sp,
-                fontFamily = SansBody,
-                color = if (roomOccupied) TextMuted else VacantRed.copy(alpha = 0.8f),
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
 private fun VacantRoomDialog(onDismiss: () -> Unit) {
     val dismissFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { dismissFocus.requestFocus() }
@@ -290,7 +422,6 @@ private fun VacantRoomDialog(onDismiss: () -> Unit) {
                     color = TextMuted,
                     textAlign = TextAlign.Center,
                 )
-                // Dismiss button
                 var btnFocused by remember { mutableStateOf(false) }
                 val btnScale by animateFloatAsState(
                     targetValue = if (btnFocused) 1.04f else 1f,

@@ -503,26 +503,66 @@
 
   <!-- Check-In Modal -->
   <div id="check-in-modal" class="modal-overlay hidden">
-    <div class="modal-panel">
+    <div class="modal-panel modal-panel-wide check-in-modal-panel">
       <div class="flex items-center justify-between mb-5">
-        <h3 id="check-in-modal-title" class="text-lg font-bold">Check-In Guest</h3>
+        <div>
+          <h3 id="check-in-modal-title" class="text-lg font-bold">Check-In Guest</h3>
+          <p class="text-xs mt-0.5 opacity-70">Guest details sync to TV greeting &amp; room services</p>
+        </div>
         <button id="check-in-close" type="button" class="modal-close-btn">&times;</button>
       </div>
-      <form id="check-in-form" class="space-y-4">
+      <form id="check-in-form" class="check-in-form">
         <input id="check-in-room" type="hidden" />
-        <div>
-          <label for="check-in-guest-name" class="block text-sm font-medium mb-1">Guest Name</label>
-          <input id="check-in-guest-name" type="text" required placeholder="e.g. Ahad Chaudhary" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+
+        <div class="check-in-grid">
+          <div class="check-in-field check-in-field-salutation">
+            <label for="check-in-salutation" class="block text-sm font-medium mb-1">Salutation</label>
+            <select id="check-in-salutation" class="w-full px-4 py-2.5 rounded-xl outline-none">
+              <option value="">—</option>
+              <option value="Mr.">Mr.</option>
+              <option value="Ms.">Ms.</option>
+              <option value="Mrs.">Mrs.</option>
+              <option value="Dr.">Dr.</option>
+            </select>
+          </div>
+          <div class="check-in-field check-in-field-name">
+            <label for="check-in-guest-name" class="block text-sm font-medium mb-1">Guest Name</label>
+            <input id="check-in-guest-name" type="text" required placeholder="e.g. Sana Chaudhary" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+          </div>
+
+          <div class="check-in-field">
+            <label for="check-in-phone" class="block text-sm font-medium mb-1">Phone Number</label>
+            <input id="check-in-phone" type="tel" placeholder="+91 98765 43210" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+          </div>
+          <div class="check-in-field">
+            <label for="check-in-email" class="block text-sm font-medium mb-1">Email <span class="field-optional">(optional)</span></label>
+            <input id="check-in-email" type="email" placeholder="guest@email.com" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+          </div>
+
+          <div class="check-in-section-label">Identity Proof <span class="field-optional">(optional)</span></div>
+
+          <div class="check-in-field">
+            <label for="check-in-id-type" class="block text-sm font-medium mb-1">ID Type</label>
+            <select id="check-in-id-type" class="w-full px-4 py-2.5 rounded-xl outline-none">
+              <option value="">Select ID type</option>
+              <option value="Aadhaar Card">Aadhaar Card</option>
+              <option value="Passport">Passport</option>
+              <option value="Driving License">Driving License</option>
+              <option value="Govt ID">Govt ID</option>
+            </select>
+          </div>
+          <div class="check-in-field">
+            <label for="check-in-id-number" class="block text-sm font-medium mb-1">ID Number</label>
+            <input id="check-in-id-number" type="text" placeholder="Enter ID number" class="w-full px-4 py-2.5 rounded-xl outline-none" autocomplete="off" />
+          </div>
+
+          <div class="check-in-field check-in-field-full">
+            <label for="check-in-checkout" class="block text-sm font-medium mb-1">Expected Check-Out Date</label>
+            <input id="check-in-checkout" type="date" required class="w-full px-4 py-2.5 rounded-xl outline-none" />
+          </div>
         </div>
-        <div>
-          <label for="check-in-phone" class="block text-sm font-medium mb-1">Phone Number</label>
-          <input id="check-in-phone" type="tel" placeholder="+91 98765 43210" class="w-full px-4 py-2.5 rounded-xl outline-none" />
-        </div>
-        <div>
-          <label for="check-in-checkout" class="block text-sm font-medium mb-1">Check-out Date</label>
-          <input id="check-in-checkout" type="date" required class="w-full px-4 py-2.5 rounded-xl outline-none" />
-        </div>
-        <button type="submit" class="w-full py-3 font-semibold rounded-xl btn-gold">Confirm Check-In</button>
+
+        <button type="submit" class="w-full py-3 font-semibold rounded-xl btn-gold check-in-submit">Confirm Check-In</button>
       </form>
     </div>
   </div>
