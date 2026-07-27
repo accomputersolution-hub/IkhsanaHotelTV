@@ -10,6 +10,7 @@ import com.example.ikhsanahoteltv.data.model.MenuCategory
 import com.example.ikhsanahoteltv.data.model.MenuItem
 import com.example.ikhsanahoteltv.data.model.OrderLineItem
 import com.example.ikhsanahoteltv.data.model.OrderStatus
+import com.example.ikhsanahoteltv.data.model.PaymentMethod
 import com.example.ikhsanahoteltv.data.repository.FirestoreRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +26,9 @@ data class DiningUiState(
     val roomOrders: List<LiveOrder> = emptyList(),
     val isPlacingOrder: Boolean = false,
     val orderMessage: String? = null,
+    val selectedPayment: PaymentMethod = PaymentMethod.PAY_AT_CHECKOUT,
+    /** Non-null while the QR dialog is shown. Carries the total so the dialog can display it. */
+    val pendingQrTotal: Double? = null,
 ) {
     val filteredItems: List<MenuItem>
         get() = menuItems.filter { it.category == selectedCategory && it.available }
@@ -79,6 +83,10 @@ class DiningViewModel(
         _uiState.update { it.copy(selectedCategory = category) }
     }
 
+    fun selectPayment(method: PaymentMethod) {
+        _uiState.update { it.copy(selectedPayment = method, orderMessage = null) }
+    }
+
     fun addToCart(item: MenuItem) {
         _uiState.update { state ->
             val existing = state.cart.find { it.menuItem.id == item.id }
@@ -107,10 +115,36 @@ class DiningViewModel(
         }
     }
 
-    fun placeOrder() {
+    /**
+     * Initiates checkout.
+     * – PAY_AT_CHECKOUT → places order immediately.
+     * – PAID_ONLINE     → shows QR dialog first; call [confirmQrPayment] after user scans.
+     */
+    fun requestPlaceOrder() {
         val state = _uiState.value
         if (state.cart.isEmpty() || state.isPlacingOrder) return
 
+        if (state.selectedPayment == PaymentMethod.PAID_ONLINE) {
+            _uiState.update { it.copy(pendingQrTotal = state.cartTotal, orderMessage = null) }
+        } else {
+            submitOrder(state)
+        }
+    }
+
+    /** Called when the guest confirms payment inside the QR dialog. */
+    fun confirmQrPayment() {
+        val state = _uiState.value
+        if (state.pendingQrTotal == null || state.isPlacingOrder) return
+        _uiState.update { it.copy(pendingQrTotal = null) }
+        submitOrder(state)
+    }
+
+    /** Dismiss the QR dialog without placing the order. */
+    fun dismissQrDialog() {
+        _uiState.update { it.copy(pendingQrTotal = null) }
+    }
+
+    private fun submitOrder(state: DiningUiState) {
         viewModelScope.launch {
             _uiState.update { it.copy(isPlacingOrder = true, orderMessage = null) }
             val order = LiveOrder(
@@ -126,6 +160,7 @@ class DiningViewModel(
                     )
                 },
                 totalAmount = state.cartTotal,
+                paymentMethod = state.selectedPayment,
             )
             repository.placeOrder(order)
                 .onSuccess {
@@ -149,6 +184,9 @@ class DiningViewModel(
         _uiState.update { it.copy(orderMessage = null) }
     }
 
+    // Legacy wrapper kept for backward compat with any call sites not yet updated.
+    fun placeOrder() = requestPlaceOrder()
+
     private fun resetForNewSession(profile: GuestProfile) {
         trackedSessionKey = profile.sessionKey
         _uiState.update {
@@ -159,6 +197,8 @@ class DiningViewModel(
                 selectedCategory = MenuCategory.STARTERS,
                 orderMessage = null,
                 isPlacingOrder = false,
+                selectedPayment = PaymentMethod.PAY_AT_CHECKOUT,
+                pendingQrTotal = null,
             )
         }
     }

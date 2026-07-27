@@ -57,11 +57,13 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import com.example.ikhsanahoteltv.R
+import androidx.compose.ui.window.Dialog
 import com.example.ikhsanahoteltv.data.model.CartItem
 import com.example.ikhsanahoteltv.data.model.LiveOrder
 import com.example.ikhsanahoteltv.data.model.MenuCategory
 import com.example.ikhsanahoteltv.data.model.MenuItem
 import com.example.ikhsanahoteltv.data.model.OrderStatus
+import com.example.ikhsanahoteltv.data.model.PaymentMethod
 import com.example.ikhsanahoteltv.ui.HotelViewModelFactory
 import com.example.ikhsanahoteltv.ui.components.LuxuryGlassPanel
 import com.example.ikhsanahoteltv.ui.components.LuxuryScreenBackground
@@ -180,12 +182,23 @@ fun DiningScreen(
                     roomOrders = uiState.roomOrders,
                     orderMessage = uiState.orderMessage,
                     isPlacingOrder = uiState.isPlacingOrder,
+                    selectedPayment = uiState.selectedPayment,
+                    onSelectPayment = viewModel::selectPayment,
                     orderFocus = orderFocus,
-                    onPlaceOrder = viewModel::placeOrder,
+                    onPlaceOrder = viewModel::requestPlaceOrder,
                     modifier = Modifier
                         .width(300.dp)
                         .fillMaxHeight(),
                 )
+
+                // ── QR Payment dialog ─────────────────────────────────────
+                uiState.pendingQrTotal?.let { total ->
+                    QrPaymentDialog(
+                        total = total,
+                        onConfirm = viewModel::confirmQrPayment,
+                        onDismiss = viewModel::dismissQrDialog,
+                    )
+                }
             }
         }
     }
@@ -521,6 +534,8 @@ private fun OrderSummaryPanel(
     roomOrders: List<LiveOrder>,
     orderMessage: String?,
     isPlacingOrder: Boolean,
+    selectedPayment: PaymentMethod,
+    onSelectPayment: (PaymentMethod) -> Unit,
     orderFocus: FocusRequester,
     onPlaceOrder: () -> Unit,
     modifier: Modifier = Modifier,
@@ -601,6 +616,12 @@ private fun OrderSummaryPanel(
                 }
             }
 
+            // ── Payment method toggle ─────────────────────────────────
+            PaymentToggle(
+                selected = selectedPayment,
+                onSelect = onSelectPayment,
+            )
+
             if (orderMessage == "success") {
                 Text(
                     text = stringResource(R.string.order_placed),
@@ -619,6 +640,8 @@ private fun OrderSummaryPanel(
             val ctaText = when {
                 isPlacingOrder -> stringResource(R.string.loading)
                 !hasItems -> stringResource(R.string.cart_add_items_cta)
+                selectedPayment == PaymentMethod.PAID_ONLINE ->
+                    stringResource(R.string.pay_now) + " · ₹${cartTotal.toInt()}"
                 else -> stringResource(R.string.cart_confirm_cta, cartTotal)
             }
 
@@ -815,6 +838,259 @@ private fun OrderStatusBadge(status: OrderStatus) {
             color = bg,
             maxLines = 1,
             overflow = TextOverflow.Clip,
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Payment Toggle
+// ─────────────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun PaymentToggle(
+    selected: PaymentMethod,
+    onSelect: (PaymentMethod) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = stringResource(R.string.payment_method_title),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = SansBody,
+            color = TextMuted,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            PaymentCard(
+                icon = "🛏",
+                title = stringResource(R.string.pay_at_checkout),
+                subtitle = stringResource(R.string.pay_at_checkout_sub),
+                isSelected = selected == PaymentMethod.PAY_AT_CHECKOUT,
+                modifier = Modifier.weight(1f),
+                onClick = { onSelect(PaymentMethod.PAY_AT_CHECKOUT) },
+            )
+            PaymentCard(
+                icon = "📲",
+                title = stringResource(R.string.pay_now),
+                subtitle = stringResource(R.string.pay_now_sub),
+                isSelected = selected == PaymentMethod.PAID_ONLINE,
+                modifier = Modifier.weight(1f),
+                onClick = { onSelect(PaymentMethod.PAID_ONLINE) },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun PaymentCard(
+    icon: String,
+    title: String,
+    subtitle: String,
+    isSelected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(12.dp)
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.04f else 1f,
+        animationSpec = tween(150),
+        label = "payScale",
+    )
+    val borderColor = when {
+        isSelected -> GoldLuxury
+        focused -> GoldLuxury.copy(alpha = 0.7f)
+        else -> Color.White.copy(alpha = 0.10f)
+    }
+    val bgAlpha = if (isSelected) 0.22f else if (focused) 0.12f else 0.06f
+
+    Box(
+        modifier = modifier
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .background(GoldLuxury.copy(alpha = bgAlpha), shape)
+            .border(
+                width = if (isSelected || focused) 2.dp else 1.dp,
+                color = borderColor,
+                shape = shape,
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown &&
+                    (event.key == Key.Enter || event.key == Key.DirectionCenter)
+                ) {
+                    onClick(); true
+                } else false
+            }
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(text = icon, fontSize = 18.sp)
+            Text(
+                text = title,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = SansBody,
+                color = if (isSelected) GoldLuxury else TextPrimary,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = subtitle,
+                fontSize = 10.sp,
+                fontFamily = SansBody,
+                color = TextMuted,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QR Payment Dialog
+// ─────────────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun QrPaymentDialog(
+    total: Double,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val confirmFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { confirmFocus.requestFocus() }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            modifier = Modifier
+                .background(NavySurface, RoundedCornerShape(24.dp))
+                .border(2.dp, GoldLuxury.copy(alpha = 0.55f), RoundedCornerShape(24.dp))
+                .padding(32.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.qr_dialog_title),
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = SerifDisplay,
+                    color = GoldLight,
+                )
+                Text(
+                    text = stringResource(R.string.qr_dialog_amount, total),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = GoldLuxury,
+                )
+                // QR code placeholder — replace with a real QR library if needed
+                Box(
+                    modifier = Modifier
+                        .size(160.dp)
+                        .background(Color.White, RoundedCornerShape(12.dp))
+                        .border(2.dp, GoldLuxury.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "QR",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Black,
+                        color = NavyDeep,
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.qr_dialog_hint),
+                    fontSize = 13.sp,
+                    fontFamily = SansBody,
+                    color = TextMuted,
+                    textAlign = TextAlign.Center,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Cancel
+                    QrDialogButton(
+                        text = stringResource(R.string.qr_dialog_cancel),
+                        highlighted = false,
+                        onClick = onDismiss,
+                    )
+                    // Confirm
+                    QrDialogButton(
+                        text = stringResource(R.string.qr_dialog_confirm),
+                        highlighted = true,
+                        modifier = Modifier.focusRequester(confirmFocus),
+                        onClick = onConfirm,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun QrDialogButton(
+    text: String,
+    highlighted: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(12.dp)
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.04f else 1f,
+        animationSpec = tween(150),
+        label = "qrBtnScale",
+    )
+    val bgBrush = if (highlighted) {
+        if (focused) Brush.verticalGradient(listOf(GoldLight, GoldLuxury))
+        else Brush.verticalGradient(listOf(GoldLuxury.copy(0.95f), GoldPrimary.copy(0.85f)))
+    } else {
+        Brush.verticalGradient(listOf(Color.White.copy(0.08f), Color.White.copy(0.04f)))
+    }
+    val borderColor = if (focused && highlighted) GoldLight
+    else if (highlighted) GoldLuxury.copy(0.7f)
+    else Color.White.copy(0.15f)
+    val textColor = if (highlighted) (if (focused) NavyDeep else NavyDeep.copy(0.92f)) else TextMuted
+
+    Box(
+        modifier = modifier
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .background(brush = bgBrush, shape = shape)
+            .border(if (focused) 2.dp else 1.dp, borderColor, shape)
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown &&
+                    (event.key == Key.Enter || event.key == Key.DirectionCenter)
+                ) {
+                    onClick(); true
+                } else false
+            }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = SansBody,
+            color = textColor,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

@@ -86,6 +86,17 @@ data class CartItem(
     val lineTotal: Double get() = menuItem.price * quantity
 }
 
+/** Payment method selected by the guest at checkout. */
+enum class PaymentMethod(val key: String, val label: String) {
+    PAY_AT_CHECKOUT("PAY_AT_CHECKOUT", "Pay at Checkout"),
+    PAID_ONLINE("PAID_ONLINE", "Pay Now");
+
+    companion object {
+        fun fromKey(key: String?): PaymentMethod =
+            entries.find { it.key == key } ?: PAY_AT_CHECKOUT
+    }
+}
+
 data class LiveOrder(
     val id: String = "",
     val hotelId: String = "",
@@ -97,6 +108,7 @@ data class LiveOrder(
     val timestamp: Long = System.currentTimeMillis(),
     val sessionKey: String = "",
     val archived: Boolean = false,
+    val paymentMethod: PaymentMethod = PaymentMethod.PAY_AT_CHECKOUT,
 )
 
 data class OrderLineItem(

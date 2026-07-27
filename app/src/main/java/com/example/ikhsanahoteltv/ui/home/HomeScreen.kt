@@ -648,8 +648,8 @@ private fun NavigationCardsRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(200.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+            .height(208.dp),
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         LuxuryNavCard(
             title = stringResource(R.string.feature_live_tv),

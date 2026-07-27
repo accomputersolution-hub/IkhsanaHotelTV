@@ -447,6 +447,7 @@ class FirestoreRepository(
             "status" to order.status,
             "timestamp" to order.timestamp,
             "sessionKey" to currentSessionKey,
+            "payment_method" to order.paymentMethod.key,
             "archived" to false,
         )
         docRef.set(payload).await()

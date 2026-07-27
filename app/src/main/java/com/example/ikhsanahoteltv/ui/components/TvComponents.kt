@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -130,9 +131,16 @@ fun LuxuryNavCard(
     var isFocused by remember { mutableStateOf(false) }
     val cardShape = RoundedCornerShape(18.dp)
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.06f else 1f,
-        animationSpec = tween(durationMillis = 200),
+        targetValue = if (isFocused) 1.05f else 1f,
+        animationSpec = tween(durationMillis = 150),
         label = "navCardScale",
+    )
+    val titleColor = if (isFocused) GoldLight else TextPrimary
+    val subtitleColor = if (isFocused) TextPrimary.copy(alpha = 0.9f) else TextMuted
+    val iconAlpha by animateFloatAsState(
+        targetValue = if (isFocused) 1f else 0.92f,
+        animationSpec = tween(durationMillis = 150),
+        label = "navCardIconAlpha",
     )
     // Keep fill alpha identical when focused — only the border indicates focus.
     // Raising opacity on focus paints a square dark slab on API 24 (clip+scale bug).
@@ -158,8 +166,9 @@ fun LuxuryNavCard(
                     Brush.linearGradient(
                         listOf(
                             focusGlowColor,
-                            focusGlowColor.copy(alpha = 0.55f),
-                            GoldLight.copy(alpha = 0.9f),
+                            GoldLight,
+                            focusGlowColor.copy(alpha = 0.78f),
+                            GoldLight.copy(alpha = 0.95f),
                             focusGlowColor,
                         ),
                     )
@@ -185,41 +194,49 @@ fun LuxuryNavCard(
                     false
                 }
             }
-            .padding(horizontal = 16.dp, vertical = 18.dp),
+            .padding(horizontal = 18.dp, vertical = 18.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
             LuxuryIconBadge(
                 iconRes = iconRes,
                 contentDescription = title,
                 focused = isFocused,
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .graphicsLayer {
+                        alpha = iconAlpha
+                    },
             )
+            Spacer(modifier = Modifier.height(14.dp))
             Text(
                 text = title,
-                fontSize = 17.sp,
+                fontSize = 19.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = SansBody,
-                color = TextPrimary,
+                color = titleColor,
                 textAlign = TextAlign.Center,
             )
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = subtitle,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontFamily = SansBody,
-                color = TextMuted,
+                color = subtitleColor,
                 textAlign = TextAlign.Center,
-                lineHeight = 16.sp,
+                lineHeight = 18.sp,
+                maxLines = 2,
             )
             Spacer(modifier = Modifier.weight(1f))
             Text(
                 text = "›",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Light,
-                color = if (isFocused) GoldLuxury else TextMuted.copy(alpha = 0.5f),
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Normal,
+                color = if (isFocused) GoldLight else TextMuted.copy(alpha = 0.5f),
+                modifier = Modifier.padding(bottom = 2.dp),
             )
         }
     }
@@ -238,13 +255,13 @@ fun LuxuryIconBadge(
     modifier: Modifier = Modifier,
 ) {
     val elevation by animateFloatAsState(
-        targetValue = if (focused) 14f else 0f,
-        animationSpec = tween(durationMillis = 200),
+        targetValue = if (focused) 16f else 0f,
+        animationSpec = tween(durationMillis = 150),
         label = "iconBadgeElevation",
     )
     val badgeScale by animateFloatAsState(
-        targetValue = if (focused) 1.08f else 1f,
-        animationSpec = tween(durationMillis = 200),
+        targetValue = if (focused) 1.06f else 1f,
+        animationSpec = tween(durationMillis = 150),
         label = "iconBadgeScale",
     )
     val borderColor = if (focused) {

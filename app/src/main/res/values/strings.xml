@@ -49,6 +49,16 @@
     <string name="order_history">Recent Orders</string>
     <string name="no_orders_yet">No orders placed yet</string>
     <string name="menu_empty_category">No dishes in this category right now</string>
+    <string name="payment_method_title">Payment Method</string>
+    <string name="pay_at_checkout">Pay at Checkout</string>
+    <string name="pay_at_checkout_sub">Add to Room Bill</string>
+    <string name="pay_now">Pay Now</string>
+    <string name="pay_now_sub">Scan QR on TV</string>
+    <string name="qr_dialog_title">Scan to Pay</string>
+    <string name="qr_dialog_amount">Amount: ₹%1$.0f</string>
+    <string name="qr_dialog_hint">Open your UPI app and scan the QR code below.</string>
+    <string name="qr_dialog_confirm">I Have Paid · Confirm Order</string>
+    <string name="qr_dialog_cancel">Cancel</string>
     <string name="status_pending">Pending</string>
     <string name="status_preparing">Preparing</string>
     <string name="status_delivered">Delivered</string>
