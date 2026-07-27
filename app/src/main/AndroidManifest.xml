@@ -25,8 +25,8 @@
     <application
         android:name=".HotelTvApplication"
         android:allowBackup="true"
-        android:banner="@mipmap/ic_launcher"
-        android:icon="@mipmap/ic_launcher"
+        android:banner="@drawable/pcn_banner"
+        android:icon="@drawable/pcn_logo"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.IkhsanaHotelTV"

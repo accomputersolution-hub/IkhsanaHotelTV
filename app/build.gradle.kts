@@ -12,6 +12,15 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("../pcncloud-release.jks")
+            storePassword = "YOUR_KEYSTORE_PASSWORD"
+            keyAlias = "pcncloud-key"
+            keyPassword = "Superman@007"
+        }
+    }
+
     defaultConfig {
         applicationId = "in.pcncloud.hotel"
         minSdk = 24
@@ -29,6 +38,7 @@ android {
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             optimization {
                 enable = false
             }
