@@ -245,7 +245,7 @@ fun AdminSettingsScreen(
                         },
                         onExitToAndroidTv = {
                             onRemoteActivity()
-                            // Require kiosk off so Back / Home can leave the guest lock.
+                            // Leave guest lock so HOME / system launcher can take over.
                             if (kioskEnabled) {
                                 KioskPolicy.setKioskModeEnabled(
                                     context = context,
@@ -254,10 +254,18 @@ fun AdminSettingsScreen(
                                 )
                                 kioskEnabled = false
                             }
+                            try {
+                                activity?.stopLockTask()
+                            } catch (e: Exception) {
+                                Log.w(TAG, "stopLockTask on exit to Android TV", e)
+                            }
                             AdminSession.clear()
                             KioskPolicy.markUserMinimized(context)
-                            activity?.moveTaskToBack(true)
-                            Log.i(TAG, "Technician exit → Android TV / previous Home")
+                            val launched = KioskPolicy.launchSystemDefaultLauncher(context)
+                            if (!launched) {
+                                activity?.moveTaskToBack(true)
+                            }
+                            Log.i(TAG, "Technician exit → Android TV launcher (ok=$launched)")
                         },
                         onUnpair = {
                             onRemoteActivity()

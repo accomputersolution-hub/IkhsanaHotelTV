@@ -501,6 +501,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     if (kioskChanged || currentKioskState == null) {
+                        val turningOff = currentKioskState == true && !isKioskEnabled
                         persistKioskState(isKioskEnabled)
                         applyKeepScreenOn(isKioskEnabled)
                         if (isKioskEnabled) {
@@ -513,8 +514,13 @@ class MainActivity : ComponentActivity() {
                                 e.printStackTrace()
                                 Log.w(TAG, "stopLockTask failed", e)
                             }
-                            // Unlocked: allow normal minimize — do not startActivity / reclaim.
+                            // Unlocked: allow normal minimize — do not reclaim HOME.
                             KioskPolicy.markUserMinimized(this@MainActivity)
+                            // true → false only: hand control to the native TV Home.
+                            if (turningOff) {
+                                Log.i(TAG, "Kiosk OFF via RTDB — launching system default launcher")
+                                KioskPolicy.launchSystemDefaultLauncher(this@MainActivity)
+                            }
                         }
                     }
                 }
@@ -832,8 +838,22 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
 
+        val isHomeIntent = intent.categories?.contains(Intent.CATEGORY_HOME) == true ||
+            (intent.action == Intent.ACTION_MAIN &&
+                intent.hasCategory(Intent.CATEGORY_HOME))
+
+        // Kiosk OFF + HOME → forward to native Android TV launcher (we may still be
+        // a HOME candidate in the manifest).
+        if (!resolveKioskEnabled() && isHomeIntent) {
+            Log.i(TAG, "onNewIntent HOME while kiosk OFF — system default launcher")
+            KioskPolicy.markUserMinimized(this)
+            KioskPolicy.launchSystemDefaultLauncher(this)
+            moveTaskToBack(true)
+            return
+        }
+
         val wantsRootHome = intent.getBooleanExtra(EXTRA_NAVIGATE_TO_HOME, false) ||
-            intent.categories?.contains(Intent.CATEGORY_HOME) == true ||
+            isHomeIntent ||
             (intent.action == Intent.ACTION_MAIN && pendingReturnToHome)
 
         if (!wantsRootHome && !pendingReturnToHome) return

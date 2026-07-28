@@ -16,6 +16,7 @@ import `in`.pcncloud.hotel.MainActivity
  * while Lock Task / kiosk is active.
  *
  * Hierarchy:
+ * - Kiosk OFF → do not intercept (native Android TV Home handles HOME)
  * - Root Home already showing → consume HOME (no Intent / no flicker)
  * - Sub-screen or external OTT (YouTube) → bring [MainActivity] and reset to Root Home
  */
@@ -33,7 +34,7 @@ class HomeKeyInterceptorService : AccessibilityService() {
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             notificationTimeout = 0
         }
-        Log.i(TAG, "HomeKeyInterceptorService connected — filtering KEYCODE_HOME")
+        Log.i(TAG, "HomeKeyInterceptorService connected — filtering KEYCODE_HOME when kiosk ON")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -48,6 +49,13 @@ class HomeKeyInterceptorService : AccessibilityService() {
         if (event.keyCode != KeyEvent.KEYCODE_HOME) {
             return false
         }
+
+        // Kiosk OFF → completely bypass; let the OS deliver HOME to the system launcher.
+        if (!KioskPolicy.isKioskModeEnabled(this)) {
+            Log.d(TAG, "HOME bypassed — isKioskModeEnabled=false (native TV Home)")
+            return false
+        }
+
         if (event.action != KeyEvent.ACTION_DOWN) {
             // Consume UP as well so OEM does not forward a partial Home sequence.
             return true
@@ -61,7 +69,7 @@ class HomeKeyInterceptorService : AccessibilityService() {
         val onRoot = KioskPolicy.isOnRootHomeScreen(this)
         Log.i(
             TAG,
-            "HOME pressed → isOnRootHomeScreen=$onRoot " +
+            "HOME pressed (kiosk ON) → isOnRootHomeScreen=$onRoot " +
                 "foreground=${KioskPolicy.isMainActivityForeground(this)} " +
                 "guestHome=${KioskPolicy.isOnGuestHomeScreen(this)} " +
                 "ottSession=${KioskPolicy.isExternalAppActive(this)}",

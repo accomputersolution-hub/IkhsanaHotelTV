@@ -3,6 +3,7 @@ package `in`.pcncloud.hotel.kiosk
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import androidx.lifecycle.Lifecycle
@@ -239,7 +240,9 @@ object KioskPolicy {
         source: KioskSource = KioskSource.LOCAL_ADMIN,
     ) {
         migrateIfNeeded(context)
-        val editor = prefs(context).edit().putBoolean(KEY_KIOSK_ENABLED, enabled)
+        val editor = prefs(context).edit()
+            .putBoolean(KEY_KIOSK_ENABLED, enabled)
+            .putBoolean(KEY_KIOSK_ENABLED_CAMEL, enabled)
         if (source == KioskSource.LOCAL_ADMIN) {
             editor.putBoolean(KEY_ADMIN_OVERRIDE, true)
         }
@@ -251,6 +254,56 @@ object KioskPolicy {
             KioskWatchdogService.start(context.applicationContext)
         } else {
             KioskWatchdogService.stop(context.applicationContext)
+        }
+    }
+
+    /**
+     * Opens the native Android TV / system Home launcher (not this hotel app).
+     * Prefer a HOME activity from another package so HOME works when this app
+     * is still registered as a default Home candidate.
+     */
+    fun launchSystemDefaultLauncher(context: Context): Boolean {
+        return try {
+            val pm = context.packageManager
+            val homeQuery = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            val candidates = pm.queryIntentActivities(homeQuery, PackageManager.MATCH_DEFAULT_ONLY)
+                .ifEmpty {
+                    @Suppress("DEPRECATION")
+                    pm.queryIntentActivities(homeQuery, 0)
+                }
+
+            val other = candidates.firstOrNull { resolve ->
+                resolve.activityInfo?.packageName != null &&
+                    resolve.activityInfo.packageName != context.packageName
+            }
+
+            val intent = if (other != null) {
+                Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_HOME)
+                    setClassName(
+                        other.activityInfo.packageName,
+                        other.activityInfo.name,
+                    )
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+            } else {
+                Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_HOME)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+            }
+
+            context.startActivity(intent)
+            markUserMinimized(context)
+            Log.i(
+                TAG,
+                "launchSystemDefaultLauncher → " +
+                    (intent.component?.flattenToShortString() ?: "CATEGORY_HOME"),
+            )
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "launchSystemDefaultLauncher failed", e)
+            false
         }
     }
 
