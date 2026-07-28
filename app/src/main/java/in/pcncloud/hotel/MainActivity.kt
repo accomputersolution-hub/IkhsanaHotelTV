@@ -799,12 +799,33 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Soft Lock Task sync when focus returns — only while kiosk is ON.
-     * When disabled, do nothing so we never fight normal minimization.
+     * Android 9/10: focus is lost to the TV launcher *before* [onPause] finishes, while
+     * window animations still run (~5–6s flash). Collapse system dialogs and reclaim
+     * immediately when focus drops under kiosk — earlier than [onUserLeaveHint]/[onPause].
+     * When focus returns, re-sync Lock Task.
      */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (!hasFocus) return
+
+        if (!hasFocus) {
+            val isKioskActive = KioskPolicy.isKioskModeEnabled(this)
+            if (!isKioskActive) return
+            if (KioskPolicy.isExternalAppActive(this)) {
+                Log.d(TAG, "onWindowFocusChanged — OTT session, skip reclaim")
+                return
+            }
+
+            Log.d(TAG, "onWindowFocusChanged — focus lost under kiosk, reclaim now")
+            try {
+                @Suppress("DEPRECATION")
+                sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+            } catch (e: Exception) {
+                Log.w(TAG, "ACTION_CLOSE_SYSTEM_DIALOGS failed", e)
+            }
+            bringAppToFront()
+            return
+        }
+
         if (!resolveKioskEnabled()) return
         applyLockTaskFromPersistedState("onWindowFocusChanged")
     }
@@ -839,6 +860,11 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         KioskPolicy.setMainActivityForeground(this, false)
         super.onPause()
+        // Android 9/10: HOME can wait ~10s on task-transition animations.
+        // Reclaim from onPause (in addition to onUserLeaveHint) with NO_ANIMATION.
+        if (KioskPolicy.isKioskModeEnabled(this)) {
+            bringAppToFront()
+        }
     }
 
     override fun onStart() {
@@ -991,47 +1017,53 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Dynamic HOME interceptor — no system-launcher disable required.
-     * Kiosk ON → instantly reorder MainActivity to front.
-     * Kiosk OFF → allow default TV home / normal minimization.
-     * Reads SharedPrefs via [KioskPolicy.isKioskModeEnabled] so Admin toggle applies immediately.
+     * Instant kiosk reclaim for Android 9/10 — [FLAG_ACTIVITY_NO_ANIMATION] plus
+     * [overridePendingTransition](0, 0) bypasses the ~10s task-transition wait after HOME.
+     * No-ops when kiosk is OFF or an intentional OTT/IPTV session is active.
      */
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
-
+    private fun bringAppToFront() {
         val isKioskActive = KioskPolicy.isKioskModeEnabled(this)
         isKioskModeEnabled = isKioskActive
         currentKioskState = isKioskActive
+        if (!isKioskActive) return
 
-        if (!isKioskActive) {
-            KioskPolicy.markUserMinimized(this)
-            Log.d(TAG, "KioskInterceptor — kiosk OFF, allow default HOME")
-            return
-        }
-
-        // Guest intentionally in YouTube / IPTV / etc. — do not reclaim.
         if (KioskPolicy.isExternalAppActive(this)) {
             Log.d(TAG, "KioskInterceptor — OTT/IPTV session, skip reclaim")
             return
         }
 
-        Log.d(TAG, "KioskInterceptor — HOME during Kiosk Mode. Forcing app to front.")
+        Log.d(TAG, "KioskInterceptor — forcing MainActivity to front (no animation)")
         try {
-            val reclaim = Intent(this, MainActivity::class.java).apply {
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                        Intent.FLAG_ACTIVITY_NO_ANIMATION,
-                )
+            val intent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
                 putExtra(EXTRA_NAVIGATE_TO_HOME, true)
             }
-            startActivity(reclaim)
+            startActivity(intent)
             @Suppress("DEPRECATION")
             overridePendingTransition(0, 0)
         } catch (e: Exception) {
             Log.w(TAG, "KioskInterceptor — failed to bring MainActivity to front", e)
         }
+    }
+
+    /**
+     * Dynamic HOME interceptor — no system-launcher disable required.
+     * Kiosk ON → instantly reorder MainActivity to front (see [bringAppToFront]).
+     * Kiosk OFF → allow default TV home / normal minimization.
+     */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+
+        if (!KioskPolicy.isKioskModeEnabled(this)) {
+            KioskPolicy.markUserMinimized(this)
+            Log.d(TAG, "KioskInterceptor — kiosk OFF, allow default HOME")
+            return
+        }
+
+        bringAppToFront()
     }
 
     override fun onDestroy() {
