@@ -25,7 +25,7 @@
     <string name="entertainment_not_installed">%1$s is not installed — opening Play Store</string>
     <string name="entertainment_launch_failed">Could not open %1$s</string>
     <string name="entertainment_store_failed">Could not open Play Store for %1$s</string>
-    <string name="kiosk_app_not_allowed">%1$s is not allowed while Kiosk Mode is on</string>
+    <string name="kiosk_app_not_allowed">%1$s is unauthorized / disabled by Admin for this hotel</string>
     <string name="ott_youtube">YouTube</string>
     <string name="ott_netflix">Netflix</string>
     <string name="ott_prime">Prime Video</string>

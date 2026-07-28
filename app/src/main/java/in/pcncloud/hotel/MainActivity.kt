@@ -676,16 +676,15 @@ class MainActivity : ComponentActivity() {
     /**
      * Validates whether an external app may be launched.
      * When Kiosk Mode is OFF → allow everything.
-     * When Kiosk Mode is ON → only packages explicitly in the Admin whitelist.
+     * When Kiosk Mode is ON → only packages explicitly in this hotel's Admin whitelist
+     * (no YouTube / OTT baseline bypass).
      */
     fun canLaunchApp(targetPackageName: String): Boolean {
         if (!isKioskModeEnabled) return true
 
-        val allowedPackagesList = (
-            lastAppliedAllowedPackages
-                ?: KioskPolicy.getAllowedPackagesList(this, currentHotelIdOrNull())
-            ) + KioskLockTask.BASELINE_LOCK_TASK_PACKAGES
-        return allowedPackagesList.contains(targetPackageName)
+        val allowedPackagesList = lastAppliedAllowedPackages
+            ?: KioskPolicy.getAllowedPackagesList(this, currentHotelIdOrNull())
+        return allowedPackagesList.contains(targetPackageName.trim())
     }
 
     /**

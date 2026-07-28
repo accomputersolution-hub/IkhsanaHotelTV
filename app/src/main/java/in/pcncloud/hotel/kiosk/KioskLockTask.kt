@@ -13,32 +13,40 @@ import android.util.Log
 /**
  * Device-owner Lock Task helpers for hotel kiosk.
  *
- * Keeps Home/Back from escaping to the stock Android TV launcher while kiosk is ON,
- * including when guests are inside Admin-whitelisted apps (YouTube / Live TV).
+ * Keeps Home/Back from escaping to the stock Android TV launcher while kiosk is ON.
+ * OTT apps (YouTube, Netflix, …) are allowlisted **only** via RTDB `allowedPackages`
+ * for the current hotel — never via a hardcoded baseline.
  */
 object KioskLockTask {
 
     private const val TAG = "KioskLockTask"
 
-    /** YouTube TV — always merged into Lock Task so OTT does not crash under kiosk. */
+    /** YouTube TV package id — used only for leanback URI fallback when launching. */
     const val YOUTUBE_TV_PACKAGE = "com.google.android.youtube.tv"
 
-    /** Baseline Lock Task packages applied on every device-owner policy update. */
-    val BASELINE_LOCK_TASK_PACKAGES: List<String> = listOf(YOUTUBE_TV_PACKAGE)
+    /**
+     * Essential Lock Task packages only (hotel launcher is always merged separately).
+     * Must NOT include YouTube or any OTT — those come solely from Admin `allowedPackages`.
+     */
+    val BASELINE_LOCK_TASK_PACKAGES: List<String> = emptyList()
 
     fun adminComponent(context: Context): ComponentName =
         MyDeviceAdminReceiver.getComponentName(context)
 
+    /**
+     * Lock Task package set = hotel app + [extraPackages] (RTDB allowlist).
+     * No hardcoded OTT packages.
+     */
     fun buildLockTaskPackageArray(context: Context, extraPackages: List<String> = emptyList()): Array<String> =
-        (extraPackages + context.packageName + BASELINE_LOCK_TASK_PACKAGES)
+        (listOf(context.packageName) + extraPackages + BASELINE_LOCK_TASK_PACKAGES)
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .distinct()
             .toTypedArray()
 
     /**
-     * Registers Lock Task packages + suppresses system overlays/home chrome.
-     * Always includes this hotel app + YouTube TV baseline so OTT survives Lock Task.
+     * Registers Lock Task packages from the hotel's RTDB `allowedPackages` only,
+     * plus this hotel launcher package.
      */
     fun applyAllowlist(context: Context, firebasePackages: List<String>) {
         try {
@@ -54,7 +62,7 @@ object KioskLockTask {
             val allowedApps = buildLockTaskPackageArray(context, firebasePackages)
 
             dpm.setLockTaskPackages(adminName, allowedApps)
-            Log.i(TAG, "setLockTaskPackages → ${allowedApps.toList()}")
+            Log.i(TAG, "setLockTaskPackages (RTDB allowlist only) → ${allowedApps.toList()}")
 
             // API 28+: hide status / nav / home affordances that can leak native TV UI.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -184,8 +192,9 @@ object KioskLockTask {
     }
 
     /**
-     * Immediately allowlists hotel + YouTube + [targetPackage] + Admin list for Lock Task.
-     * Prevents YouTube from being killed a few seconds after launch under kiosk.
+     * Immediately sets Lock Task packages from the hotel Admin allowlist only.
+     * [targetPackage] is included only if it is already in that allowlist
+     * (launch is gated by [canLaunchApp] first).
      */
     private fun applyAllowlistForLaunch(context: Context, targetPackage: String) {
         try {
@@ -194,7 +203,11 @@ object KioskLockTask {
             if (!dpm.isDeviceOwnerApp(context.packageName)) return
 
             val adminList = KioskPolicy.getAllowedPackagesList(context)
-            val packages = buildLockTaskPackageArray(context, adminList + targetPackage)
+            if (!adminList.contains(targetPackage.trim())) {
+                Log.w(TAG, "applyAllowlistForLaunch skipped — $targetPackage not in allowedPackages")
+                return
+            }
+            val packages = buildLockTaskPackageArray(context, adminList)
             dpm.setLockTaskPackages(adminName, packages)
             MyDeviceAdminReceiver.applyStrictLockTaskFeatures(context)
             Log.i(TAG, "Pre-launch setLockTaskPackages → ${packages.toList()}")

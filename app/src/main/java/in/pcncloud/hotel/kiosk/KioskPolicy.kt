@@ -216,18 +216,18 @@ object KioskPolicy {
     /**
      * Validates whether an external app may be launched.
      * When Kiosk Mode is OFF → allow everything.
-     * When Kiosk Mode is ON → only packages explicitly in **this hotel's** Admin whitelist.
+     * When Kiosk Mode is ON → only packages explicitly in **this hotel's** Admin
+     * `allowedPackages` (YouTube / Netflix / etc. have no hardcoded bypass).
      */
     fun canLaunchApp(context: Context, targetPackageName: String): Boolean {
         if (!isKioskModeEnabled(context)) return true
+        val target = targetPackageName.trim()
         val allowed = getAllowedPackagesList(context)
-        val baseline = KioskLockTask.BASELINE_LOCK_TASK_PACKAGES
-        val ok = allowed.contains(targetPackageName.trim()) ||
-            baseline.contains(targetPackageName.trim())
+        val ok = allowed.contains(target)
         if (!ok) {
             Log.w(
                 TAG,
-                "Blocked launch of $targetPackageName — not in allowedPackages ($allowed)",
+                "Blocked launch of $target — not in hotel allowedPackages ($allowed)",
             )
         }
         return ok

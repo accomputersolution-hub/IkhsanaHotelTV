@@ -133,7 +133,7 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
             }
         }
 
-        /** Ensure hotel app + YouTube baseline are Lock-Task allowlisted. */
+        /** Ensure hotel app alone is Lock-Task allowlisted (OTT from RTDB only). */
         fun ensureSelfAllowlisted(context: Context): Boolean =
             setLockTaskPackages(context, emptyList())
 
