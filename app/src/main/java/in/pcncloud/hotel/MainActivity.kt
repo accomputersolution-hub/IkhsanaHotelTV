@@ -507,6 +507,7 @@ class MainActivity : ComponentActivity() {
                         if (isKioskEnabled) {
                             ensureDeviceOwnerLockTask("rtdb")
                         } else {
+                            // Unlock: stop Lock Task first, then background (no GTPL intents).
                             try {
                                 stopLockTask()
                                 Log.d("KioskMode", "Lock Task Mode DISABLED")
@@ -514,11 +515,9 @@ class MainActivity : ComponentActivity() {
                                 e.printStackTrace()
                                 Log.w(TAG, "stopLockTask failed", e)
                             }
-                            // Unlocked: allow normal minimize — do not reclaim HOME.
                             KioskPolicy.markUserMinimized(this@MainActivity)
-                            // true → false only: hand control to the native TV Home.
                             if (turningOff) {
-                                Log.i(TAG, "Kiosk OFF via RTDB — launching system default launcher")
+                                Log.i(TAG, "Kiosk OFF via RTDB — stopLockTask + moveTaskToBack")
                                 KioskPolicy.launchSystemDefaultLauncher(this@MainActivity)
                             }
                         }
@@ -782,6 +781,24 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * When kiosk is OFF, HOME releases Lock Task and backgrounds this app
+     * ([KioskPolicy.launchSystemDefaultLauncher]) — never starts GTPL intents.
+     */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_HOME && !resolveKioskEnabled()) {
+            Log.i(TAG, "onKeyDown HOME — kiosk OFF → stopLockTask + moveTaskToBack")
+            try {
+                stopLockTask()
+            } catch (e: Exception) {
+                Log.w(TAG, "stopLockTask on HOME (kiosk off)", e)
+            }
+            KioskPolicy.launchSystemDefaultLauncher(this)
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    /**
      * Soft Lock Task sync when focus returns — only while kiosk is ON.
      * When disabled, do nothing so we never fight normal minimization.
      */
@@ -831,6 +848,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Receives reclaim intents from [onUserLeaveHint] (SINGLE_TOP / REORDER_TO_FRONT)
+     * and HOME-category launches. Kiosk OFF lets the system home path proceed;
+     * kiosk ON finishes any OTT return and re-applies Lock Task.
+     */
     override fun onNewIntent(intent: Intent) {
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
@@ -838,17 +860,23 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
 
+        val isKioskActive = KioskPolicy.isKioskModeEnabled(this)
+        isKioskModeEnabled = isKioskActive
+        currentKioskState = isKioskActive
+
         val isHomeIntent = intent.categories?.contains(Intent.CATEGORY_HOME) == true ||
             (intent.action == Intent.ACTION_MAIN &&
                 intent.hasCategory(Intent.CATEGORY_HOME))
 
-        // Kiosk OFF + HOME → forward to native Android TV launcher (we may still be
-        // a HOME candidate in the manifest).
-        if (!resolveKioskEnabled() && isHomeIntent) {
-            Log.i(TAG, "onNewIntent HOME while kiosk OFF — system default launcher")
-            KioskPolicy.markUserMinimized(this)
+        // Kiosk OFF + HOME → unpin and background (do not start invalid launchers).
+        if (!isKioskActive && isHomeIntent) {
+            Log.i(TAG, "onNewIntent HOME while kiosk OFF — stopLockTask + moveTaskToBack")
+            try {
+                stopLockTask()
+            } catch (e: Exception) {
+                Log.w(TAG, "stopLockTask onNewIntent (kiosk off)", e)
+            }
             KioskPolicy.launchSystemDefaultLauncher(this)
-            moveTaskToBack(true)
             return
         }
 
@@ -858,7 +886,7 @@ class MainActivity : ComponentActivity() {
 
         if (!wantsRootHome && !pendingReturnToHome) return
 
-        if (!resolveKioskEnabled() &&
+        if (!isKioskActive &&
             intent.getBooleanExtra(EXTRA_NAVIGATE_TO_HOME, false) != true &&
             !pendingReturnToHome
         ) {
@@ -868,7 +896,7 @@ class MainActivity : ComponentActivity() {
 
         Log.i(TAG, "onNewIntent → finishReturnFromExternalApp")
         finishReturnFromExternalApp()
-        if (resolveKioskEnabled()) {
+        if (isKioskActive) {
             ensureDeviceOwnerLockTask("onNewIntent")
         }
     }
@@ -963,54 +991,46 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Home-key reclaim fallback — especially important before Device Owner is provisioned
-     * (screen pinning alone cannot fully suppress Home on Android TV).
-     * When kiosk is OFF, allow normal minimize.
+     * Dynamic HOME interceptor — no system-launcher disable required.
+     * Kiosk ON → instantly reorder MainActivity to front.
+     * Kiosk OFF → allow default TV home / normal minimization.
+     * Reads SharedPrefs via [KioskPolicy.isKioskModeEnabled] so Admin toggle applies immediately.
      */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
 
-        val kioskOn = resolveKioskEnabled()
-        isKioskModeEnabled = kioskOn
+        val isKioskActive = KioskPolicy.isKioskModeEnabled(this)
+        isKioskModeEnabled = isKioskActive
+        currentKioskState = isKioskActive
 
-        if (!kioskOn) {
+        if (!isKioskActive) {
             KioskPolicy.markUserMinimized(this)
-            Log.d(TAG, "onUserLeaveHint — kiosk DISABLED, allow normal minimization")
+            Log.d(TAG, "KioskInterceptor — kiosk OFF, allow default HOME")
             return
         }
 
+        // Guest intentionally in YouTube / IPTV / etc. — do not reclaim.
         if (KioskPolicy.isExternalAppActive(this)) {
-            Log.d(TAG, "onUserLeaveHint — OTT/IPTV session under kiosk, skip reclaim")
+            Log.d(TAG, "KioskInterceptor — OTT/IPTV session, skip reclaim")
             return
         }
 
-        // Already on Root Home in foreground — do not re-fire Intent (blue flash).
-        if (isOnRootHomeScreen()) {
-            Log.d(TAG, "onUserLeaveHint — already on Root Home, skip reclaim")
-            return
-        }
-
-        // Device Owner true Lock Task should already block Home; reclaim covers
-        // non–Device Owner pinning and any OEM Home leaks.
-        val isOwner = MyDeviceAdminReceiver.isDeviceOwner(this)
-        Log.d(
-            TAG,
-            "onUserLeaveHint — reclaim MainActivity (deviceOwner=$isOwner)",
-        )
+        Log.d(TAG, "KioskInterceptor — HOME during Kiosk Mode. Forcing app to front.")
         try {
-            val intent = Intent(this, MainActivity::class.java).apply {
+            val reclaim = Intent(this, MainActivity::class.java).apply {
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
                         Intent.FLAG_ACTIVITY_SINGLE_TOP or
                         Intent.FLAG_ACTIVITY_NO_ANIMATION,
                 )
                 putExtra(EXTRA_NAVIGATE_TO_HOME, true)
             }
-            startActivity(intent)
+            startActivity(reclaim)
             @Suppress("DEPRECATION")
             overridePendingTransition(0, 0)
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to bring MainActivity to front after leave/Home", e)
+            Log.w(TAG, "KioskInterceptor — failed to bring MainActivity to front", e)
         }
     }
 

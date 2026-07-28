@@ -16,9 +16,9 @@ import `in`.pcncloud.hotel.MainActivity
  * while Lock Task / kiosk is active.
  *
  * Hierarchy:
- * - Kiosk OFF → do not intercept (native Android TV Home handles HOME)
- * - Root Home already showing → consume HOME (no Intent / no flicker)
- * - Sub-screen or external OTT (YouTube) → bring [MainActivity] and reset to Root Home
+ * - Kiosk OFF → do NOT intercept (return false); [MainActivity.onKeyDown] launches system Home
+ * - Kiosk ON + Root Home showing → consume HOME (no Intent / no flicker)
+ * - Kiosk ON + sub-screen / OTT → bring [MainActivity] and reset to Root Home
  */
 class HomeKeyInterceptorService : AccessibilityService() {
 
@@ -50,9 +50,9 @@ class HomeKeyInterceptorService : AccessibilityService() {
             return false
         }
 
-        // Kiosk OFF → completely bypass; let the OS deliver HOME to the system launcher.
+        // Kiosk OFF → do NOT consume; let Activity / OS handle (MainActivity.onKeyDown).
         if (!KioskPolicy.isKioskModeEnabled(this)) {
-            Log.d(TAG, "HOME bypassed — isKioskModeEnabled=false (native TV Home)")
+            Log.d(TAG, "HOME not intercepted — isKioskModeEnabled=false")
             return false
         }
 

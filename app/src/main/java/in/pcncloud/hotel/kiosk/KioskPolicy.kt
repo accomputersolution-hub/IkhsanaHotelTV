@@ -1,10 +1,11 @@
 package `in`.pcncloud.hotel.kiosk
 
+import android.app.Activity
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -258,53 +259,72 @@ object KioskPolicy {
     }
 
     /**
-     * Opens the native Android TV / system Home launcher (not this hotel app).
-     * Prefer a HOME activity from another package so HOME works when this app
-     * is still registered as a default Home candidate.
+     * Exit kiosk UI safely without starting invalid launcher components.
+     *
+     * Force-starting packages like `com.gtpl.customgooglelauncher` (no HOME/LAUNCHER
+     * activity) freezes WindowManager on a black screen. Instead:
+     * 1. [Activity.stopLockTask] to unpin
+     * 2. [Activity.moveTaskToBack] to reveal the underlying TV UI
+     * 3. Settings only if moveTaskToBack fails
      */
     fun launchSystemDefaultLauncher(context: Context): Boolean {
+        markUserMinimized(context)
+        val activity = resolveActivity(context)
+        if (activity == null) {
+            Log.w(TAG, "launchSystemDefaultLauncher — no Activity context")
+            return false
+        }
+        return launchSystemDefaultLauncher(activity)
+    }
+
+    fun launchSystemDefaultLauncher(activity: Activity): Boolean {
+        markUserMinimized(activity)
         return try {
-            val pm = context.packageManager
-            val homeQuery = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-            val candidates = pm.queryIntentActivities(homeQuery, PackageManager.MATCH_DEFAULT_ONLY)
-                .ifEmpty {
-                    @Suppress("DEPRECATION")
-                    pm.queryIntentActivities(homeQuery, 0)
-                }
-
-            val other = candidates.firstOrNull { resolve ->
-                resolve.activityInfo?.packageName != null &&
-                    resolve.activityInfo.packageName != context.packageName
+            // Step 1: Force release LockTask mode (kiosk pinning).
+            try {
+                activity.stopLockTask()
+                Log.d(TAG, "Successfully stopped LockTask mode")
+            } catch (e: Exception) {
+                Log.e(TAG, "LockTask was not active or failed to stop", e)
             }
 
-            val intent = if (other != null) {
-                Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_HOME)
-                    setClassName(
-                        other.activityInfo.packageName,
-                        other.activityInfo.name,
+            // Step 2: Push hotel app back to expose the TV's underlying native UI.
+            // Do NOT start GTPL / leanback / FallbackHome intents — they black-screen.
+            val moved = activity.moveTaskToBack(true)
+            Log.i(TAG, "launchSystemDefaultLauncher → moveTaskToBack=$moved")
+            if (!moved) {
+                try {
+                    activity.startActivity(
+                        Intent(Settings.ACTION_SETTINGS).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        },
                     )
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-            } else {
-                Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_HOME)
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    Log.i(TAG, "moveTaskToBack failed — opened ACTION_SETTINGS")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed opening Settings fallback", e)
+                    return false
                 }
             }
-
-            context.startActivity(intent)
-            markUserMinimized(context)
-            Log.i(
-                TAG,
-                "launchSystemDefaultLauncher → " +
-                    (intent.component?.flattenToShortString() ?: "CATEGORY_HOME"),
-            )
             true
         } catch (e: Exception) {
-            Log.e(TAG, "launchSystemDefaultLauncher failed", e)
+            Log.e(TAG, "Error in launchSystemDefaultLauncher", e)
+            try {
+                activity.moveTaskToBack(true)
+            } catch (_: Exception) {
+                // Best-effort.
+            }
             false
         }
+    }
+
+    private fun resolveActivity(context: Context): Activity? {
+        if (context is Activity) return context
+        var ctx: Context? = context
+        while (ctx is android.content.ContextWrapper) {
+            if (ctx is Activity) return ctx
+            ctx = ctx.baseContext
+        }
+        return null
     }
 
     fun hasAdminOverride(context: Context): Boolean =

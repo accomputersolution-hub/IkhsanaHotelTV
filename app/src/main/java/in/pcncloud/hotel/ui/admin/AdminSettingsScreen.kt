@@ -245,7 +245,7 @@ fun AdminSettingsScreen(
                         },
                         onExitToAndroidTv = {
                             onRemoteActivity()
-                            // Leave guest lock so HOME / system launcher can take over.
+                            // Leave guest lock; never start GTPL (black screen).
                             if (kioskEnabled) {
                                 KioskPolicy.setKioskModeEnabled(
                                     context = context,
@@ -254,18 +254,19 @@ fun AdminSettingsScreen(
                                 )
                                 kioskEnabled = false
                             }
-                            try {
-                                activity?.stopLockTask()
-                            } catch (e: Exception) {
-                                Log.w(TAG, "stopLockTask on exit to Android TV", e)
-                            }
                             AdminSession.clear()
-                            KioskPolicy.markUserMinimized(context)
-                            val launched = KioskPolicy.launchSystemDefaultLauncher(context)
-                            if (!launched) {
-                                activity?.moveTaskToBack(true)
+                            val host = activity
+                            if (host != null) {
+                                try {
+                                    host.stopLockTask()
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "stopLockTask on exit to Android TV", e)
+                                }
+                                KioskPolicy.launchSystemDefaultLauncher(host)
+                            } else {
+                                KioskPolicy.launchSystemDefaultLauncher(context)
                             }
-                            Log.i(TAG, "Technician exit → Android TV launcher (ok=$launched)")
+                            Log.i(TAG, "Technician exit → stopLockTask + moveTaskToBack")
                         },
                         onUnpair = {
                             onRemoteActivity()
