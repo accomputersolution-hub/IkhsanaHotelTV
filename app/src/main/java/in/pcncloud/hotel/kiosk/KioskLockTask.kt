@@ -20,15 +20,25 @@ object KioskLockTask {
 
     private const val TAG = "KioskLockTask"
 
+    /** YouTube TV — always merged into Lock Task so OTT does not crash under kiosk. */
     const val YOUTUBE_TV_PACKAGE = "com.google.android.youtube.tv"
+
+    /** Baseline Lock Task packages applied on every device-owner policy update. */
+    val BASELINE_LOCK_TASK_PACKAGES: List<String> = listOf(YOUTUBE_TV_PACKAGE)
 
     fun adminComponent(context: Context): ComponentName =
         MyDeviceAdminReceiver.getComponentName(context)
 
+    fun buildLockTaskPackageArray(context: Context, extraPackages: List<String> = emptyList()): Array<String> =
+        (extraPackages + context.packageName + BASELINE_LOCK_TASK_PACKAGES)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .toTypedArray()
+
     /**
      * Registers Lock Task packages + suppresses system overlays/home chrome.
-     * [firebasePackages] are the explicit Admin whitelist, merged only with this hotel app.
-     * YouTube / Live TV must be listed in Admin `allowedPackages` to be launchable.
+     * Always includes this hotel app + YouTube TV baseline so OTT survives Lock Task.
      */
     fun applyAllowlist(context: Context, firebasePackages: List<String>) {
         try {
@@ -41,11 +51,7 @@ object KioskLockTask {
                 return
             }
 
-            val allowedApps = (firebasePackages + ourPackage)
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-                .distinct()
-                .toTypedArray()
+            val allowedApps = buildLockTaskPackageArray(context, firebasePackages)
 
             dpm.setLockTaskPackages(adminName, allowedApps)
             Log.i(TAG, "setLockTaskPackages → ${allowedApps.toList()}")
@@ -125,24 +131,22 @@ object KioskLockTask {
             return false
         }
 
+        // Mark OTT session BEFORE leaving MainActivity so watchdog / onUserLeaveHint skip reclaim.
+        // Sets KioskPolicy.isExternalAppActive = true (durable until HOME/BACK return).
+        KioskPolicy.markOttLaunched(context, targetPackage)
+
+        // Ensure target (e.g. YouTube) is Lock-Task allowlisted before launch.
+        applyAllowlistForLaunch(context, targetPackage)
+
         ensureLockTaskActive(context)
 
-        val pm = context.packageManager
-        val intent = pm.getLeanbackLaunchIntentForPackage(targetPackage)
-            ?: pm.getLaunchIntentForPackage(targetPackage)
+        val intent = buildSafeLaunchIntent(context, targetPackage)
 
         if (intent == null) {
             Log.w(TAG, "No launch intent for $targetPackage")
+            KioskPolicy.clearOttLaunchState(context)
             return false
         }
-
-        intent.addFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
-        )
-
-        // Still mark external session so onUserLeaveHint does not immediately reclaim
-        // over the OTT UI while Lock Task keeps Home inside the allowlist.
-        KioskPolicy.markExternalAppSession(context)
 
         return try {
             context.startActivity(intent)
@@ -150,7 +154,52 @@ object KioskLockTask {
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch $targetPackage", e)
+            KioskPolicy.clearOttLaunchState(context)
             false
+        }
+    }
+
+    /**
+     * Safe OTT launch Intent: leanback/launch intent, or YouTube TV URI fallback.
+     * Flags: NEW_TASK | RESET_TASK_IF_NEEDED.
+     */
+    fun buildSafeLaunchIntent(context: Context, targetPackage: String): Intent? {
+        val pm = context.packageManager
+        val intent = pm.getLeanbackLaunchIntentForPackage(targetPackage)
+            ?: pm.getLaunchIntentForPackage(targetPackage)
+            ?: if (targetPackage == YOUTUBE_TV_PACKAGE) {
+                Intent(
+                    Intent.ACTION_VIEW,
+                    android.net.Uri.parse("https://www.youtube.com/tv"),
+                )
+            } else {
+                null
+            }
+
+        return intent?.apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
+            )
+        }
+    }
+
+    /**
+     * Immediately allowlists hotel + YouTube + [targetPackage] + Admin list for Lock Task.
+     * Prevents YouTube from being killed a few seconds after launch under kiosk.
+     */
+    private fun applyAllowlistForLaunch(context: Context, targetPackage: String) {
+        try {
+            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val adminName = adminComponent(context)
+            if (!dpm.isDeviceOwnerApp(context.packageName)) return
+
+            val adminList = KioskPolicy.getAllowedPackagesList(context)
+            val packages = buildLockTaskPackageArray(context, adminList + targetPackage)
+            dpm.setLockTaskPackages(adminName, packages)
+            MyDeviceAdminReceiver.applyStrictLockTaskFeatures(context)
+            Log.i(TAG, "Pre-launch setLockTaskPackages → ${packages.toList()}")
+        } catch (e: Exception) {
+            Log.w(TAG, "applyAllowlistForLaunch failed for $targetPackage", e)
         }
     }
 

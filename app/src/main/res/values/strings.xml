@@ -137,7 +137,7 @@
     <string name="admin_disabled">Disabled</string>
     <string name="admin_enable_kiosk">Enable Kiosk</string>
     <string name="admin_disable_kiosk">Disable Kiosk</string>
-    <string name="admin_unpair">Unpair TV</string>
+    <string name="admin_unpair">Unpair Room / Logout</string>
     <string name="admin_kiosk_on">Kiosk mode enabled</string>
     <string name="admin_kiosk_off">Kiosk mode disabled — Back can leave the app</string>
     <string name="admin_kiosk_override_hint">Local technician override active (cloud sync paused)</string>
@@ -147,4 +147,6 @@
     <string name="admin_idle_hint">Admin Mode closes automatically after 3 minutes of inactivity</string>
     <string name="admin_open_hint">Hold OK on Room badge for staff settings</string>
     <string name="device_admin_description">Hotel TV kiosk device admin for Lock Task Mode</string>
+    <string name="home_key_interceptor_description">Intercepts the TV remote HOME button and returns to the hotel guest app when the OEM drops Home intents under Lock Task.</string>
+    <string name="home_key_interceptor_label">Hotel TV Home Key Interceptor</string>
 </resources>

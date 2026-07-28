@@ -1,8 +1,11 @@
 package `in`.pcncloud.hotel.integration
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.util.Log
 import android.widget.Toast
+import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
@@ -23,6 +26,9 @@ object OnyxIptvLauncher {
             return
         }
 
+        // Synchronous Root Home BEFORE startActivity — no timers after launch.
+        context.findMainActivity()?.switchToRootHomeBeforeOttLaunch()
+
         if (KioskLockTask.launchAllowlistedPackage(context, PACKAGE_NAME)) {
             return
         }
@@ -31,5 +37,15 @@ object OnyxIptvLauncher {
             context.getString(R.string.onyx_iptv_not_installed),
             Toast.LENGTH_LONG,
         ).show()
+    }
+
+    private fun Context.findMainActivity(): MainActivity? {
+        var ctx: Context? = this
+        while (ctx is ContextWrapper) {
+            if (ctx is MainActivity) return ctx
+            if (ctx is Activity && ctx !is MainActivity) return null
+            ctx = ctx.baseContext
+        }
+        return null
     }
 }

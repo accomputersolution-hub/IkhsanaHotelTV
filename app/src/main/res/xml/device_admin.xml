@@ -1,11 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <device-admin xmlns:android="http://schemas.android.com/apk/res/android">
     <!--
-      Minimal policy set for hotel kiosk Device Owner provisioning.
-      Lock Task packages are applied via DevicePolicyManager.setLockTaskPackages
-      (device-owner API — not a uses-policies XML tag).
+      Standard Device Admin policy declaration for Device Owner provisioning.
+      Lock Task packages / features are applied at runtime via DevicePolicyManager.
     -->
     <uses-policies>
+        <limit-password />
+        <watch-login />
+        <reset-password />
         <force-lock />
+        <wipe-data />
+        <expire-password />
+        <encrypted-storage />
+        <disable-camera />
     </uses-policies>
 </device-admin>

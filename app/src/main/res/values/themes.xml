@@ -3,17 +3,26 @@
 
     <!-- Cold-start / system splash → branded SplashActivity -->
     <style name="Theme.IkhsanaHotelTV.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenBackground">@color/navy_deep</item>
         <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
         <item name="postSplashScreenTheme">@style/Theme.IkhsanaHotelTV</item>
-        <item name="android:windowBackground">@color/splash_background</item>
+        <item name="android:windowBackground">@color/navy_deep</item>
     </style>
 
-    <!-- Post-splash app theme: dark window avoids white flash on cold launch -->
-    <style name="Theme.IkhsanaHotelTV" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <item name="android:windowBackground">@color/splash_background</item>
-        <item name="android:statusBarColor">@color/splash_background</item>
-        <item name="android:navigationBarColor">@color/splash_background</item>
+    <!--
+      Main app theme: forced dark navy windowBackground so HOME / onNewIntent
+      transitions never flash the default AppCompat DayNight blue / light surface.
+    -->
+    <style name="Theme.IkhsanaHotelTV" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/navy_deep</item>
+        <item name="android:colorBackground">@color/navy_deep</item>
+        <item name="android:statusBarColor">@color/navy_deep</item>
+        <item name="android:navigationBarColor">@color/navy_deep</item>
+        <item name="colorPrimary">@color/navy_deep</item>
+        <item name="colorPrimaryDark">@color/navy_deep</item>
+        <item name="colorAccent">@color/splash_gold</item>
+        <item name="android:windowAnimationStyle">@style/Theme.IkhsanaHotelTV.NoAnimation</item>
+        <item name="android:windowDisablePreview">true</item>
         <!-- Disable platform square focus highlight on Android TV (API 26+) -->
         <item name="android:defaultFocusHighlightEnabled">false</item>
         <item name="android:colorControlHighlight">@android:color/transparent</item>
@@ -21,5 +30,18 @@
         <item name="android:selectableItemBackground">@drawable/focus_transparent</item>
         <!-- Keep non-fullscreen so adjustPan can shift content above the IME on TV -->
         <item name="android:windowFullscreen">false</item>
+    </style>
+
+    <style name="Theme.IkhsanaHotelTV.NoAnimation">
+        <item name="android:activityOpenEnterAnimation">@null</item>
+        <item name="android:activityOpenExitAnimation">@null</item>
+        <item name="android:activityCloseEnterAnimation">@null</item>
+        <item name="android:activityCloseExitAnimation">@null</item>
+        <item name="android:taskOpenEnterAnimation">@null</item>
+        <item name="android:taskOpenExitAnimation">@null</item>
+        <item name="android:taskCloseEnterAnimation">@null</item>
+        <item name="android:taskCloseExitAnimation">@null</item>
+        <item name="android:taskToFrontEnterAnimation">@null</item>
+        <item name="android:taskToFrontExitAnimation">@null</item>
     </style>
 </resources>

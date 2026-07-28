@@ -15,6 +15,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.FirestorePaths
+import `in`.pcncloud.hotel.kiosk.HotelSessionManager
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 
@@ -48,10 +49,16 @@ class PairingActivity : AppCompatActivity() {
 
         hotelConfig = HotelConfig(applicationContext)
         if (hotelConfig.isPaired()) {
-            Log.d(TAG, "Already paired → ${hotelConfig.getHotelId()}, opening SplashActivity")
+            Log.d(
+                TAG,
+                "Already paired → ${hotelConfig.getHotelId()} / ${hotelConfig.getRoomNumberOrNull()}, " +
+                    "opening SplashActivity",
+            )
             openSplashActivity()
             return
         }
+        // Ensure stale prefs cannot skip this screen.
+        HotelSessionManager.resetLogoutGuard()
 
         setContentView(R.layout.activity_pairing)
 
@@ -68,7 +75,8 @@ class PairingActivity : AppCompatActivity() {
             resources.displayMetrics,
         ).toInt()
 
-        etRoomNumber.setText(hotelConfig.roomNumber)
+        // Do not invent a default room — empty field forces staff to enter one.
+        etRoomNumber.setText(hotelConfig.getRoomNumberOrNull().orEmpty())
 
         // Hotel ID → Next moves focus to Room Number on TV remote / soft keyboard.
         etHotelId.imeOptions = EditorInfo.IME_ACTION_NEXT or EditorInfo.IME_FLAG_NO_EXTRACT_UI
@@ -164,10 +172,14 @@ class PairingActivity : AppCompatActivity() {
         tvPairError.text = ""
 
         val hotelId = HotelConfig.normalizeHotelId(etHotelId.text?.toString()?.trim().orEmpty())
-        val roomNumber = etRoomNumber.text?.toString()?.trim().orEmpty().ifBlank { "101" }
+        val roomNumber = etRoomNumber.text?.toString()?.trim().orEmpty()
 
         if (hotelId.isBlank()) {
             resetPairButton("Enter a Hotel ID / slug")
+            return
+        }
+        if (roomNumber.isBlank()) {
+            resetPairButton("Enter a Room number")
             return
         }
 
@@ -193,6 +205,11 @@ class PairingActivity : AppCompatActivity() {
                         try {
                             hotelConfig.setHotelId(hotelId)
                             hotelConfig.setRoomNumber(roomNumber)
+                            HotelSessionManager.markSessionPaired(
+                                applicationContext,
+                                hotelId,
+                                roomNumber,
+                            )
                         } catch (e: Exception) {
                             Log.e(TAG, "Failed to save HotelConfig", e)
                             resetPairButton(e.message ?: "Could not save hotel settings")

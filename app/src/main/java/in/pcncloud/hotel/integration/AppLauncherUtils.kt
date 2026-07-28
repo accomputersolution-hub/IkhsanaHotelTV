@@ -1,22 +1,25 @@
 package `in`.pcncloud.hotel.integration
 
+import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
+import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 
 /**
- * Launches an installed OTT / entertainment app, or opens its Play Store page
- * when the package is missing on the TV.
+ * Launches OTT apps safely.
  *
- * When hotel kiosk / Lock Task is active, launches go through [KioskLockTask] so
- * Home/Back inside YouTube cannot escape to the stock Android TV launcher.
+ * Order (focus-safe, no timers):
+ * 1. Switch MainActivity to Root Home synchronously
+ * 2. startActivity(YouTube) — nothing after that call
  */
 object AppLauncherUtils {
 
@@ -31,11 +34,12 @@ object AppLauncherUtils {
         }
     }
 
-    /**
-     * If [packageName] is installed → launch it.
-     * Otherwise → open Google Play Store (market://, then https fallback).
-     */
     fun launchOrInstall(context: Context, packageName: String, appLabel: String = packageName) {
+        if (KioskPolicy.shouldSuppressOttLaunch(context)) {
+            Log.w(TAG, "OTT launch suppressed after HOME/BACK return → $packageName")
+            return
+        }
+
         if (!KioskPolicy.canLaunchApp(context, packageName)) {
             Log.w(TAG, "Blocked by kiosk whitelist → $packageName")
             Toast.makeText(
@@ -46,6 +50,9 @@ object AppLauncherUtils {
             return
         }
 
+        // 1) Synchronous Root Home switch BEFORE startActivity (no postDelayed).
+        context.findMainActivity()?.switchToRootHomeBeforeOttLaunch()
+
         if (isAppInstalled(context, packageName)) {
             launchInstalledApp(context, packageName, appLabel)
         } else {
@@ -54,44 +61,29 @@ object AppLauncherUtils {
     }
 
     private fun launchInstalledApp(context: Context, packageName: String, appLabel: String) {
-        // Prefer Lock Task–safe path when kiosk is ON (or always — ensureLockTask is no-op if off).
         if (KioskLockTask.launchAllowlistedPackage(context, packageName)) {
-            return
-        }
-
-        // Do not fall through to a raw startActivity while kiosk is ON.
-        if (KioskPolicy.isKioskModeEnabled(context)) {
-            Toast.makeText(
-                context,
-                context.getString(R.string.entertainment_launch_failed, appLabel),
-                Toast.LENGTH_LONG,
-            ).show()
-            return
-        }
-
-        val pm = context.packageManager
-        val launchIntent = pm.getLeanbackLaunchIntentForPackage(packageName)
-            ?: pm.getLaunchIntentForPackage(packageName)
-
-        if (launchIntent == null) {
-            Log.w(TAG, "Installed but no launch intent → $packageName")
-            Toast.makeText(
-                context,
-                context.getString(R.string.entertainment_launch_failed, appLabel),
-                Toast.LENGTH_LONG,
-            ).show()
+            // Intentionally no code after successful startActivity.
             return
         }
 
         try {
-            KioskPolicy.markExternalAppSession(context)
-            launchIntent.addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
-            )
-            context.startActivity(launchIntent)
-            Log.i(TAG, "Launched $packageName")
+            val intent = buildSafeLaunchIntent(context, packageName)
+            if (intent == null) {
+                Log.w(TAG, "No launch intent → $packageName")
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.entertainment_launch_failed, appLabel),
+                    Toast.LENGTH_LONG,
+                ).show()
+                return
+            }
+            KioskPolicy.markOttLaunched(context, packageName)
+            context.startActivity(intent)
+            Log.i(TAG, "Launched $packageName (fallback)")
+            // Intentionally no code after startActivity.
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch $packageName", e)
+            KioskPolicy.clearOttLaunchState(context)
             Toast.makeText(
                 context,
                 context.getString(R.string.entertainment_launch_failed, appLabel),
@@ -99,6 +91,9 @@ object AppLauncherUtils {
             ).show()
         }
     }
+
+    fun buildSafeLaunchIntent(context: Context, packageName: String): Intent? =
+        KioskLockTask.buildSafeLaunchIntent(context, packageName)
 
     private fun openPlayStore(context: Context, packageName: String, appLabel: String) {
         Log.i(TAG, "Not installed — opening Play Store for $packageName")
@@ -108,7 +103,6 @@ object AppLauncherUtils {
             Toast.LENGTH_SHORT,
         ).show()
 
-        // Play Store is usually NOT lock-task allowlisted — only open when kiosk is off.
         if (KioskPolicy.isKioskModeEnabled(context)) {
             Toast.makeText(
                 context,
@@ -148,5 +142,15 @@ object AppLauncherUtils {
                 ).show()
             }
         }
+    }
+
+    private fun Context.findMainActivity(): MainActivity? {
+        var ctx: Context? = this
+        while (ctx is ContextWrapper) {
+            if (ctx is MainActivity) return ctx
+            if (ctx is Activity && ctx !is MainActivity) return null
+            ctx = ctx.baseContext
+        }
+        return null
     }
 }

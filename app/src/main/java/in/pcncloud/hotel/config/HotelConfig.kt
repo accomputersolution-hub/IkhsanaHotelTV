@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import `in`.pcncloud.hotel.BuildConfig
+import `in`.pcncloud.hotel.kiosk.KioskPolicy
 
 /**
  * Multi-tenant hotel / room identity for this TV device.
@@ -15,8 +16,9 @@ import `in`.pcncloud.hotel.BuildConfig
  */
 class HotelConfig(context: Context) {
 
+    private val appContext: Context = context.applicationContext
     private val prefs: SharedPreferences =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     /**
      * Paired tenant id, or null if this TV has not been paired yet.
@@ -29,27 +31,67 @@ class HotelConfig(context: Context) {
         return normalized.ifBlank { null }
     }
 
+    /**
+     * Explicitly paired room number, or null if never set / cleared by logout.
+     * Does **not** invent [BuildConfig.DEFAULT_ROOM_NUMBER] — that would block Pairing.
+     */
+    fun getRoomNumberOrNull(): String? {
+        val raw = prefs.getString(KEY_ROOM_NUMBER, null)?.trim()
+        return raw?.takeIf { it.isNotEmpty() }
+    }
+
     /** Persist the paired hotel slug under SharedPreferences. */
     fun setHotelId(hotelId: String) {
         val normalized = normalizeHotelId(hotelId)
         require(normalized.isNotBlank()) { "Hotel ID cannot be blank" }
+        val previous = prefs.getString(KEY_HOTEL_ID, null)?.let(::normalizeHotelId)
         prefs.edit().putString(KEY_HOTEL_ID, normalized).apply()
         Log.d(TAG, "setHotelId → $normalized")
+        if (previous != normalized) {
+            // Drop Treasure Island (etc.) whitelist so Upper Deck never inherits it.
+            KioskPolicy.clearTenantWhitelistCache(appContext)
+            KioskPolicy.bindWhitelistToHotelOrClear(appContext, normalized)
+        }
     }
 
+    /**
+     * Clears hotel id only. Prefer [clearPairingSession] for full logout / unpair.
+     */
     fun clearHotelId() {
-        prefs.edit().remove(KEY_HOTEL_ID).apply()
-        Log.d(TAG, "clearHotelId")
+        clearPairingSession()
     }
 
-    fun isPaired(): Boolean = getHotelId() != null
+    /**
+     * Full local pairing wipe: hotel id + room number + tenant kiosk/whitelist cache.
+     * Used by Admin Unpair and remote RTDB logout.
+     */
+    fun clearPairingSession() {
+        prefs.edit()
+            .remove(KEY_HOTEL_ID)
+            .remove(KEY_ROOM_NUMBER)
+            .apply()
+        KioskPolicy.clearTenantKioskCache(appContext)
+        Log.i(TAG, "clearPairingSession — hotel/room prefs + kiosk cache wiped")
+    }
 
+    /** True only when both hotel id and room number are present. */
+    fun isPaired(): Boolean {
+        val hotel = getHotelId()
+        val room = getRoomNumberOrNull()
+        return !hotel.isNullOrBlank() && !room.isNullOrBlank()
+    }
+
+    /**
+     * Room for guest UI when paired. Falls back to build default only for
+     * legacy installs that have a hotel id but never persisted a room key.
+     */
     val roomNumber: String
-        get() = prefs.getString(KEY_ROOM_NUMBER, BuildConfig.DEFAULT_ROOM_NUMBER)!!.trim()
-            .ifBlank { BuildConfig.DEFAULT_ROOM_NUMBER }
+        get() = getRoomNumberOrNull()
+            ?: BuildConfig.DEFAULT_ROOM_NUMBER
 
     fun setRoomNumber(roomNumber: String) {
-        val room = roomNumber.trim().ifBlank { BuildConfig.DEFAULT_ROOM_NUMBER }
+        val room = roomNumber.trim()
+        require(room.isNotBlank()) { "Room number cannot be blank" }
         prefs.edit().putString(KEY_ROOM_NUMBER, room).apply()
         Log.d(TAG, "setRoomNumber → $room")
     }
@@ -66,7 +108,8 @@ class HotelConfig(context: Context) {
         }
         Log.d(
             TAG,
-            "HotelConfig ready → hotelId=${getHotelId() ?: "(unpaired)"} room=$roomNumber",
+            "HotelConfig ready → hotelId=${getHotelId() ?: "(unpaired)"} " +
+                "room=${getRoomNumberOrNull() ?: "(none)"} paired=${isPaired()}",
         )
     }
 

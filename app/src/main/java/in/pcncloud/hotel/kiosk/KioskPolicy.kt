@@ -7,6 +7,7 @@ import android.os.Build
 import android.util.Log
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
+import `in`.pcncloud.hotel.config.HotelConfig
 
 /**
  * Central gate for kiosk / custom-launcher behaviour.
@@ -37,9 +38,24 @@ object KioskPolicy {
     private const val KEY_EXITED_CLEANLY = "exited_cleanly"
     private const val KEY_PENDING_CRASH_RECOVERY = "pending_crash_recovery"
     private const val KEY_EXTERNAL_APP_UNTIL = "external_app_until_ms"
+    private const val KEY_LAST_OTT_PACKAGE = "last_ott_package"
+    /**
+     * Durable flag: guest is intentionally inside YouTube / Netflix / Live TV / etc.
+     * Watchdog must NOT bring MainActivity to front while this is true.
+     * Cleared only on HOME/BACK return ([clearExternalAppActive] / [clearOttLaunchState]).
+     */
+    private const val KEY_EXTERNAL_APP_ACTIVE = "is_external_app_active"
+    /** Block accidental OTT re-launch after returning from YouTube / Home. */
+    private const val KEY_OTT_LAUNCH_SUPPRESS_UNTIL = "ott_launch_suppress_until_ms"
+    /** True while MainActivity is resumed in the foreground. */
+    private const val KEY_MAIN_FOREGROUND = "main_activity_foreground"
+    /** True while Compose nav is on the primary guest Home route. */
+    private const val KEY_ON_GUEST_HOME = "on_guest_home_screen"
 
     /** Explicit Admin whitelist from RTDB `hotels/{id}/config/allowedPackages`. */
     private const val KEY_ALLOWED_PACKAGES = "allowedPackages"
+    /** Hotel that owns [KEY_ALLOWED_PACKAGES] — prevents cross-tenant leakage. */
+    private const val KEY_ALLOWED_PACKAGES_HOTEL_ID = "allowedPackagesHotelId"
 
     /** MainActivity / Admin camelCase flag (preferred over [KEY_KIOSK_ENABLED] when set). */
     private const val KEY_KIOSK_ENABLED_CAMEL = "isKioskModeEnabled"
@@ -84,25 +100,130 @@ object KioskPolicy {
         return p.getBoolean(KEY_KIOSK_ENABLED, true)
     }
 
-    /** Persist Super Admin package whitelist for launch-time validation. */
-    fun setAllowedPackagesList(context: Context, packages: List<String>) {
+    /**
+     * Persist Super Admin package whitelist for [hotelId] only.
+     * Never write a global/unscoped list — empty [hotelId] clears the cache.
+     */
+    fun setAllowedPackagesList(
+        context: Context,
+        packages: List<String>,
+        hotelId: String?,
+    ) {
+        val normalizedHotel = HotelConfig.normalizeHotelId(hotelId)
+        if (normalizedHotel.isBlank()) {
+            clearTenantWhitelistCache(context)
+            return
+        }
         val cleaned = packages.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-        prefs(context).edit().putStringSet(KEY_ALLOWED_PACKAGES, cleaned).apply()
-        Log.i(TAG, "allowedPackages=${cleaned.size} → $cleaned")
+        prefs(context).edit()
+            .putStringSet(KEY_ALLOWED_PACKAGES, cleaned)
+            .putString(KEY_ALLOWED_PACKAGES_HOTEL_ID, normalizedHotel)
+            .apply()
+        Log.i(
+            TAG,
+            "allowedPackages hotelId=$normalizedHotel count=${cleaned.size} → $cleaned",
+        )
     }
 
-    fun getAllowedPackagesList(context: Context): List<String> =
-        prefs(context).getStringSet(KEY_ALLOWED_PACKAGES, emptySet())?.toList().orEmpty()
+    /**
+     * Returns this hotel's whitelist only.
+     * Mismatch / missing hotel / unpaired → [emptyList] (no cross-tenant fallback).
+     */
+    fun getAllowedPackagesList(
+        context: Context,
+        hotelId: String? = null,
+    ): List<String> {
+        val currentHotel = HotelConfig.normalizeHotelId(
+            hotelId ?: HotelConfig(context).getHotelId(),
+        )
+        if (currentHotel.isBlank()) {
+            Log.d(TAG, "getAllowedPackagesList — unpaired → emptyList()")
+            return emptyList()
+        }
+        val cachedHotel = prefs(context).getString(KEY_ALLOWED_PACKAGES_HOTEL_ID, null)
+        if (cachedHotel.isNullOrBlank() || cachedHotel != currentHotel) {
+            Log.w(
+                TAG,
+                "getAllowedPackagesList — cache miss/mismatch " +
+                    "cached=$cachedHotel current=$currentHotel → emptyList()",
+            )
+            return emptyList()
+        }
+        return prefs(context).getStringSet(KEY_ALLOWED_PACKAGES, emptySet())
+            ?.toList()
+            .orEmpty()
+    }
+
+    /**
+     * Drop locally cached whitelist/OTT allowlist when switching or unpairing hotels.
+     * Call from [HotelConfig.setHotelId] / [HotelConfig.clearHotelId].
+     */
+    fun clearTenantWhitelistCache(context: Context) {
+        prefs(context).edit()
+            .remove(KEY_ALLOWED_PACKAGES)
+            .remove(KEY_ALLOWED_PACKAGES_HOTEL_ID)
+            .apply()
+        Log.i(TAG, "Tenant whitelist cache cleared (no cross-hotel fallback)")
+    }
+
+    /**
+     * Full wipe of `hotel_tv_kiosk` tenant state on logout / unpair.
+     * Stops Watchdog and clears whitelist, kiosk flags, and OTT session gates.
+     */
+    fun clearTenantKioskCache(context: Context) {
+        prefs(context).edit()
+            .remove(KEY_ALLOWED_PACKAGES)
+            .remove(KEY_ALLOWED_PACKAGES_HOTEL_ID)
+            .remove(KEY_KIOSK_ENABLED_CAMEL)
+            .putBoolean(KEY_KIOSK_ENABLED, false)
+            .remove(KEY_ADMIN_OVERRIDE)
+            .remove(KEY_USER_MINIMIZED)
+            .remove(KEY_EXTERNAL_APP_UNTIL)
+            .remove(KEY_LAST_OTT_PACKAGE)
+            .remove(KEY_OTT_LAUNCH_SUPPRESS_UNTIL)
+            .putBoolean(KEY_EXTERNAL_APP_ACTIVE, false)
+            .putBoolean(KEY_MAIN_FOREGROUND, false)
+            .putBoolean(KEY_ON_GUEST_HOME, false)
+            .apply()
+        try {
+            KioskWatchdogService.stop(context.applicationContext)
+        } catch (e: Exception) {
+            Log.w(TAG, "Watchdog stop during clearTenantKioskCache failed", e)
+        }
+        Log.i(TAG, "clearTenantKioskCache — hotel_tv_kiosk tenant state wiped")
+    }
+
+    /**
+     * On attach / pair: if cached whitelist belongs to another hotel, wipe it and
+     * bind an empty list to [hotelId] until RTDB delivers this tenant's config.
+     */
+    fun bindWhitelistToHotelOrClear(context: Context, hotelId: String) {
+        val normalized = HotelConfig.normalizeHotelId(hotelId)
+        if (normalized.isBlank()) {
+            clearTenantWhitelistCache(context)
+            return
+        }
+        val cachedHotel = prefs(context).getString(KEY_ALLOWED_PACKAGES_HOTEL_ID, null)
+        if (cachedHotel != normalized) {
+            Log.w(
+                TAG,
+                "Whitelist tenant switch cached=$cachedHotel → $normalized — clearing stale list",
+            )
+            setAllowedPackagesList(context, emptyList(), normalized)
+        }
+    }
 
     /**
      * Validates whether an external app may be launched.
      * When Kiosk Mode is OFF → allow everything.
-     * When Kiosk Mode is ON → only packages explicitly in the Admin whitelist.
+     * When Kiosk Mode is ON → only packages explicitly in **this hotel's** Admin whitelist.
      */
     fun canLaunchApp(context: Context, targetPackageName: String): Boolean {
         if (!isKioskModeEnabled(context)) return true
         val allowed = getAllowedPackagesList(context)
-        val ok = allowed.contains(targetPackageName.trim())
+        val baseline = KioskLockTask.BASELINE_LOCK_TASK_PACKAGES
+        val ok = allowed.contains(targetPackageName.trim()) ||
+            baseline.contains(targetPackageName.trim())
         if (!ok) {
             Log.w(
                 TAG,
@@ -155,26 +276,122 @@ object KioskPolicy {
 
     /**
      * Call before launching YouTube / IPTV / other allowlisted apps so
-     * [android.app.Activity.onUserLeaveHint] does not immediately reclaim MainActivity.
-     * Home presses after the session window expires (or from those apps via HOME intent)
-     * still return to the hotel UI.
+     * Watchdog / [android.app.Activity.onUserLeaveHint] do not reclaim MainActivity.
+     * Cleared only when the guest returns via HOME / BACK ([clearExternalAppActive]).
      */
     fun markExternalAppSession(context: Context, durationMs: Long = EXTERNAL_APP_SESSION_MS) {
         val until = System.currentTimeMillis() + durationMs
-        prefs(context).edit().putLong(KEY_EXTERNAL_APP_UNTIL, until).apply()
+        prefs(context).edit()
+            .putBoolean(KEY_EXTERNAL_APP_ACTIVE, true)
+            .putLong(KEY_EXTERNAL_APP_UNTIL, until)
+            .apply()
         // Leaving for OTT is intentional — do not treat as "user minimized for Home".
         clearUserMinimized(context)
-        Log.i(TAG, "External app session until=$until (${durationMs}ms)")
+        Log.i(TAG, "External app ACTIVE until=$until (${durationMs}ms)")
     }
 
+    /**
+     * True while guest is inside an intentionally launched OTT / allowlisted app.
+     * Authoritative gate for Watchdog — survives nav pops / Entertainment dispose.
+     */
+    fun isExternalAppActive(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_EXTERNAL_APP_ACTIVE, false)
+
+    /** @deprecated Prefer [isExternalAppActive]; kept for existing call sites. */
     fun isExternalAppSessionActive(context: Context): Boolean {
+        if (isExternalAppActive(context)) return true
         val until = prefs(context).getLong(KEY_EXTERNAL_APP_UNTIL, 0L)
         return until > System.currentTimeMillis()
     }
 
+    /**
+     * Clears only the time window — does **not** clear [isExternalAppActive].
+     * Safe for Entertainment enter; Watchdog still respects the durable flag.
+     */
     fun clearExternalAppSession(context: Context) {
         prefs(context).edit().remove(KEY_EXTERNAL_APP_UNTIL).apply()
     }
+
+    /**
+     * Reset when guest returns to hotel UI (HOME / BACK / onResume return path).
+     * Resumes standard Watchdog reclaim behaviour.
+     */
+    fun clearExternalAppActive(context: Context) {
+        prefs(context).edit()
+            .putBoolean(KEY_EXTERNAL_APP_ACTIVE, false)
+            .remove(KEY_EXTERNAL_APP_UNTIL)
+            .apply()
+        Log.i(TAG, "isExternalAppActive=false — Watchdog reclaim re-enabled")
+    }
+
+    /** Remember which OTT package was intentionally launched. */
+    fun markOttLaunched(context: Context, packageName: String) {
+        // Do NOT clear KEY_ON_GUEST_HOME — MainActivity may already have switched
+        // to Root Home synchronously before startActivity (anti-flicker).
+        prefs(context).edit()
+            .putString(KEY_LAST_OTT_PACKAGE, packageName)
+            .putBoolean(KEY_MAIN_FOREGROUND, false)
+            .putBoolean(KEY_EXTERNAL_APP_ACTIVE, true)
+            .apply()
+        markExternalAppSession(context)
+        Log.i(TAG, "OTT launched → $packageName (isExternalAppActive=true)")
+    }
+
+    fun getLastOttPackage(context: Context): String? =
+        prefs(context).getString(KEY_LAST_OTT_PACKAGE, null)
+
+    /**
+     * Clears OTT session + durable active flag and suppresses auto re-launch briefly
+     * (HOME / BACK return path only). Do **not** call from Entertainment dispose or
+     * pre-OTT Root Home nav — that would let Watchdog steal focus from YouTube.
+     */
+    fun clearOttLaunchState(context: Context, suppressMs: Long = 2_500L) {
+        val until = System.currentTimeMillis() + suppressMs
+        prefs(context).edit()
+            .putBoolean(KEY_EXTERNAL_APP_ACTIVE, false)
+            .remove(KEY_EXTERNAL_APP_UNTIL)
+            .remove(KEY_LAST_OTT_PACKAGE)
+            .putLong(KEY_OTT_LAUNCH_SUPPRESS_UNTIL, until)
+            .apply()
+        Log.i(TAG, "OTT launch state cleared — isExternalAppActive=false, suppress until=$until")
+    }
+
+    fun shouldSuppressOttLaunch(context: Context): Boolean {
+        val until = prefs(context).getLong(KEY_OTT_LAUNCH_SUPPRESS_UNTIL, 0L)
+        return until > System.currentTimeMillis()
+    }
+
+    /** Called from MainActivity onResume / onPause. */
+    fun setMainActivityForeground(context: Context, foreground: Boolean) {
+        prefs(context).edit().putBoolean(KEY_MAIN_FOREGROUND, foreground).apply()
+    }
+
+    fun isMainActivityForeground(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_MAIN_FOREGROUND, false)
+
+    /** Called from HotelNavGraph when the current route changes. */
+    fun setOnGuestHomeScreen(context: Context, onHome: Boolean) {
+        prefs(context).edit().putBoolean(KEY_ON_GUEST_HOME, onHome).apply()
+    }
+
+    fun isOnGuestHomeScreen(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_ON_GUEST_HOME, false)
+
+    /**
+     * True ONLY when MainActivity is visible AND Compose is on the primary guest
+     * Home route AND no OTT/external session is active.
+     *
+     * FALSE for YouTube / Live TV, Dining, Entertainment, Services, etc.
+     */
+    fun isOnRootHomeScreen(context: Context): Boolean {
+        if (isExternalAppActive(context)) return false
+        if (!isMainActivityForeground(context)) return false
+        return isOnGuestHomeScreen(context)
+    }
+
+    /** @deprecated Prefer [isOnRootHomeScreen]. */
+    fun isAlreadyOnForegroundGuestHome(context: Context): Boolean =
+        isOnRootHomeScreen(context)
 
     /**
      * Call from [android.app.Application.onCreate] before UI starts.
@@ -259,11 +476,18 @@ object KioskPolicy {
      * - A crash/kill recovery is pending
      *
      * Blocked when:
+     * - Guest is in YouTube / OTT ([isExternalAppActive]), or
      * - User explicitly minimized (Home), or
      * - Process lifecycle is already STARTED, or
      * - An existing task is already created (unless crash recovery / kiosk needs reorder)
      */
     fun shouldBringAppToFront(context: Context, allowReorderIfKiosk: Boolean = true): Boolean {
+        // Never reclaim UI while guest is in YouTube / OTT under kiosk.
+        if (isExternalAppActive(context)) {
+            Log.d(TAG, "shouldBringAppToFront=false (isExternalAppActive=true)")
+            return false
+        }
+
         // Absolute block when kiosk is off — no watchdog / boot relaunch loops.
         if (!isKioskModeEnabled(context) && !hasPendingCrashRecovery(context)) {
             Log.d(TAG, "shouldBringAppToFront=false (kiosk off, no crash recovery)")

@@ -17,13 +17,14 @@ import androidx.core.app.NotificationCompat
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.SplashActivity
 
-/**
- * Foreground keep-alive for optional hotel kiosk / overlay scenarios.
- *
- * **Critical:** [START_STICKY] must NOT relaunch the Activity on service re-create.
- * Bring-to-front runs only when [KioskPolicy.shouldBringAppToFront] is true
- * (explicit kiosk mode or crash recovery) — never on ordinary minimize.
- */
+        /**
+         * Foreground keep-alive for optional hotel kiosk / overlay scenarios.
+         *
+         * **Critical:** [START_STICKY] must NOT relaunch the Activity on service re-create.
+         * Bring-to-front runs only when [KioskPolicy.shouldBringAppToFront] is true
+         * (explicit kiosk mode or crash recovery) — never on ordinary minimize, and
+         * never while [KioskPolicy.isExternalAppActive] (YouTube / OTT viewing).
+         */
 class KioskWatchdogService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
@@ -81,6 +82,11 @@ class KioskWatchdogService : Service() {
     }
 
     private fun maybeBringToFront(reason: String) {
+        // Hard gate: never steal focus from YouTube / Netflix / Live TV / etc.
+        if (KioskPolicy.isExternalAppActive(this)) {
+            Log.d(TAG, "maybeBringToFront skipped — isExternalAppActive=true ($reason)")
+            return
+        }
         // Hard gate: never relaunch UI while kiosk is disabled.
         if (!KioskPolicy.isKioskModeEnabled(this)) {
             Log.d(TAG, "maybeBringToFront skipped — kiosk disabled ($reason)")

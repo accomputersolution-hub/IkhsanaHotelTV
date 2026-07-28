@@ -5,6 +5,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.QUICKBOOT_POWERON" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -68,7 +69,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:stateNotNeeded="true"
             android:clearTaskOnLaunch="true"
             android:screenOrientation="landscape"
@@ -78,18 +79,13 @@
             android:banner="@drawable/pcn_banner"
             android:icon="@drawable/pcn_logo"
             android:label="@string/app_name">
-            <!--
-              System Home / Leanback launcher eligibility.
-              HOME + DEFAULT are required so Android accepts this component as Home
-              (avoids IllegalArgumentException: Component cannot be home).
-            -->
+            <!-- Default Home / TV launcher eligibility for MainActivity -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-                <!-- REQUIRED FOR SYSTEM LAUNCHER ELIGIBILITY -->
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
 
@@ -103,12 +99,16 @@
             android:windowSoftInputMode="adjustPan|stateHidden"
             android:theme="@style/Theme.IkhsanaHotelTV" />
 
+        <!--
+          Auto-launch hotel UI after reboot / OEM quick-boot.
+          Requires RECEIVE_BOOT_COMPLETED (+ QUICKBOOT_POWERON on some OEMs).
+        -->
         <receiver
             android:name=".receiver.BootReceiver"
             android:directBootAware="true"
             android:enabled="true"
             android:exported="true">
-            <intent-filter>
+            <intent-filter android:priority="1000">
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
@@ -117,13 +117,19 @@
             </intent-filter>
         </receiver>
 
-        <!-- Device-owner admin for Lock Task package whitelist (setLockTaskPackages). -->
+        <!--
+          Device Owner admin receiver — required for true Lock Task / Home suppression.
+          Provision once (factory-reset TV, no Google account):
+          adb shell dpm set-device-owner in.pcncloud.hotel/in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
+        -->
         <receiver
-            android:name=".kiosk.MyDeviceAdminReceiver"
+            android:name="in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver"
             android:description="@string/device_admin_description"
             android:label="@string/app_name"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
-            android:exported="true">
+            android:exported="true"
+            android:enabled="true"
+            android:directBootAware="true">
             <meta-data
                 android:name="android.app.device_admin"
                 android:resource="@xml/device_admin" />
@@ -144,6 +150,27 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Hotel TV optional kiosk keep-alive; does not relaunch UI on minimize" />
+        </service>
+
+        <!--
+          Hardware HOME key interceptor (AccessibilityService).
+          OEM Lock Task often drops HOME intents — this service filters KEYCODE_HOME
+          and brings MainActivity to front. Enable via ADB:
+          adb shell settings put secure enabled_accessibility_services in.pcncloud.hotel/in.pcncloud.hotel.kiosk.HomeKeyInterceptorService
+          adb shell settings put secure accessibility_enabled 1
+        -->
+        <service
+            android:name=".kiosk.HomeKeyInterceptorService"
+            android:label="@string/home_key_interceptor_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/home_key_interceptor_service" />
         </service>
 
     </application>

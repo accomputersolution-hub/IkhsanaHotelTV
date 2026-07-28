@@ -189,9 +189,12 @@ class SplashActivity : AppCompatActivity() {
     private fun beginAppInitialization() {
         if (hasNavigated) return
 
-        val hotelId = hotelConfig.getHotelId()
-        if (hotelId.isNullOrBlank()) {
-            Log.i(TAG, "No paired hotel_id — generic splash → PairingActivity")
+        if (!hotelConfig.isPaired()) {
+            Log.i(
+                TAG,
+                "Unpaired (hotel=${hotelConfig.getHotelId()} room=${hotelConfig.getRoomNumberOrNull()}) " +
+                    "→ PairingActivity",
+            )
             unpairedFlow = true
             splashWelcome.text = getString(R.string.splash_welcome_generic)
             splashStatus.text = getString(R.string.splash_status_pairing)
@@ -202,7 +205,8 @@ class SplashActivity : AppCompatActivity() {
             return
         }
 
-        Log.d(TAG, "Paired hotel_id=$hotelId — listening Hotels/$hotelId")
+        val hotelId = hotelConfig.getHotelId()!!
+        Log.d(TAG, "Paired hotel_id=$hotelId room=${hotelConfig.getRoomNumberOrNull()} — listening Hotels/$hotelId")
         unpairedFlow = false
         splashWelcome.text = getString(R.string.splash_welcome_loading)
         splashStatus.text = getString(R.string.splash_status_loading)

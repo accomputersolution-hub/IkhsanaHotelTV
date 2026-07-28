@@ -1,7 +1,6 @@
 package `in`.pcncloud.hotel.ui.admin
 
 import android.app.Activity
-import android.content.Intent
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -49,9 +48,9 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
-import `in`.pcncloud.hotel.SplashActivity
 import `in`.pcncloud.hotel.admin.AdminSession
 import `in`.pcncloud.hotel.config.HotelConfig
+import `in`.pcncloud.hotel.kiosk.HotelSessionManager
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskRemoteConfig
 import `in`.pcncloud.hotel.ui.components.LuxuryScreenBackground
@@ -262,16 +261,15 @@ fun AdminSettingsScreen(
                         },
                         onUnpair = {
                             onRemoteActivity()
-                            AdminSession.clear()
-                            hotelConfig.clearHotelId()
-                            Log.i(TAG, "Device unpaired from Admin Mode")
-                            val intent = Intent(context, SplashActivity::class.java).apply {
-                                addFlags(
-                                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                                        Intent.FLAG_ACTIVITY_CLEAR_TASK,
-                                )
+                            Log.i(TAG, "Admin Unpair Room / Logout — wiping session → PairingActivity")
+                            val host = activity
+                            if (host != null) {
+                                HotelSessionManager.performLogout(host, reason = "admin_pin_unpair")
+                            } else {
+                                hotelConfig.clearPairingSession()
+                                KioskPolicy.clearTenantKioskCache(context.applicationContext)
+                                HotelSessionManager.openPairingScreen(context)
                             }
-                            context.startActivity(intent)
                         },
                         onClose = { exitAdmin("close") },
                     )

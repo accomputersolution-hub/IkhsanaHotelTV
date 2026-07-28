@@ -2,6 +2,7 @@ package `in`.pcncloud.hotel.ui.entertainment
 
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -58,6 +59,7 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.integration.AppLauncherUtils
+import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.ui.components.LuxuryScreenBackground
 import `in`.pcncloud.hotel.ui.components.LuxuryScreenHeader
 import `in`.pcncloud.hotel.ui.components.luxuryBackHandler
@@ -67,6 +69,7 @@ import `in`.pcncloud.hotel.ui.theme.NavySurface
 import `in`.pcncloud.hotel.ui.theme.SansBody
 import `in`.pcncloud.hotel.ui.theme.TextMuted
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
+import kotlinx.coroutines.delay
 
 data class EntertainmentApp(
     val id: String,
@@ -135,8 +138,17 @@ fun EntertainmentHubScreen(
     val context = LocalContext.current
     val apps = remember { entertainmentCatalog() }
     val firstFocus = remember { FocusRequester() }
+    var clicksEnabled by remember { mutableStateOf(false) }
+
+    // Returning from YouTube often delivers a leftover OK/Enter KeyUp to the first tile.
+    // Suppress launches briefly via clicksEnabled + KioskPolicy.shouldSuppressOttLaunch.
+    // Do NOT clearOttLaunchState on dispose — pre-OTT Root Home pops this screen and
+    // clearing would let Watchdog steal YouTube focus.
 
     LaunchedEffect(Unit) {
+        clicksEnabled = false
+        delay(900)
+        clicksEnabled = true
         runCatching { firstFocus.requestFocus() }
     }
 
@@ -176,6 +188,13 @@ fun EntertainmentHubScreen(
                             Modifier
                         },
                         onClick = {
+                            if (!clicksEnabled || KioskPolicy.shouldSuppressOttLaunch(context)) {
+                                Log.d(
+                                    "EntertainmentHub",
+                                    "Ignoring OTT click (suppress/cooldown) → ${app.packageName}",
+                                )
+                                return@EntertainmentAppTile
+                            }
                             AppLauncherUtils.launchOrInstall(
                                 context = context,
                                 packageName = app.packageName,
@@ -226,13 +245,15 @@ private fun EntertainmentAppTile(
             .onFocusChanged { focused = it.isFocused }
             .focusable()
             .onKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown &&
+                // Use KeyUp only — leftover KeyDown/Enter from YouTube often fires on resume.
+                if (event.type == KeyEventType.KeyUp &&
                     (event.key == Key.Enter || event.key == Key.DirectionCenter)
                 ) {
                     onClick()
                     true
                 } else {
-                    false
+                    event.type == KeyEventType.KeyDown &&
+                        (event.key == Key.Enter || event.key == Key.DirectionCenter)
                 }
             }
             .padding(vertical = 18.dp, horizontal = 12.dp),

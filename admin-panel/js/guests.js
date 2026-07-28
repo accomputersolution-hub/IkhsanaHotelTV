@@ -1,4 +1,4 @@
-import { db } from './firebase-config.js';
+import { db, rtdb } from './firebase-config.js';
 import {
   collection,
   doc,
@@ -6,6 +6,7 @@ import {
   onSnapshot,
   serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
+import { ref as rtdbRef, update as rtdbUpdate } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js';
 import {
   escapeHtml,
   toast,
@@ -219,15 +220,19 @@ function renderRoomGrid(rooms) {
 
       let actions = '';
       if (status === 'vacant') {
-        actions = `<button data-action="check-in" data-room="${escapeHtml(roomNum)}" class="room-action-btn room-action-primary">Check-In</button>`;
+        actions = `
+          <button data-action="check-in" data-room="${escapeHtml(roomNum)}" class="room-action-btn room-action-primary">Check-In</button>
+          <button data-action="unpair-tv" data-room="${escapeHtml(roomNum)}" class="room-action-btn room-action-danger">Unpair TV</button>`;
       } else if (status === 'occupied') {
         actions = `
           <button data-action="check-out" data-room="${escapeHtml(roomNum)}" class="room-action-btn room-action-danger">Check-Out</button>
-          <button data-action="edit-guest" data-room="${escapeHtml(roomNum)}" class="room-action-btn">Edit Guest</button>`;
+          <button data-action="edit-guest" data-room="${escapeHtml(roomNum)}" class="room-action-btn">Edit Guest</button>
+          <button data-action="unpair-tv" data-room="${escapeHtml(roomNum)}" class="room-action-btn room-action-danger">Unpair TV</button>`;
       } else {
         actions = `
           <button data-action="mark-ready" data-room="${escapeHtml(roomNum)}" class="room-action-btn room-action-primary">Mark Ready</button>
-          <button data-action="mark-maintenance" data-room="${escapeHtml(roomNum)}" class="room-action-btn">Maintenance</button>`;
+          <button data-action="mark-maintenance" data-room="${escapeHtml(roomNum)}" class="room-action-btn">Maintenance</button>
+          <button data-action="unpair-tv" data-room="${escapeHtml(roomNum)}" class="room-action-btn room-action-danger">Unpair TV</button>`;
       }
 
       return `
@@ -267,6 +272,10 @@ function bindRoomActions(container) {
 
   container.querySelectorAll('[data-action="mark-maintenance"]').forEach((btn) => {
     btn.addEventListener('click', () => handleMarkMaintenance(btn.dataset.room, btn));
+  });
+
+  container.querySelectorAll('[data-action="unpair-tv"]').forEach((btn) => {
+    btn.addEventListener('click', () => handleUnpairTv(btn.dataset.room, btn));
   });
 }
 
@@ -478,6 +487,44 @@ async function handleCheckOut(roomNumber, btn) {
   } catch (err) {
     toast('Check-out failed', 'error');
     console.error('[Firestore ERROR] Check-out failed:', err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
+  }
+}
+
+async function handleUnpairTv(roomNumber, btn) {
+  const room = normalizeRoom(roomNumber);
+  const hotelId = getHotelId();
+  if (!hotelId || !room) {
+    toast('Hotel / room missing', 'error');
+    return;
+  }
+  if (
+    !confirm(
+      `Unpair TV for Room ${room}?\n\nThe TV will clear its session and show the Hotel ID / Room pairing screen.`,
+    )
+  ) {
+    return;
+  }
+
+  btn.disabled = true;
+  const prev = btn.textContent;
+  btn.textContent = 'Unpairing…';
+
+  try {
+    const path = `hotels/${hotelId}/rooms/${room}`;
+    await rtdbUpdate(rtdbRef(rtdb, path), {
+      session_active: false,
+      status: 'UNPAIRED',
+      unpairedAt: Date.now(),
+      unpairedBy: 'admin_panel',
+    });
+    console.log('[RTDB] Remote TV logout →', path);
+    toast(`Room ${room} TV unpaired — device will return to pairing`);
+  } catch (err) {
+    console.error('[RTDB ERROR] Unpair TV failed:', err);
+    toast('Failed to unpair TV', 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = prev;

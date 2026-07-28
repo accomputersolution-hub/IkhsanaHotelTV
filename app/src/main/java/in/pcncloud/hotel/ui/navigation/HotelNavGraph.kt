@@ -4,6 +4,7 @@ import android.app.Activity
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
@@ -36,6 +37,7 @@ private const val TAG = "HotelNavGraph"
 @Composable
 fun HotelNavGraph(
     viewModelFactory: HotelViewModelFactory,
+    navigateHomeSignal: Long = 0L,
     navController: NavHostController = rememberNavController(),
 ) {
     val context = LocalContext.current
@@ -43,6 +45,27 @@ fun HotelNavGraph(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val onGuestHome = currentRoute == Routes.HOME || currentRoute == null
+
+    // Keep Accessibility HOME interceptor in sync with Compose route.
+    LaunchedEffect(onGuestHome) {
+        KioskPolicy.setOnGuestHomeScreen(context, onGuestHome)
+    }
+    LaunchedEffect(navigateHomeSignal) {
+        if (navigateHomeSignal <= 0L) return@LaunchedEffect
+        Log.i(TAG, "navigateHomeSignal=$navigateHomeSignal — resetting to ${Routes.HOME}")
+        // Do NOT clearOttLaunchState here — pre-OTT Root Home uses this signal and must
+        // keep isExternalAppActive=true so Watchdog does not reclaim over YouTube.
+        // Return-from-OTT cleanup happens in MainActivity.finishReturnFromExternalApp().
+        navController.navigate(Routes.HOME) {
+            launchSingleTop = true
+            popUpTo(navController.graph.startDestinationId) {
+                inclusive = false
+                saveState = false
+            }
+            restoreState = false
+        }
+        KioskPolicy.setOnGuestHomeScreen(context, true)
+    }
 
     /**
      * Kiosk ON + Home → block Back (cannot exit / minimize via remote Back).
@@ -57,6 +80,7 @@ fun HotelNavGraph(
             }
             kioskEnabled && !onGuestHome -> {
                 Log.d(TAG, "Kiosk ON @ $currentRoute — navigating to Home")
+                KioskPolicy.clearOttLaunchState(context)
                 navController.popBackStack(Routes.HOME, inclusive = false)
             }
             else -> {
@@ -106,7 +130,10 @@ fun HotelNavGraph(
         }
         composable(Routes.ENTERTAINMENT) {
             EntertainmentHubScreen(
-                onBack = { navController.popBackStack(Routes.HOME, inclusive = false) },
+                onBack = {
+                    KioskPolicy.clearOttLaunchState(context)
+                    navController.popBackStack(Routes.HOME, inclusive = false)
+                },
             )
         }
         composable(Routes.ADMIN) {

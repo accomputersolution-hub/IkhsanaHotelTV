@@ -5,15 +5,14 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import `in`.pcncloud.hotel.MainActivity
+import `in`.pcncloud.hotel.PairingActivity
+import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
 
 /**
- * Auto-launches [MainActivity] when the TV powers on (`BOOT_COMPLETED`).
- *
- * With kiosk / HOME-launcher mode this restores the guest dashboard immediately
- * after reboot. When kiosk is off we still cold-start the app so pairing / guest
- * UI is ready, but Watchdog bring-to-front stays gated by [KioskPolicy].
+ * Auto-starts the hotel UI after device restart.
+ * Paired → [MainActivity]; unpaired → [PairingActivity].
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -29,22 +28,31 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.action !in BOOT_ACTIONS) return
-
-        // Already running in foreground — do not spawn a duplicate activity.
-        if (KioskPolicy.isProcessLifecycleStarted()) {
-            Log.i(TAG, "Skip boot launch — process already STARTED")
-            return
-        }
-        if (KioskPolicy.hasExistingTask(context) && !KioskPolicy.isKioskModeEnabled(context)) {
-            Log.i(TAG, "Skip boot launch — task already exists (non-kiosk)")
+        val action = intent?.action
+        if (action !in BOOT_ACTIONS) {
+            Log.d(TAG, "Ignoring unrelated action=$action")
             return
         }
 
-        // Clear stale minimize flag from a previous session after reboot.
+        val hotelConfig = HotelConfig(context.applicationContext)
+        Log.i(
+            TAG,
+            "Boot event → action=$action paired=${hotelConfig.isPaired()} " +
+                "hotel=${hotelConfig.getHotelId()} room=${hotelConfig.getRoomNumberOrNull()}",
+        )
+
+        // Fresh boot: clear stale minimize / OTT session gates from previous power cycle.
         KioskPolicy.clearUserMinimized(context)
+        KioskPolicy.clearExternalAppActive(context)
+        KioskPolicy.clearExternalAppSession(context)
 
-        val launchIntent = Intent(context, MainActivity::class.java).apply {
+        val target = if (hotelConfig.isPaired()) {
+            MainActivity::class.java
+        } else {
+            PairingActivity::class.java
+        }
+
+        val launchIntent = Intent(context, target).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -53,16 +61,17 @@ class BootReceiver : BroadcastReceiver() {
 
         try {
             context.startActivity(launchIntent)
-            Log.i(
-                TAG,
-                "Boot launch → MainActivity action=${intent?.action} " +
-                    "kiosk=${KioskPolicy.isKioskModeEnabled(context)}",
-            )
-            if (KioskPolicy.isKioskModeEnabled(context)) {
-                KioskWatchdogService.start(context)
-            }
+            Log.i(TAG, "Boot launch → ${target.simpleName} action=$action")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch MainActivity after boot (${intent?.action})", e)
+            Log.e(TAG, "Failed to launch ${target.simpleName} after boot ($action)", e)
+        }
+
+        if (hotelConfig.isPaired() && KioskPolicy.isKioskModeEnabled(context)) {
+            try {
+                KioskWatchdogService.start(context.applicationContext)
+            } catch (e: Exception) {
+                Log.w(TAG, "Watchdog start after boot failed", e)
+            }
         }
     }
 }

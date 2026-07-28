@@ -697,7 +697,8 @@ function setupKioskSettingsModal() {
 
 /**
  * Open Kiosk Settings for Hotels/{hotelId}.
- * Loads isKioskModeEnabled + allowedPackages from the hotel document.
+ * Loads isKioskModeEnabled + allowedPackages from **that hotel document only**.
+ * Missing allowedPackages → empty input (never reuse another hotel's list).
  */
 async function openKioskSettingsModal(hotelId) {
   if (!hotelId) return;
@@ -714,6 +715,7 @@ async function openKioskSettingsModal(hotelId) {
   // Reset Save button BEFORE opening — clears any leftover "Saving..." state.
   resetKioskSaveButton();
 
+  // Always reset UI to empty before load — prevents Treasure Island → Upper Deck bleed in the form.
   if (idField) idField.value = hotelId;
   if (nameEl) nameEl.textContent = hotelId;
   if (toggle) toggle.checked = true;
@@ -734,6 +736,7 @@ async function openKioskSettingsModal(hotelId) {
     const hotelName = data.name || hotelId;
     const isKioskModeEnabled =
       typeof data.isKioskModeEnabled === 'boolean' ? data.isKioskModeEnabled : true;
+    // Strict hotel scope: no global / previous-hotel fallback.
     const allowedPackages = Array.isArray(data.allowedPackages)
       ? data.allowedPackages.map((p) => String(p).trim()).filter(Boolean)
       : [];

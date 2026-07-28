@@ -5,8 +5,10 @@ import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import `in`.pcncloud.hotel.kiosk.HomeKeyInterceptorService
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
+import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
 
 /**
  * Process-wide lifecycle + crash bookkeeping for kiosk bring-to-front gating.
@@ -15,6 +17,8 @@ class HotelTvApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        MyDeviceAdminReceiver.logProvisioningDiagnostics(this)
+        HomeKeyInterceptorService.logStatus(this)
         KioskPolicy.onProcessStart(this)
         installCrashMarker()
         observeProcessLifecycle()
@@ -47,8 +51,10 @@ class HotelTvApplication : Application() {
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
-                    // Home / minimize: record explicit background so FGS/Boot cannot pop UI.
-                    KioskPolicy.markUserMinimized(this@HotelTvApplication)
+                    // Do not treat OTT viewing as "user minimized" — watchdog must stay quiet.
+                    if (!KioskPolicy.isExternalAppActive(this@HotelTvApplication)) {
+                        KioskPolicy.markUserMinimized(this@HotelTvApplication)
+                    }
                     KioskPolicy.markCleanExit(this@HotelTvApplication)
                     Log.d(TAG, "Process ON_STOP (user may have minimized)")
                 }

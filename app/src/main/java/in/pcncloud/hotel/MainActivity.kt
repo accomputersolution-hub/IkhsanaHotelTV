@@ -1,5 +1,6 @@
 package `in`.pcncloud.hotel
 
+import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -28,6 +29,8 @@ import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.data.model.HotelBranding
 import `in`.pcncloud.hotel.data.repository.FirestoreRepository
+import `in`.pcncloud.hotel.kiosk.HomeKeyInterceptorService
+import `in`.pcncloud.hotel.kiosk.HotelSessionManager
 import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
@@ -47,12 +50,12 @@ import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.delay
 
 /**
- * Guest dashboard host. Also registered as a HOME launcher candidate for kiosk TVs
- * (see AndroidManifest). Back behaviour is owned primarily by [HotelNavGraph]; this
- * Activity callback is a safety net when Compose has not consumed the event.
+ * Guest dashboard host and Android TV Home / Lock Task kiosk shell.
  *
- * Lock Task Mode is driven live from Realtime Database
- * `hotels/{hotelId}/config/isKioskModeEnabled` (Super Admin → Kiosk Settings).
+ * When provisioned as **Device Owner**, [ensureDeviceOwnerLockTask] whitelists this
+ * package and enters true Lock Task Mode so the physical Home key cannot reach the
+ * stock Android TV launcher. Before Device Owner is set, [onUserLeaveHint] reclaims
+ * the UI as a fallback.
  */
 class MainActivity : ComponentActivity() {
 
@@ -63,6 +66,10 @@ class MainActivity : ComponentActivity() {
     /** RTDB listener on hotels/{hotelId}/config for live kiosk / Lock Task control. */
     private var kioskConfigRef: DatabaseReference? = null
     private var kioskConfigListener: ValueEventListener? = null
+
+    /** RTDB listener on hotels/{hotelId}/rooms/{room}/ for remote Admin logout. */
+    private var roomSessionRef: DatabaseReference? = null
+    private var roomSessionListener: ValueEventListener? = null
 
     /**
      * Latest kiosk flag from RTDB (null until first cloud snapshot).
@@ -81,6 +88,23 @@ class MainActivity : ComponentActivity() {
 
     /** When true, [ScreensaverOverlay] is shown; nav graph underneath stays composed. */
     private var screensaverVisible by mutableStateOf(false)
+
+    /**
+     * Bumped when HOME reclaim / pending OTT-return requests Root Home.
+     * Observed by [HotelNavGraph] to pop the Compose back stack to [Routes.HOME].
+     */
+    private var navigateHomeSignal by mutableLongStateOf(0L)
+
+    /**
+     * Set true when launching OTT after a synchronous Root Home switch.
+     * On resume we only clear session state (UI already Home — no flicker).
+     */
+    private var pendingReturnToHome: Boolean = false
+
+    /**
+     * Opaque navy cover — fallback only if Root Home was not applied before OTT.
+     */
+    private var ottTransitionCover by mutableStateOf(false)
 
     private fun kioskPrefs() =
         applicationContext.getSharedPreferences(KIOSK_PREFS, Context.MODE_PRIVATE)
@@ -107,7 +131,7 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Apply Lock Task from persisted state — never force-enable blindly.
-     * Used by onResume / onWindowFocusChanged.
+     * Used by onCreate / onWindowFocusChanged / onNewIntent.
      */
     private fun applyLockTaskFromPersistedState(reason: String) {
         val isKioskEnabled = resolveKioskEnabled()
@@ -115,13 +139,7 @@ class MainActivity : ComponentActivity() {
         applyKeepScreenOn(isKioskEnabled)
         Log.d(TAG, "applyLockTaskFromPersistedState($reason) → $isKioskEnabled")
         if (isKioskEnabled) {
-            try {
-                startLockTask()
-                Log.d("KioskMode", "Lock Task Mode ENABLED ($reason)")
-            } catch (e: Exception) {
-                e.printStackTrace()
-                Log.w(TAG, "startLockTask failed ($reason)", e)
-            }
+            ensureDeviceOwnerLockTask(reason)
         } else {
             try {
                 stopLockTask()
@@ -129,6 +147,55 @@ class MainActivity : ComponentActivity() {
             } catch (e: Exception) {
                 e.printStackTrace()
                 Log.w(TAG, "stopLockTask failed ($reason)", e)
+            }
+        }
+    }
+
+    /**
+     * Device Owner path: whitelist packages + true Lock Task (Home suppressed).
+     * Non–Device Owner fallback: screen pinning via [startLockTask]; Home reclaim
+     * is handled in [onUserLeaveHint].
+     */
+    private fun ensureDeviceOwnerLockTask(reason: String) {
+        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val adminComponent = MyDeviceAdminReceiver.getComponentName(this)
+        val isOwner = dpm.isDeviceOwnerApp(packageName)
+
+        if (isOwner) {
+            try {
+                val hotelId = currentHotelIdOrNull()
+                val allowed = (
+                    lastAppliedAllowedPackages
+                        ?: KioskPolicy.getAllowedPackagesList(this, hotelId)
+                    )
+                val packages = KioskLockTask.buildLockTaskPackageArray(this, allowed)
+
+                dpm.setLockTaskPackages(adminComponent, packages)
+                MyDeviceAdminReceiver.applyStrictLockTaskFeatures(this)
+                startLockTask()
+                Log.i(
+                    TAG,
+                    "Device Owner Lock Task ($reason) — Home suppressed, " +
+                        "packages=${packages.toList()}",
+                )
+                Log.d("KioskMode", "Lock Task Mode ENABLED ($reason / device-owner)")
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Log.w(TAG, "Device Owner Lock Task failed ($reason)", e)
+            }
+        } else {
+            Log.w(
+                TAG,
+                "NOT Device Owner ($reason) — screen-pinning fallback; " +
+                    "run: adb shell dpm set-device-owner " +
+                    MyDeviceAdminReceiver.DEVICE_OWNER_COMPONENT,
+            )
+            try {
+                startLockTask()
+                Log.d("KioskMode", "Lock Task Mode ENABLED ($reason / pinning fallback)")
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Log.w(TAG, "startLockTask fallback failed ($reason)", e)
             }
         }
     }
@@ -147,22 +214,26 @@ class MainActivity : ComponentActivity() {
 
         installKioskBackSafetyNet()
 
+        // Cold start may already carry NAVIGATE_TO_HOME from HomeKeyInterceptor / launcher.
+        handleNavigateToHomeExtra(intent)
+
         hotelConfig = HotelConfig(applicationContext)
-        val hotelId = hotelConfig.getHotelId()
-        if (hotelId.isNullOrBlank()) {
-            Log.i(TAG, "No paired hotelId — opening SplashActivity")
-            startActivity(Intent(this, SplashActivity::class.java))
-            finish()
+        if (!hotelConfig.isPaired()) {
+            Log.i(TAG, "Not paired (hotel/room missing) — opening PairingActivity")
+            HotelSessionManager.openPairingScreen(this)
             return
         }
+        val hotelId = hotelConfig.getHotelId()!!
+        val roomNumber = hotelConfig.getRoomNumberOrNull()!!
 
         // Live Web Admin control via RTDB hotels/{hotelId}/config.
         attachKioskConfigRealtimeListener(hotelId)
 
-        // Prompt Home picker when kiosk is ON and we are not yet the default launcher.
-        if (resolveKioskEnabled() && !isDefaultHomeLauncher()) {
-            openDefaultHomePicker()
-        }
+        // Remote logout: hotels/{hotelId}/rooms/{room}/session_active|status.
+        attachRoomSessionRealtimeListener(hotelId, roomNumber)
+
+        // Verify / request default Home launcher when kiosk is active.
+        verifyAndRequestDefaultHomeLauncher()
 
         repository = FirestoreRepository(hotelConfig)
         val viewModelFactory = HotelViewModelFactory(repository, hotelConfig)
@@ -229,11 +300,20 @@ class MainActivity : ComponentActivity() {
                     if (!hotelActive) {
                         ServiceSuspendedScreen(hotelName = branding.hotelName)
                     } else {
-                        // Keep nav graph composed under the overlay so the guest
-                        // returns to the exact screen they left.
-                        HotelNavGraph(viewModelFactory = viewModelFactory)
+                        HotelNavGraph(
+                            viewModelFactory = viewModelFactory,
+                            navigateHomeSignal = navigateHomeSignal,
+                        )
                         if (screensaverVisible) {
                             ScreensaverOverlay(branding = branding)
+                        }
+                        // Covers Entertainment only while applying pending Root Home on return.
+                        if (ottTransitionCover) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(NavyDeep),
+                            )
                         }
                     }
                 }
@@ -256,6 +336,70 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * Diagnostic + prompt: logs Home launcher status and opens system Home settings
+     * / chooser when kiosk is ON but this app is not the default Home activity.
+     * Also logs whether the hardware HOME Accessibility interceptor is enabled.
+     */
+    private fun verifyAndRequestDefaultHomeLauncher() {
+        val isDefault = isDefaultHomeLauncher()
+        val kioskOn = resolveKioskEnabled()
+        val homeKeyServiceOn = HomeKeyInterceptorService.isEnabled(this)
+        Log.i(
+            TAG,
+            "Home launcher diagnostic → package=$packageName isDefault=$isDefault " +
+                "kiosk=$kioskOn homeKeyInterceptor=$homeKeyServiceOn",
+        )
+
+        if (!homeKeyServiceOn) {
+            Log.w(
+                TAG,
+                "HomeKeyInterceptor NOT enabled — OEM may drop HOME under Lock Task. " +
+                    HomeKeyInterceptorService.adbEnableCommands().joinToString(" && "),
+            )
+        }
+
+        if (!kioskOn) {
+            Log.d(TAG, "Skip Home launcher prompt — kiosk disabled")
+            return
+        }
+
+        if (isDefault) {
+            Log.i(TAG, "Already default HOME launcher")
+            return
+        }
+
+        Log.w(TAG, "Not default HOME launcher — opening Home settings / chooser")
+        openDefaultHomePicker()
+    }
+
+    /**
+     * Opens [Settings.ACTION_HOME_SETTINGS] so the user can select this app
+     * (`in.pcncloud.hotel`) as the permanent default Home / TV launcher.
+     */
+    private fun openHomeSettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
+            Log.i(TAG, "openHomeSettings — ACTION_HOME_SETTINGS opened")
+        } catch (e: Exception) {
+            Log.w(TAG, "ACTION_HOME_SETTINGS failed — trying HOME chooser", e)
+            try {
+                val intent = Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_HOME)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                startActivity(intent)
+            } catch (ex: Exception) {
+                Log.e(TAG, "Could not open Home settings or chooser", ex)
+                try {
+                    startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+                } catch (ex2: Exception) {
+                    Log.e(TAG, "Could not open default-apps settings", ex2)
+                }
+            }
+        }
+    }
+
+    /**
      * Triggers the Android Default Home picker so staff can set this app as the
      * system launcher (required for Lock Task / Home eligibility on TV).
      */
@@ -269,18 +413,7 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "openDefaultHomePicker — HOME chooser intent fired")
         } catch (e: Exception) {
             Log.w(TAG, "HOME chooser failed — opening Home settings", e)
-            try {
-                val intent = Intent(Settings.ACTION_HOME_SETTINGS)
-                startActivity(intent)
-            } catch (ex: Exception) {
-                Log.e(TAG, "ACTION_HOME_SETTINGS also failed", ex)
-                e.printStackTrace()
-                try {
-                    startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
-                } catch (ex2: Exception) {
-                    Log.e(TAG, "Could not open default-apps settings", ex2)
-                }
-            }
+            openHomeSettings()
         }
     }
 
@@ -303,11 +436,16 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Live RTDB listener on `hotels/{hotelId}/config`.
-     * Reads `isKioskModeEnabled` and applies Lock Task immediately on change.
+     * Reads `isKioskModeEnabled` + `allowedPackages` scoped to this hotel only.
+     * Missing config / missing packages → empty allowlist (never keep another hotel's list).
      */
     private fun attachKioskConfigRealtimeListener(hotelId: String) {
         try {
             detachKioskConfigRealtimeListener()
+
+            // Drop any stale Treasure Island (etc.) cache before Upper Deck snapshot arrives.
+            KioskPolicy.bindWhitelistToHotelOrClear(this, hotelId)
+            lastAppliedAllowedPackages = KioskPolicy.getAllowedPackagesList(this, hotelId)
 
             val ref = FirebaseDatabase
                 .getInstance(FirebaseApp.getInstance(), RTDB_URL)
@@ -315,22 +453,21 @@ class MainActivity : ComponentActivity() {
             val listener = object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     if (!snapshot.exists()) {
-                        Log.w(TAG, "RTDB hotels/$hotelId/config missing — keeping kiosk=$isKioskModeEnabled")
-                        return
-                    }
-
-                    val isKioskEnabled = readKioskEnabledFromConfig(snapshot) ?: run {
                         Log.w(
                             TAG,
-                            "RTDB hotels/$hotelId/config has no isKioskModeEnabled — " +
-                                "keeping kiosk=$isKioskModeEnabled",
+                            "RTDB hotels/$hotelId/config missing — empty allowlist (no fallback)",
                         )
+                        applyLockTaskPackages(emptyList())
+                        lastAppliedAllowedPackages = emptyList()
                         return
                     }
-                    val allowedPackages = readAllowedPackagesFromConfig(snapshot)
 
-                    val kioskChanged = currentKioskState != isKioskEnabled
+                    // Packages apply independently of kiosk flag — never skip and keep stale TI list.
+                    val allowedPackages = readAllowedPackagesFromConfig(snapshot)
+                    val isKioskEnabled = readKioskEnabledFromConfig(snapshot)
+
                     val packagesChanged = lastAppliedAllowedPackages != allowedPackages
+                    val kioskChanged = isKioskEnabled != null && currentKioskState != isKioskEnabled
 
                     Log.i(
                         TAG,
@@ -339,9 +476,23 @@ class MainActivity : ComponentActivity() {
                             "kioskChanged=$kioskChanged packagesChanged=$packagesChanged",
                     )
 
-                    // Ignore no-op syncs — prevents relaunch / Lock Task churn while disabled.
+                    if (packagesChanged || lastAppliedAllowedPackages == null) {
+                        applyLockTaskPackages(allowedPackages)
+                        lastAppliedAllowedPackages = allowedPackages
+                    }
+
+                    if (isKioskEnabled == null) {
+                        Log.w(
+                            TAG,
+                            "RTDB hotels/$hotelId/config has no isKioskModeEnabled — " +
+                                "keeping kiosk=$isKioskModeEnabled (packages already applied)",
+                        )
+                        return
+                    }
+
+                    // Ignore no-op kiosk syncs — prevents relaunch / Lock Task churn.
                     if (!kioskChanged && !packagesChanged && currentKioskState != null) {
-                        Log.d(TAG, "RTDB kiosk snapshot unchanged — skip apply")
+                        Log.d(TAG, "RTDB kiosk snapshot unchanged — skip kiosk apply")
                         return
                     }
 
@@ -353,13 +504,7 @@ class MainActivity : ComponentActivity() {
                         persistKioskState(isKioskEnabled)
                         applyKeepScreenOn(isKioskEnabled)
                         if (isKioskEnabled) {
-                            try {
-                                startLockTask()
-                                Log.d("KioskMode", "Lock Task Mode ENABLED")
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                                Log.w(TAG, "startLockTask failed", e)
-                            }
+                            ensureDeviceOwnerLockTask("rtdb")
                         } else {
                             try {
                                 stopLockTask()
@@ -371,11 +516,6 @@ class MainActivity : ComponentActivity() {
                             // Unlocked: allow normal minimize — do not startActivity / reclaim.
                             KioskPolicy.markUserMinimized(this@MainActivity)
                         }
-                    }
-
-                    if (packagesChanged || lastAppliedAllowedPackages == null) {
-                        applyLockTaskPackages(allowedPackages)
-                        lastAppliedAllowedPackages = allowedPackages
                     }
                 }
 
@@ -411,6 +551,74 @@ class MainActivity : ComponentActivity() {
         kioskConfigListener = null
     }
 
+    /**
+     * Live RTDB listener on `hotels/{hotelId}/rooms/{roomNumber}`.
+     * Admin Panel sets `status=UNPAIRED` or `session_active=false` → full local logout
+     * and [PairingActivity].
+     */
+    private fun attachRoomSessionRealtimeListener(hotelId: String, roomNumber: String) {
+        try {
+            detachRoomSessionRealtimeListener()
+
+            val path = HotelSessionManager.roomSessionPath(hotelId, roomNumber)
+            val ref = FirebaseDatabase
+                .getInstance(FirebaseApp.getInstance(), RTDB_URL)
+                .getReference(path)
+            val listener = object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    if (!snapshot.exists()) {
+                        Log.d(TAG, "RTDB $path missing — keep local session")
+                        return
+                    }
+                    val status = snapshot.child("status").value
+                    val sessionActive = snapshot.child("session_active").value
+                        ?: snapshot.child("sessionActive").value
+                    Log.i(
+                        TAG,
+                        "RTDB room session → status=$status session_active=$sessionActive",
+                    )
+                    if (HotelSessionManager.isRemoteLogoutSignal(status, sessionActive)) {
+                        Log.w(TAG, "Remote logout signal — clearing session → PairingActivity")
+                        runOnUiThread {
+                            HotelSessionManager.performLogout(
+                                this@MainActivity,
+                                reason = "rtdb_remote_logout",
+                            )
+                        }
+                    }
+                }
+
+                override fun onCancelled(error: DatabaseError) {
+                    Log.e(
+                        TAG,
+                        "RTDB room session listener cancelled: ${error.message}",
+                        error.toException(),
+                    )
+                }
+            }
+            roomSessionRef = ref
+            roomSessionListener = listener
+            ref.addValueEventListener(listener)
+            Log.i(TAG, "Attached RTDB room session listener → $path")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to attach RTDB room session listener", e)
+        }
+    }
+
+    private fun detachRoomSessionRealtimeListener() {
+        val ref = roomSessionRef
+        val listener = roomSessionListener
+        if (ref != null && listener != null) {
+            try {
+                ref.removeEventListener(listener)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to remove RTDB room session listener", e)
+            }
+        }
+        roomSessionRef = null
+        roomSessionListener = null
+    }
+
     /** Prefer camelCase Admin field; accept legacy snake_case mirror. */
     private fun readKioskEnabledFromConfig(snapshot: DataSnapshot): Boolean? {
         val raw = snapshot.child("isKioskModeEnabled").value
@@ -428,23 +636,42 @@ class MainActivity : ComponentActivity() {
         val node = when {
             snapshot.hasChild("allowedPackages") -> snapshot.child("allowedPackages")
             snapshot.hasChild("allowed_packages") -> snapshot.child("allowed_packages")
-            else -> return emptyList()
+            else -> {
+                // No hotel-specific whitelist defined → empty (never invent a default list).
+                Log.i(TAG, "RTDB config has no allowedPackages — emptyList()")
+                return emptyList()
+            }
         }
-        return node.children.mapNotNull { child ->
+        // RTDB may store as list children OR a single empty placeholder.
+        val fromChildren = node.children.mapNotNull { child ->
             (child.value as? String)?.trim()?.takeIf(String::isNotEmpty)
         }
+        if (fromChildren.isNotEmpty()) return fromChildren
+
+        // Some writers store a JSON array mirrored as indexed children already handled above.
+        // Explicit empty array / null → emptyList.
+        return emptyList()
     }
 
     /**
      * Apply Lock Task package whitelist via [DevicePolicyManager.setLockTaskPackages]
      * and suppress system UI with [DevicePolicyManager.setLockTaskFeatures]
-     * (`LOCK_TASK_FEATURE_NONE`). Persists Admin packages for [KioskPolicy.canLaunchApp].
+     * (`LOCK_TASK_FEATURE_NONE`). Persists Admin packages scoped to the paired hotelId.
      */
     private fun applyLockTaskPackages(allowedPackagesList: List<String>) {
-        KioskPolicy.setAllowedPackagesList(this, allowedPackagesList)
+        val hotelId = currentHotelIdOrNull()
+        KioskPolicy.setAllowedPackagesList(this, allowedPackagesList, hotelId)
         KioskLockTask.applyAllowlist(this, allowedPackagesList)
         MyDeviceAdminReceiver.applyStrictLockTaskFeatures(this)
     }
+
+    /** Safe hotelId before/after [hotelConfig] init. */
+    private fun currentHotelIdOrNull(): String? =
+        if (::hotelConfig.isInitialized) {
+            hotelConfig.getHotelId()
+        } else {
+            HotelConfig(applicationContext).getHotelId()
+        }
 
     /**
      * Validates whether an external app may be launched.
@@ -452,12 +679,12 @@ class MainActivity : ComponentActivity() {
      * When Kiosk Mode is ON → only packages explicitly in the Admin whitelist.
      */
     fun canLaunchApp(targetPackageName: String): Boolean {
-        // If Kiosk Mode is disabled, allow launching everything
         if (!isKioskModeEnabled) return true
 
-        // If Kiosk Mode is ENABLED, check if the package is explicitly whitelisted
-        val allowedPackagesList = lastAppliedAllowedPackages
-            ?: KioskPolicy.getAllowedPackagesList(this)
+        val allowedPackagesList = (
+            lastAppliedAllowedPackages
+                ?: KioskPolicy.getAllowedPackagesList(this, currentHotelIdOrNull())
+            ) + KioskLockTask.BASELINE_LOCK_TASK_PACKAGES
         return allowedPackagesList.contains(targetPackageName)
     }
 
@@ -561,14 +788,35 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onResume() {
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
+
         super.onResume()
+        KioskPolicy.setMainActivityForeground(this, true)
         if (!screensaverVisible) {
             lastInteractionAt = System.currentTimeMillis()
         }
-        // Only re-assert Lock Task while kiosk is ON.
-        if (resolveKioskEnabled()) {
-            applyLockTaskFromPersistedState("onResume")
+
+        // UI should already be Root Home (switched before OTT launch). Cleanup only.
+        if (pendingReturnToHome ||
+            intent?.getBooleanExtra(EXTRA_NAVIGATE_TO_HOME, false) == true
+        ) {
+            finishReturnFromExternalApp()
+        } else if (KioskPolicy.isExternalAppActive(this)) {
+            // Back from YouTube / OTT without HOME extra — resume Watchdog.
+            Log.i(TAG, "onResume — clearing isExternalAppActive (returned from OTT)")
+            KioskPolicy.clearExternalAppActive(this)
+            KioskPolicy.clearOttLaunchState(this)
         }
+
+        if (resolveKioskEnabled()) {
+            ensureDeviceOwnerLockTask("onResume")
+        }
+    }
+
+    override fun onPause() {
+        KioskPolicy.setMainActivityForeground(this, false)
+        super.onPause()
     }
 
     override fun onStart() {
@@ -576,32 +824,129 @@ class MainActivity : ComponentActivity() {
         if (resolveKioskEnabled()) {
             KioskPolicy.clearUserMinimized(this)
         }
-        if (!KioskPolicy.isExternalAppSessionActive(this)) {
-            KioskPolicy.clearExternalAppSession(this)
-        }
     }
 
     override fun onNewIntent(intent: Intent) {
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
+
         super.onNewIntent(intent)
         setIntent(intent)
-        // When unlocked, ignore HOME/MAIN re-entry side effects that re-lock UI.
-        if (!resolveKioskEnabled()) {
+
+        val wantsRootHome = intent.getBooleanExtra(EXTRA_NAVIGATE_TO_HOME, false) ||
+            intent.categories?.contains(Intent.CATEGORY_HOME) == true ||
+            (intent.action == Intent.ACTION_MAIN && pendingReturnToHome)
+
+        if (!wantsRootHome && !pendingReturnToHome) return
+
+        if (!resolveKioskEnabled() &&
+            intent.getBooleanExtra(EXTRA_NAVIGATE_TO_HOME, false) != true &&
+            !pendingReturnToHome
+        ) {
             Log.d(TAG, "onNewIntent ignored — kiosk disabled")
             return
         }
-        if (intent.categories?.contains(Intent.CATEGORY_HOME) == true ||
-            intent.action == Intent.ACTION_MAIN
-        ) {
-            Log.i(TAG, "onNewIntent HOME/MAIN — hotel launcher reclaim")
-            KioskPolicy.clearExternalAppSession(this)
-            KioskPolicy.clearUserMinimized(this)
-            applyLockTaskFromPersistedState("onNewIntent")
+
+        Log.i(TAG, "onNewIntent → finishReturnFromExternalApp")
+        finishReturnFromExternalApp()
+        if (resolveKioskEnabled()) {
+            ensureDeviceOwnerLockTask("onNewIntent")
+        }
+    }
+
+    fun isOnRootHomeScreen(): Boolean = KioskPolicy.isOnRootHomeScreen(this)
+
+    /**
+     * Synchronous Root Home switch **before** YouTube/OTT [startActivity].
+     * No timers / postDelayed — Compose nav signal + prefs only (no focus steal later).
+     */
+    fun switchToRootHomeBeforeOttLaunch() {
+        pendingReturnToHome = true
+        screensaverVisible = false
+        navigateHomeSignal = System.currentTimeMillis()
+        KioskPolicy.setOnGuestHomeScreen(this, true)
+        Log.i(TAG, "switchToRootHomeBeforeOttLaunch → signal=$navigateHomeSignal")
+    }
+
+    /** @deprecated Prefer [switchToRootHomeBeforeOttLaunch]. */
+    fun markPendingReturnToHome() {
+        pendingReturnToHome = true
+    }
+
+    /**
+     * Fallback Root Home switch (cold start / HOME when not already Home).
+     */
+    fun navigateToRootHomeScreen(showCover: Boolean = true) {
+        pendingReturnToHome = false
+        KioskPolicy.clearOttLaunchState(this)
+        KioskPolicy.clearUserMinimized(this)
+        screensaverVisible = false
+        intent?.removeExtra(EXTRA_NAVIGATE_TO_HOME)
+        intent?.removeExtra(EXTRA_SOFT_HOME_RESET)
+
+        if (KioskPolicy.isOnGuestHomeScreen(this)) {
+            Log.i(TAG, "navigateToRootHomeScreen — already on guest Home, cleanup only")
+            ottTransitionCover = false
+            return
+        }
+
+        if (showCover) {
+            ottTransitionCover = true
+        }
+
+        navigateHomeSignal = System.currentTimeMillis()
+        KioskPolicy.setOnGuestHomeScreen(this, true)
+        Log.i(TAG, "navigateToRootHomeScreen → signal=$navigateHomeSignal")
+
+        window.decorView.post {
+            window.decorView.post {
+                ottTransitionCover = false
+            }
         }
     }
 
     /**
-     * Bring MainActivity to front ONLY while Kiosk Mode is ACTIVE.
-     * When [isKioskModeEnabled] is false, do nothing — allow normal minimize / Home.
+     * On return from YouTube/HOME: zero animation.
+     * Clears isExternalAppActive so Watchdog resume reclaim; if Root Home was applied
+     * before launch, do not re-navigate (no flicker).
+     */
+    private fun finishReturnFromExternalApp() {
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
+
+        val alreadyHome = KioskPolicy.isOnGuestHomeScreen(this)
+        pendingReturnToHome = false
+        // Resume Watchdog — guest is back in hotel UI.
+        KioskPolicy.clearExternalAppActive(this)
+        KioskPolicy.clearOttLaunchState(this)
+        KioskPolicy.clearUserMinimized(this)
+        screensaverVisible = false
+        intent?.removeExtra(EXTRA_NAVIGATE_TO_HOME)
+        intent?.removeExtra(EXTRA_SOFT_HOME_RESET)
+        ottTransitionCover = false
+
+        if (alreadyHome) {
+            Log.i(TAG, "Return from OTT — already on Root Home, no view switch")
+            return
+        }
+
+        Log.w(TAG, "Return from OTT — Root Home not ready, fallback switch")
+        navigateToRootHomeScreen(showCover = true)
+    }
+
+    private fun handleNavigateToHomeExtra(intent: Intent?): Boolean {
+        if (intent?.getBooleanExtra(EXTRA_NAVIGATE_TO_HOME, false) != true) {
+            return false
+        }
+        pendingReturnToHome = true
+        navigateToRootHomeScreen(showCover = true)
+        return true
+    }
+
+    /**
+     * Home-key reclaim fallback — especially important before Device Owner is provisioned
+     * (screen pinning alone cannot fully suppress Home on Android TV).
+     * When kiosk is OFF, allow normal minimize.
      */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
@@ -615,25 +960,43 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        if (KioskPolicy.isExternalAppSessionActive(this)) {
+        if (KioskPolicy.isExternalAppActive(this)) {
             Log.d(TAG, "onUserLeaveHint — OTT/IPTV session under kiosk, skip reclaim")
             return
         }
 
-        Log.d(TAG, "onUserLeaveHint — kiosk ON, reordering MainActivity to front")
+        // Already on Root Home in foreground — do not re-fire Intent (blue flash).
+        if (isOnRootHomeScreen()) {
+            Log.d(TAG, "onUserLeaveHint — already on Root Home, skip reclaim")
+            return
+        }
+
+        // Device Owner true Lock Task should already block Home; reclaim covers
+        // non–Device Owner pinning and any OEM Home leaks.
+        val isOwner = MyDeviceAdminReceiver.isDeviceOwner(this)
+        Log.d(
+            TAG,
+            "onUserLeaveHint — reclaim MainActivity (deviceOwner=$isOwner)",
+        )
         try {
             val intent = Intent(this, MainActivity::class.java).apply {
                 addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT,
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_NO_ANIMATION,
                 )
+                putExtra(EXTRA_NAVIGATE_TO_HOME, true)
             }
             startActivity(intent)
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to bring MainActivity to front after leave/Home", e)
         }
     }
 
     override fun onDestroy() {
+        detachRoomSessionRealtimeListener()
         detachKioskConfigRealtimeListener()
 
         syncListeners.forEach { registration ->
@@ -661,5 +1024,17 @@ class MainActivity : ComponentActivity() {
             "https://ikhsana-hotel-tv-default-rtdb.asia-southeast1.firebasedatabase.app"
         /** 10 minutes of no remote / touch input before the screen saver appears. */
         private const val INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000L
+
+        /**
+         * Extra from [HomeKeyInterceptorService] / Home reclaim intents.
+         * When true, Compose navigation resets to the primary guest Home screen.
+         */
+        const val EXTRA_NAVIGATE_TO_HOME = "NAVIGATE_TO_HOME"
+
+        /**
+         * Soft HOME reset while MainActivity is already foreground — avoid CLEAR_TOP
+         * / Lock Task re-assert that causes a blue window flash.
+         */
+        const val EXTRA_SOFT_HOME_RESET = "SOFT_HOME_RESET"
     }
 }
