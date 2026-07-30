@@ -94,8 +94,8 @@ class HomeKeyInterceptorService : AccessibilityService() {
             // API 29–30: use shared ActivityOptions reclaim (HOME slip fix).
             // API 31+ / others: keep direct startActivity (working path).
             if (Build.VERSION.SDK_INT in 29..30) {
-                KioskPolicy.forceBringToFront(this, navigateToHome = true)
-                Log.i(TAG, "HOME → forceBringToFront (API 29/30)")
+                KioskPolicy.forceBringToFrontSafely(this, navigateToHome = true)
+                Log.i(TAG, "HOME → forceBringToFrontSafely (API 29/30)")
                 return
             }
 

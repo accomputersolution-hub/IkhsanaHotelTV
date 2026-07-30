@@ -37,9 +37,23 @@ object KioskPolicy {
     private const val FORCE_BRING_REQUEST_CODE = 2002
     /** Shared debounce for PendingIntent reclaim (breaks pause/resume storms). */
     private const val FORCE_BRING_DEBOUNCE_MS = 500L
+    /**
+     * Hard loop guard for physical-TV / lifecycle reclaim.
+     * `onPause` → `forceBringToFront` → `onNewIntent` → `onPause` must not re-fire
+     * within this window (~50ms storms observed in logcat).
+     */
+    private const val SAFE_BRING_LOOP_GUARD_MS = 800L
 
     @Volatile
     private var lastForceBringAtMs: Long = 0L
+
+    /** True while MainActivity is inside onNewIntent / onResume reclaim handling. */
+    @Volatile
+    private var reclaimLifecycleBusy: Boolean = false
+
+    /** Wall-clock until which onPause/onStop must not fire another reclaim. */
+    @Volatile
+    private var reclaimQuietUntilMs: Long = 0L
 
     /** Product / Remote Config key name — also stored in SharedPreferences. */
     const val KEY_KIOSK_ENABLED = "is_kiosk_mode_enabled"
@@ -582,6 +596,67 @@ object KioskPolicy {
     fun isMainActivityForeground(context: Context): Boolean =
         prefs(context).getBoolean(KEY_MAIN_FOREGROUND, false)
 
+    /**
+     * Mark that MainActivity is handling [android.app.Activity.onNewIntent] /
+     * [android.app.Activity.onResume] reclaim — blocks nested forceBringToFront.
+     */
+    fun setReclaimLifecycleBusy(busy: Boolean) {
+        reclaimLifecycleBusy = busy
+        if (busy) {
+            reclaimQuietUntilMs = System.currentTimeMillis() + SAFE_BRING_LOOP_GUARD_MS
+        }
+        Log.d(TAG, "reclaimLifecycleBusy=$busy quietUntil=$reclaimQuietUntilMs")
+    }
+
+    fun isReclaimLifecycleBusy(): Boolean = reclaimLifecycleBusy
+
+    /** True during the quiet window after a reclaim was just fired. */
+    fun isInReclaimQuietPeriod(): Boolean =
+        System.currentTimeMillis() < reclaimQuietUntilMs
+
+    /**
+     * Loop-safe reclaim for lifecycle callbacks (onPause / onStop / focus-loss).
+     * Suppresses rapid-fire calls (&lt; 800ms) and skips when MainActivity is already
+     * foreground or actively handling onNewIntent / onResume.
+     */
+    fun forceBringToFrontSafely(
+        context: Context,
+        navigateToHome: Boolean = true,
+        preferImmediateOptions: Boolean = false,
+    ): Boolean {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastForceBringAtMs < SAFE_BRING_LOOP_GUARD_MS) {
+            Log.d(
+                TAG,
+                "forceBringToFrontSafely suppressed — loop guard " +
+                    "(${currentTime - lastForceBringAtMs}ms < ${SAFE_BRING_LOOP_GUARD_MS}ms)",
+            )
+            return false
+        }
+        if (reclaimLifecycleBusy) {
+            Log.d(TAG, "forceBringToFrontSafely skipped — onNewIntent/onResume in progress")
+            return false
+        }
+        if (isInReclaimQuietPeriod()) {
+            Log.d(TAG, "forceBringToFrontSafely skipped — reclaim quiet period")
+            return false
+        }
+        // Already visible — do not startActivity again (causes onPause loop).
+        if (isMainActivityForeground(context) && isProcessLifecycleStarted()) {
+            Log.d(TAG, "forceBringToFrontSafely skipped — MainActivity already foreground")
+            return false
+        }
+
+        lastForceBringAtMs = currentTime
+        reclaimQuietUntilMs = currentTime + SAFE_BRING_LOOP_GUARD_MS
+        return forceBringToFront(
+            context = context,
+            navigateToHome = navigateToHome,
+            skipDebounce = preferImmediateOptions,
+            applyLoopGuard = false, // already applied above
+        )
+    }
+
     /** Called from HotelNavGraph when the current route changes. */
     fun setOnGuestHomeScreen(context: Context, onHome: Boolean) {
         prefs(context).edit().putBoolean(KEY_ON_GUEST_HOME, onHome).apply()
@@ -775,22 +850,27 @@ object KioskPolicy {
     /**
      * Bring MainActivity to front under kiosk.
      *
-     * **API 31+ (S):** PendingIntent + debounce (unless [skipDebounce] for physical-TV fallback).
-     * **API 29–30:** ActivityOptions [startActivity] (HOME slip fix; no debounce).
-     * **API &lt; 29:** PendingIntent + debounce (unless [skipDebounce]).
+     * Prefer [forceBringToFrontSafely] from Activity lifecycle callbacks to avoid
+     * onPause ↔ onNewIntent infinite loops on physical TVs.
      *
-     * @param skipDebounce when true (physical TV / non–Device Owner focus loss), reclaim
-     *   immediately with no debounce so Home cannot flash the stock launcher.
+     * @param skipDebounce when true, use [ActivityOptions.makeBasic] immediately
+     *   (physical TV) — still respects the 800ms loop guard unless [applyLoopGuard]
+     *   is false (caller already guarded via [forceBringToFrontSafely]).
      */
     fun forceBringToFront(
         context: Context,
         navigateToHome: Boolean = true,
         requestCode: Int = FORCE_BRING_REQUEST_CODE,
         skipDebounce: Boolean = false,
+        applyLoopGuard: Boolean = true,
     ): Boolean {
         if (!isKioskModeEnabled(context)) return false
         if (isExternalAppActive(context)) {
             Log.d(TAG, "forceBringToFront skipped — OTT/external session active")
+            return false
+        }
+        if (reclaimLifecycleBusy) {
+            Log.d(TAG, "forceBringToFront skipped — reclaim lifecycle busy")
             return false
         }
 
@@ -805,62 +885,87 @@ object KioskPolicy {
             }
         }
 
-        // ——— Android 12+ (API 31+): PendingIntent (+ optional no-debounce for physical TV) ———
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (!skipDebounce) {
+        // Physical TV / fast path: ActivityOptions, but still break pause/resume storms.
+        if (skipDebounce) {
+            if (applyLoopGuard) {
                 val now = System.currentTimeMillis()
-                if (now - lastForceBringAtMs <= FORCE_BRING_DEBOUNCE_MS) {
-                    Log.d(TAG, "forceBringToFront debounced (${now - lastForceBringAtMs}ms) api=${Build.VERSION.SDK_INT}")
+                if (now - lastForceBringAtMs < SAFE_BRING_LOOP_GUARD_MS) {
+                    Log.d(
+                        TAG,
+                        "forceBringToFront skipDebounce suppressed — loop guard " +
+                            "(${now - lastForceBringAtMs}ms)",
+                    )
                     return false
                 }
                 lastForceBringAtMs = now
-            } else {
-                lastForceBringAtMs = System.currentTimeMillis()
-                Log.i(TAG, "forceBringToFront — skipDebounce (physical TV fallback)")
+                reclaimQuietUntilMs = now + SAFE_BRING_LOOP_GUARD_MS
             }
+            Log.i(TAG, "forceBringToFront — ActivityOptions (physical TV / skipDebounce)")
+            val started = startActivityImmediate(context, intent)
+            if (started) return true
+            Log.w(TAG, "forceBringToFront skipDebounce ActivityOptions failed — PendingIntent")
             return sendForceBringPendingIntent(context, appContext, intent, requestCode)
         }
 
-        // ——— Android 10 & 11 (API 29–30) only: ActivityOptions startActivity ———
-        if (Build.VERSION.SDK_INT in 29..30) {
-            return try {
-                val options = ActivityOptions.makeBasic()
-                context.startActivity(intent, options.toBundle())
-                if (context is Activity) {
-                    @Suppress("DEPRECATION")
-                    context.overridePendingTransition(0, 0)
-                }
-                Log.i(TAG, "forceBringToFront API 29/30 via ActivityOptions startActivity")
-                true
-            } catch (e: Exception) {
-                Log.w(TAG, "forceBringToFront API 29/30 ActivityOptions failed — fallback", e)
-                try {
-                    context.startActivity(intent)
-                    if (context is Activity) {
-                        @Suppress("DEPRECATION")
-                        context.overridePendingTransition(0, 0)
-                    }
-                    true
-                } catch (e2: Exception) {
-                    Log.e(TAG, "forceBringToFront API 29/30 startActivity failed", e2)
-                    false
-                }
-            }
-        }
-
-        // ——— API < 29 (Android 9): PendingIntent + debounce (unless skipDebounce) ———
-        if (!skipDebounce) {
+        // ——— Android 12+ (API 31+): PendingIntent + debounce ———
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val now = System.currentTimeMillis()
             if (now - lastForceBringAtMs <= FORCE_BRING_DEBOUNCE_MS) {
                 Log.d(TAG, "forceBringToFront debounced (${now - lastForceBringAtMs}ms) api=${Build.VERSION.SDK_INT}")
                 return false
             }
             lastForceBringAtMs = now
-        } else {
-            lastForceBringAtMs = System.currentTimeMillis()
-            Log.i(TAG, "forceBringToFront API<29 — skipDebounce (physical TV fallback)")
+            return sendForceBringPendingIntent(context, appContext, intent, requestCode)
         }
+
+        // ——— Android 10 & 11 (API 29–30) only: ActivityOptions startActivity ———
+        if (Build.VERSION.SDK_INT in 29..30) {
+            if (applyLoopGuard) {
+                val now = System.currentTimeMillis()
+                if (now - lastForceBringAtMs < SAFE_BRING_LOOP_GUARD_MS) {
+                    Log.d(TAG, "forceBringToFront API29/30 suppressed — loop guard")
+                    return false
+                }
+                lastForceBringAtMs = now
+            }
+            return startActivityImmediate(context, intent)
+        }
+
+        // ——— API < 29 (Android 9): PendingIntent + debounce ———
+        val now = System.currentTimeMillis()
+        if (now - lastForceBringAtMs <= FORCE_BRING_DEBOUNCE_MS) {
+            Log.d(TAG, "forceBringToFront debounced (${now - lastForceBringAtMs}ms) api=${Build.VERSION.SDK_INT}")
+            return false
+        }
+        lastForceBringAtMs = now
         return sendForceBringPendingIntent(context, appContext, intent, requestCode)
+    }
+
+    /** Immediate startActivity via [ActivityOptions.makeBasic] — no debounce. */
+    private fun startActivityImmediate(context: Context, intent: Intent): Boolean {
+        return try {
+            val options = ActivityOptions.makeBasic()
+            context.startActivity(intent, options.toBundle())
+            if (context is Activity) {
+                @Suppress("DEPRECATION")
+                context.overridePendingTransition(0, 0)
+            }
+            Log.i(TAG, "forceBringToFront via ActivityOptions.makeBasic() api=${Build.VERSION.SDK_INT}")
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "ActivityOptions.makeBasic startActivity failed — plain startActivity", e)
+            try {
+                context.startActivity(intent)
+                if (context is Activity) {
+                    @Suppress("DEPRECATION")
+                    context.overridePendingTransition(0, 0)
+                }
+                true
+            } catch (e2: Exception) {
+                Log.e(TAG, "forceBringToFront startActivity failed", e2)
+                false
+            }
+        }
     }
 
     /** PendingIntent reclaim used by API 31+ and API &lt; 29. */
