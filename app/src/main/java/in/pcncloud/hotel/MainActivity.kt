@@ -33,6 +33,7 @@ import `in`.pcncloud.hotel.data.model.HotelBranding
 import `in`.pcncloud.hotel.data.repository.FirestoreRepository
 import `in`.pcncloud.hotel.kiosk.HomeKeyInterceptorService
 import `in`.pcncloud.hotel.kiosk.HotelSessionManager
+import `in`.pcncloud.hotel.kiosk.KioskHotkeys
 import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
@@ -941,10 +942,9 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Capture Remote HOME / BACK even under Device Owner Lock Task Mode.
-     * Lock Task normally drops these at the OS layer; when they do reach us
-     * (or OEM delivers them to the focused Activity), force Root Home instead
-     * of letting the guest stay trapped in Entertainment / section cards.
+     * Capture Remote HOME / BACK / dedicated OTT hotkeys under kiosk.
+     * Physical TV remotes fire Netflix(247) / YouTube(288) / Prime(289) / Apps(228)
+     * which would otherwise bypass kiosk and launch stock apps.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (screensaverVisible) {
@@ -956,23 +956,38 @@ class MainActivity : ComponentActivity() {
             }
             return true
         }
-        if (event.action == KeyEvent.ACTION_DOWN) {
-            when (event.keyCode) {
-                KeyEvent.KEYCODE_HOME -> {
-                    if (isKioskModeEnabled || resolveKioskEnabled()) {
-                        // Force navigation back to Main Root Home View instead of letting OS drop it
-                        navigateToRootHome()
-                        return true
-                    }
+
+        val kioskOn = isKioskModeEnabled || resolveKioskEnabled()
+        if (kioskOn && event.action == KeyEvent.ACTION_DOWN) {
+            val keyCode = event.keyCode
+            when {
+                keyCode == KeyEvent.KEYCODE_HOME -> {
+                    navigateToRootHome()
+                    return true
                 }
-                KeyEvent.KEYCODE_BACK -> {
-                    if ((isKioskModeEnabled || resolveKioskEnabled()) && isSubViewActive()) {
-                        navigateToRootHome()
-                        return true
-                    }
+                keyCode == KeyEvent.KEYCODE_BACK && isSubViewActive() -> {
+                    navigateToRootHome()
+                    return true
+                }
+                KioskHotkeys.shouldBlockUnderKiosk(keyCode) -> {
+                    Log.i(
+                        TAG,
+                        "Blocked remote hotkey ${KioskHotkeys.label(keyCode)} " +
+                            "(keyCode=$keyCode) under kiosk",
+                    )
+                    markUserActive(dismissScreensaver = true)
+                    return true
                 }
             }
+        } else if (kioskOn && event.action == KeyEvent.ACTION_UP) {
+            // Consume UP for hotkeys so OEM does not deliver a partial shortcut.
+            if (KioskHotkeys.shouldBlockUnderKiosk(event.keyCode) ||
+                event.keyCode == KeyEvent.KEYCODE_HOME
+            ) {
+                return true
+            }
         }
+
         return super.dispatchKeyEvent(event)
     }
 
@@ -1139,6 +1154,8 @@ class MainActivity : ComponentActivity() {
                 ensureOverlayPermissionForBal()
                 // Physical TV: HOME key escapes to stock launcher without Accessibility.
                 ensureHomeKeyInterceptorEnabled()
+                // Attempt silent re-enable if WRITE_SECURE_SETTINGS was granted.
+                HomeKeyInterceptorService.tryReenableAccessibility(this)
                 if (KioskPolicy.needsPhysicalTvFallback(this)) {
                     // Full-screen overlay on any API when Device Owner is missing.
                     setupPhysicalTvFallbackOverlay()
@@ -1162,8 +1179,7 @@ class MainActivity : ComponentActivity() {
         // If reclaim is in-flight (our own forceBringToFront → onNewIntent), do not
         // fire another bringToFront — that is the infinite ~50ms lifecycle loop.
         val skipReclaim = handlingReclaimLifecycle ||
-            KioskPolicy.isReclaimLifecycleBusy() ||
-            KioskPolicy.isInReclaimQuietPeriod()
+            KioskPolicy.isReclaimLifecycleBusy()
 
         isAppInForeground = false
         KioskPolicy.setMainActivityForeground(this, false)
@@ -1171,38 +1187,23 @@ class MainActivity : ComponentActivity() {
 
         val kioskOn = KioskPolicy.isKioskModeEnabled(this)
         if (!kioskOn) return
+
+        // Intentional OTT (YouTube launched from Entertainment) — do not steal focus.
         if (KioskPolicy.isExternalAppActive(this)) return
+
         if (skipReclaim) {
-            Log.d(TAG, "onPause — skip reclaim (handling onNewIntent/onResume or quiet period)")
+            Log.d(TAG, "onPause — skip reclaim (handling onNewIntent/onResume)")
             return
         }
 
-        // Physical TV (no Device Owner): loop-safe reclaim (800ms guard).
-        if (KioskPolicy.needsPhysicalTvFallback(this)) {
-            Log.d(TAG, "onPause — physical TV fallback, safe bringToFront")
-            KioskPolicy.forceBringToFrontSafely(
-                context = this,
-                navigateToHome = true,
-                preferImmediateOptions = true,
-            )
-            return
-        }
-
-        // API 29–30: ActivityOptions reclaim (loop-safe).
-        if (Build.VERSION.SDK_INT in 29..30) {
-            Log.d(TAG, "onPause — API 29/30 kiosk reclaim")
-            KioskPolicy.forceBringToFrontSafely(this)
-            return
-        }
-
-        // API < 29: debounced reclaim — prevents onPause↔forceBringToFront storm.
-        if (Build.VERSION.SDK_INT < 29) {
-            tryLegacyKioskReclaim("onPause")
-            return
-        }
-
-        // API 31+ Device Owner path.
-        bringAppToFront()
+        // Hardware YouTube/Prime/Netflix/Apps shortcut: OS launches external app and
+        // pauses us without setting isExternalAppActive — reclaim immediately.
+        Log.i(TAG, "onPause — hardware interrupt / focus loss → forceBringToFront")
+        KioskPolicy.forceBringToFrontSafely(
+            context = this,
+            navigateToHome = true,
+            preferImmediateOptions = true,
+        )
     }
 
     override fun onStart() {

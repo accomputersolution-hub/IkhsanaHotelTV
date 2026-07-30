@@ -18,6 +18,15 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+      WRITE_SECURE_SETTINGS: KioskWatchdog re-enables HomeKeyInterceptorService when
+      OEM HOME kills accessibility. Grant once on hotel TVs:
+      adb shell pm grant in.pcncloud.hotel android.permission.WRITE_SECURE_SETTINGS
+      (Also works when the app is Device Owner on many builds.)
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <uses-feature
         android:name="android.hardware.touchscreen"

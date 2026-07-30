@@ -17,21 +17,30 @@ import androidx.core.app.NotificationCompat
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.SplashActivity
 
-        /**
-         * Foreground keep-alive for optional hotel kiosk / overlay scenarios.
-         *
-         * **Critical:** [START_STICKY] must NOT relaunch the Activity on service re-create.
-         * Bring-to-front runs only when [KioskPolicy.shouldBringAppToFront] is true
-         * (explicit kiosk mode or crash recovery) — never on ordinary minimize, and
-         * never while [KioskPolicy.isExternalAppActive] (YouTube / OTT viewing).
-         */
+/**
+ * Foreground keep-alive for hotel kiosk.
+ *
+ * - Every [ACCESSIBILITY_HEAL_INTERVAL_MS]: re-enable [HomeKeyInterceptorService]
+ *   if OEM HOME turned accessibility off while kiosk is ON.
+ * - Every [POLL_INTERVAL_MS]: optional bring-to-front when policy allows
+ *   (never while [KioskPolicy.isExternalAppActive]).
+ */
 class KioskWatchdogService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
-    private val pollRunnable = object : Runnable {
+
+    private var bringPollTicks: Int = 0
+
+    private val healRunnable = object : Runnable {
         override fun run() {
-            maybeBringToFront("watchdog_poll")
-            handler.postDelayed(this, POLL_INTERVAL_MS)
+            healAccessibilityIfNeeded()
+            // Bring-to-front less often than the 1s accessibility heal.
+            bringPollTicks++
+            if (bringPollTicks >= BRING_POLL_EVERY_N_HEALS) {
+                bringPollTicks = 0
+                maybeBringToFront("watchdog_poll")
+            }
+            handler.postDelayed(this, ACCESSIBILITY_HEAL_INTERVAL_MS)
         }
     }
 
@@ -41,7 +50,6 @@ class KioskWatchdogService : Service() {
         super.onCreate()
         Log.d(TAG, "onCreate")
         startAsForeground()
-        // Intentionally no startActivity here — sticky restarts must not pop the UI.
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -53,44 +61,60 @@ class KioskWatchdogService : Service() {
 
         when (intent?.action) {
             ACTION_STOP -> {
-                handler.removeCallbacks(pollRunnable)
+                handler.removeCallbacks(healRunnable)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
             }
-            ACTION_CHECK_NOW -> maybeBringToFront("check_now")
+            ACTION_CHECK_NOW -> {
+                healAccessibilityIfNeeded()
+                maybeBringToFront("check_now")
+            }
             else -> {
-                // Sticky re-delivery / first start: never auto-launch Activity.
                 if (KioskPolicy.isKioskModeEnabled(this)) {
-                    handler.removeCallbacks(pollRunnable)
-                    handler.postDelayed(pollRunnable, POLL_INTERVAL_MS)
+                    handler.removeCallbacks(healRunnable)
+                    handler.post(healRunnable)
                 } else {
-                    handler.removeCallbacks(pollRunnable)
-                    Log.i(TAG, "Kiosk off — watchdog will not poll for bring-to-front")
+                    handler.removeCallbacks(healRunnable)
+                    Log.i(TAG, "Kiosk off — watchdog will not poll")
                 }
             }
         }
 
-        // Survive process reclaim, but UI relaunch is gated in [maybeBringToFront].
         return START_STICKY
     }
 
     override fun onDestroy() {
-        handler.removeCallbacks(pollRunnable)
+        handler.removeCallbacks(healRunnable)
         Log.d(TAG, "onDestroy")
         super.onDestroy()
     }
 
+    /**
+     * If kiosk is ON and HomeKeyInterceptor was killed (common after OEM HOME),
+     * silently rewrite Secure settings to turn it back on.
+     */
+    private fun healAccessibilityIfNeeded() {
+        if (!KioskPolicy.isKioskModeEnabled(this)) {
+            handler.removeCallbacks(healRunnable)
+            return
+        }
+        if (HomeKeyInterceptorService.isEnabled(this)) {
+            return
+        }
+        Log.w(TAG, "HomeKeyInterceptor OFF while kiosk ON — attempting self-heal")
+        val ok = HomeKeyInterceptorService.tryReenableAccessibility(this)
+        Log.i(TAG, "Accessibility self-heal result=$ok")
+    }
+
     private fun maybeBringToFront(reason: String) {
-        // Hard gate: never steal focus from YouTube / Netflix / Live TV / etc.
         if (KioskPolicy.isExternalAppActive(this)) {
             Log.d(TAG, "maybeBringToFront skipped — isExternalAppActive=true ($reason)")
             return
         }
-        // Hard gate: never relaunch UI while kiosk is disabled.
         if (!KioskPolicy.isKioskModeEnabled(this)) {
             Log.d(TAG, "maybeBringToFront skipped — kiosk disabled ($reason)")
-            handler.removeCallbacks(pollRunnable)
+            handler.removeCallbacks(healRunnable)
             return
         }
         if (!KioskPolicy.shouldBringAppToFront(this)) {
@@ -149,7 +173,10 @@ class KioskWatchdogService : Service() {
         private const val TAG = "KioskWatchdog"
         private const val CHANNEL_ID = "hotel_tv_kiosk"
         private const val NOTIFICATION_ID = 1001
-        private const val POLL_INTERVAL_MS = 30_000L
+        /** Accessibility self-heal cadence (user requirement: every 1 second). */
+        private const val ACCESSIBILITY_HEAL_INTERVAL_MS = 1_000L
+        /** Bring-to-front every N heal ticks (~30s). */
+        private const val BRING_POLL_EVERY_N_HEALS = 30
 
         const val ACTION_CHECK_NOW = "in.pcncloud.hotel.kiosk.CHECK_NOW"
         const val ACTION_STOP = "in.pcncloud.hotel.kiosk.STOP"
