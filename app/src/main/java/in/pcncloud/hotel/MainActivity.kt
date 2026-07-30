@@ -57,8 +57,11 @@ import kotlinx.coroutines.delay
  *
  * When provisioned as **Device Owner**, [ensureDeviceOwnerLockTask] whitelists this
  * package and enters true Lock Task Mode so the physical Home key cannot reach the
- * stock Android TV launcher. Before Device Owner is set, [onUserLeaveHint] reclaims
- * the UI as a fallback.
+ * stock Android TV launcher.
+ *
+ * When Device Owner is rejected on a physical TV, [activatePhysicalTvFallback]
+ * switches smoothly to Screen Pinning ([startLockTask]) + optional full-screen
+ * overlay — never crashes on missing admin authorization.
  */
 class MainActivity : ComponentActivity() {
 
@@ -126,11 +129,14 @@ class MainActivity : ComponentActivity() {
     private var overlayPromptShown: Boolean = false
 
     /**
-     * API &lt; 30 only: 1×1 transparent overlay (SYSTEM_ALERT_WINDOW) that helps
-     * keep process privileges so HOME cannot flash the stock TV launcher.
-     * Never used on API 30+ / Android 16.
+     * API &lt; 30 Device Owner path: tiny 1×1 overlay for process privilege.
+     * Non–Device Owner physical TV: full-screen transparent overlay (any API)
+     * when [Settings.canDrawOverlays] is granted.
      */
     private var kioskOverlayView: android.view.View? = null
+
+    /** True when the attached overlay is the physical-TV full-screen fallback. */
+    private var physicalTvOverlayActive: Boolean = false
 
     private fun kioskPrefs() =
         applicationContext.getSharedPreferences(KIOSK_PREFS, Context.MODE_PRIVATE)
@@ -180,22 +186,23 @@ class MainActivity : ComponentActivity() {
                 source = KioskPolicy.KioskSource.SYSTEM_DEFAULT,
                 persistFlag = false,
             )
+            removeKioskOverlayBarrier()
             Log.d("KioskMode", "Lock Task Mode DISABLED ($reason)")
         }
     }
 
     /**
      * Device Owner path: whitelist packages + true Lock Task (Home suppressed).
-     * Non–Device Owner fallback: screen pinning via [startLockTask]; Home reclaim
-     * is handled in [onUserLeaveHint].
+     * Physical TV / Device Owner rejected: Screen Pinning + Overlay fallback
+     * via [activatePhysicalTvFallback] — never crash on missing admin component.
      */
     private fun ensureDeviceOwnerLockTask(reason: String) {
-        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        val adminComponent = MyDeviceAdminReceiver.getComponentName(this)
-        val isOwner = dpm.isDeviceOwnerApp(packageName)
+        if (!resolveKioskEnabled()) return
 
-        if (isOwner) {
+        if (KioskPolicy.isDeviceOwner(this)) {
             try {
+                val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                val adminComponent = MyDeviceAdminReceiver.getComponentName(this)
                 val hotelId = currentHotelIdOrNull()
                 val allowed = (
                     lastAppliedAllowedPackages
@@ -205,31 +212,63 @@ class MainActivity : ComponentActivity() {
 
                 dpm.setLockTaskPackages(adminComponent, packages)
                 MyDeviceAdminReceiver.applyStrictLockTaskFeatures(this)
-                startLockTask()
+                startLockTaskSafely(reason)
+                // Device Owner does not need the full-screen physical-TV overlay.
+                if (physicalTvOverlayActive) {
+                    removeKioskOverlayBarrier()
+                }
                 Log.i(
                     TAG,
                     "Device Owner Lock Task ($reason) — Home suppressed, " +
                         "packages=${packages.toList()}",
                 )
                 Log.d("KioskMode", "Lock Task Mode ENABLED ($reason / device-owner)")
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Device Owner APIs unauthorized ($reason) — physical TV fallback", e)
+                activatePhysicalTvFallback(reason)
+            } catch (e: IllegalArgumentException) {
+                Log.w(TAG, "Device Owner Lock Task rejected ($reason) — physical TV fallback", e)
+                activatePhysicalTvFallback(reason)
             } catch (e: Exception) {
-                e.printStackTrace()
-                Log.w(TAG, "Device Owner Lock Task failed ($reason)", e)
+                Log.w(TAG, "Device Owner Lock Task failed ($reason) — physical TV fallback", e)
+                activatePhysicalTvFallback(reason)
             }
         } else {
-            Log.w(
-                TAG,
-                "NOT Device Owner ($reason) — screen-pinning fallback; " +
-                    "run: adb shell dpm set-device-owner " +
-                    MyDeviceAdminReceiver.DEVICE_OWNER_COMPONENT,
-            )
-            try {
-                startLockTask()
-                Log.d("KioskMode", "Lock Task Mode ENABLED ($reason / pinning fallback)")
-            } catch (e: Exception) {
-                e.printStackTrace()
-                Log.w(TAG, "startLockTask fallback failed ($reason)", e)
-            }
+            activatePhysicalTvFallback(reason)
+        }
+    }
+
+    /**
+     * Physical TV fallback when [KioskPolicy.isDeviceOwner] is false
+     * (e.g. `adb shell dpm set-device-owner` rejected / accounts present):
+     * 1. Native [startLockTask] screen pinning
+     * 2. Full-screen transparent SYSTEM_ALERT_WINDOW overlay (if granted)
+     * Never throws admin / authorization exceptions to the guest UI.
+     */
+    private fun activatePhysicalTvFallback(reason: String) {
+        Log.w(
+            TAG,
+            "Physical TV fallback ($reason) — Screen Pinning + Overlay " +
+                "(not Device Owner; set-device-owner was rejected or unavailable)",
+        )
+        startLockTaskSafely("$reason/physical-tv")
+        setupPhysicalTvFallbackOverlay()
+        Log.d("KioskMode", "Lock Task Mode ENABLED ($reason / pinning+overlay fallback)")
+    }
+
+    /** Best-effort [startLockTask] — swallows pinning / authorization failures. */
+    private fun startLockTaskSafely(reason: String) {
+        try {
+            startLockTask()
+            Log.i(TAG, "startLockTask ok ($reason)")
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "startLockTask not permitted ($reason)", e)
+        } catch (e: SecurityException) {
+            Log.w(TAG, "startLockTask security ($reason)", e)
+        } catch (e: IllegalStateException) {
+            Log.w(TAG, "startLockTask state ($reason)", e)
+        } catch (e: Exception) {
+            Log.w(TAG, "startLockTask failed ($reason)", e)
         }
     }
 
@@ -934,10 +973,9 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Focus-loss reclaim is **API-gated** (API 31+ path must stay untouched):
-     * - API 29–30: reclaim on focus loss (HOME slip fix).
-     * - API &lt; 29: debounced legacy reclaim.
-     * - API 31+: ignore transient focus loss while still resumed.
+     * Focus-loss reclaim:
+     * - Physical TV (kiosk ON, not Device Owner): immediate bringToFront, **no debounce**.
+     * - Device Owner / API-gated paths otherwise (29–30 / &lt;29 / 31+).
      */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
@@ -946,6 +984,26 @@ class MainActivity : ComponentActivity() {
             if (!KioskPolicy.isKioskModeEnabled(this)) return
             if (KioskPolicy.isExternalAppActive(this)) {
                 Log.d(TAG, "onWindowFocusChanged — OTT session, skip reclaim")
+                return
+            }
+
+            // ——— Physical TV fallback: Screen Pinning + immediate reclaim (no debounce) ———
+            if (KioskPolicy.needsPhysicalTvFallback(this)) {
+                Log.i(TAG, "onWindowFocusChanged — physical TV fallback, immediate bringToFront")
+                try {
+                    @Suppress("DEPRECATION")
+                    sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+                } catch (e: Exception) {
+                    Log.w(TAG, "ACTION_CLOSE_SYSTEM_DIALOGS failed", e)
+                }
+                isAppInForeground = false
+                KioskPolicy.setMainActivityForeground(this, false)
+                KioskPolicy.forceBringToFront(
+                    context = this,
+                    navigateToHome = true,
+                    skipDebounce = true,
+                )
+                startLockTaskSafely("onWindowFocusChanged/physical-tv")
                 return
             }
 
@@ -961,11 +1019,7 @@ class MainActivity : ComponentActivity() {
                 isAppInForeground = false
                 KioskPolicy.setMainActivityForeground(this, false)
                 KioskPolicy.forceBringToFront(this)
-                try {
-                    startLockTask()
-                } catch (e: Exception) {
-                    Log.w(TAG, "API 29/30 startLockTask re-pin failed", e)
-                }
+                startLockTaskSafely("onWindowFocusChanged/api29-30")
                 return
             }
 
@@ -978,16 +1032,12 @@ class MainActivity : ComponentActivity() {
                     Log.w(TAG, "ACTION_CLOSE_SYSTEM_DIALOGS failed", e)
                 }
                 if (tryLegacyKioskReclaim("onWindowFocusChanged")) {
-                    try {
-                        startLockTask()
-                    } catch (e: Exception) {
-                        Log.w(TAG, "API<29 startLockTask re-pin failed", e)
-                    }
+                    startLockTaskSafely("onWindowFocusChanged/api<29")
                 }
                 return
             }
 
-            // ——— API 31+: UNTOUCHED ———
+            // ——— API 31+ Device Owner path ———
             if (isAppInForeground ||
                 lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
             ) {
@@ -1006,7 +1056,7 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        // Focus regained — re-sync Lock Task on all APIs while kiosk is ON.
+        // Focus regained — re-sync Lock Task / physical TV fallback while kiosk is ON.
         if (!resolveKioskEnabled()) return
         applyLockTaskFromPersistedState("onWindowFocusChanged")
     }
@@ -1037,6 +1087,7 @@ class MainActivity : ComponentActivity() {
         }
 
         if (resolveKioskEnabled()) {
+            // Device Owner → true Lock Task; otherwise physical TV Screen Pinning + Overlay.
             ensureDeviceOwnerLockTask("onResume")
             // Safe here: Activity is foreground — Android 12+/16 allow FGS starts.
             try {
@@ -1046,12 +1097,15 @@ class MainActivity : ComponentActivity() {
             }
             // Android 10 BAL exemption: overlay permission must be granted.
             ensureOverlayPermissionForBal()
-            // Android 9/10 only: attach overlay barrier against HOME launcher flash.
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            if (KioskPolicy.needsPhysicalTvFallback(this)) {
+                // Full-screen overlay on any API when Device Owner is missing.
+                setupPhysicalTvFallbackOverlay()
+            } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                // Device Owner + API 9/10: tiny privilege barrier only.
                 setupLegacyOverlayBarrier()
             }
         } else {
-            removeLegacyOverlayBarrier()
+            removeKioskOverlayBarrier()
         }
     }
 
@@ -1062,10 +1116,21 @@ class MainActivity : ComponentActivity() {
 
         val kioskOn = KioskPolicy.isKioskModeEnabled(this)
         if (!kioskOn) return
+        if (KioskPolicy.isExternalAppActive(this)) return
+
+        // Physical TV (no Device Owner): immediate reclaim, no debounce.
+        if (KioskPolicy.needsPhysicalTvFallback(this)) {
+            Log.d(TAG, "onPause — physical TV fallback, immediate bringToFront")
+            KioskPolicy.forceBringToFront(
+                context = this,
+                navigateToHome = true,
+                skipDebounce = true,
+            )
+            return
+        }
 
         // API 29–30: ActivityOptions reclaim (no legacy debounce).
         if (Build.VERSION.SDK_INT in 29..30) {
-            if (KioskPolicy.isExternalAppActive(this)) return
             Log.d(TAG, "onPause — API 29/30 kiosk reclaim")
             KioskPolicy.forceBringToFront(this)
             return
@@ -1077,7 +1142,7 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        // API 31+: UNTOUCHED existing reclaim path.
+        // API 31+ Device Owner path.
         bringAppToFront()
     }
 
@@ -1338,7 +1403,7 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Dynamic HOME interceptor — no system-launcher disable required.
-     * API 29–30 / API 31+ / API &lt; 29 are branched; API 31+ PendingIntent path unchanged.
+     * Physical TV (non–Device Owner): immediate reclaim with no debounce.
      */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
@@ -1357,35 +1422,39 @@ class MainActivity : ComponentActivity() {
         isAppInForeground = false
         KioskPolicy.setMainActivityForeground(this, false)
 
+        // Physical TV fallback first — keep app on top without debounce.
+        if (KioskPolicy.needsPhysicalTvFallback(this)) {
+            Log.i(TAG, "KioskInterceptor — physical TV onUserLeaveHint, immediate reclaim")
+            KioskPolicy.forceBringToFront(
+                context = this,
+                navigateToHome = true,
+                skipDebounce = true,
+            )
+            startLockTaskSafely("onUserLeaveHint/physical-tv")
+            return
+        }
+
         if (Build.VERSION.SDK_INT in 29..30) {
             Log.d(TAG, "KioskInterceptor — API 29/30 onUserLeaveHint reclaim")
             KioskPolicy.forceBringToFront(this)
-            try {
-                startLockTask()
-            } catch (e: Exception) {
-                Log.w(TAG, "API 29/30 onUserLeaveHint startLockTask failed", e)
-            }
+            startLockTaskSafely("onUserLeaveHint/api29-30")
             return
         }
 
         if (Build.VERSION.SDK_INT < 29) {
             if (tryLegacyKioskReclaim("onUserLeaveHint")) {
-                try {
-                    startLockTask()
-                } catch (e: Exception) {
-                    Log.w(TAG, "API<29 onUserLeaveHint startLockTask failed", e)
-                }
+                startLockTaskSafely("onUserLeaveHint/api<29")
             }
             return
         }
 
-        // API 31+
+        // API 31+ Device Owner
         Log.d(TAG, "KioskInterceptor — onUserLeaveHint immediate reclaim")
         KioskPolicy.forceBringToFront(this)
     }
 
     override fun onDestroy() {
-        removeLegacyOverlayBarrier()
+        removeKioskOverlayBarrier()
         detachRoomSessionRealtimeListener()
         detachKioskConfigRealtimeListener()
 
@@ -1398,11 +1467,67 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Android 9/10 only: tiny SYSTEM_ALERT_WINDOW overlay to reduce HOME launcher flash.
-     * No-ops without [Settings.canDrawOverlays] or on API 30+.
+     * Physical TV (non–Device Owner): full-screen transparent SYSTEM_ALERT_WINDOW
+     * overlay to reduce HOME / system-UI flash while Screen Pinning is active.
+     * Passes through touch / focus so guest D-pad UI stays usable.
+     * No-ops without [Settings.canDrawOverlays].
+     */
+    private fun setupPhysicalTvFallbackOverlay() {
+        if (!Settings.canDrawOverlays(this)) {
+            Log.d(TAG, "setupPhysicalTvFallbackOverlay — overlay permission missing, skip")
+            return
+        }
+        // Upgrade from 1×1 legacy barrier if present.
+        if (kioskOverlayView != null && !physicalTvOverlayActive) {
+            removeKioskOverlayBarrier()
+        }
+        if (kioskOverlayView != null && physicalTvOverlayActive) return
+
+        try {
+            val windowManager = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
+            val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                android.view.WindowManager.LayoutParams.TYPE_PHONE
+            }
+            val layoutParams = android.view.WindowManager.LayoutParams(
+                android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                type,
+                android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                android.graphics.PixelFormat.TRANSLUCENT,
+            ).apply {
+                gravity = android.view.Gravity.TOP or android.view.Gravity.START
+            }
+
+            val view = android.view.View(this).apply {
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            }
+            windowManager.addView(view, layoutParams)
+            kioskOverlayView = view
+            physicalTvOverlayActive = true
+            Log.i(
+                TAG,
+                "Physical TV full-screen overlay attached (API ${Build.VERSION.SDK_INT})",
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "setupPhysicalTvFallbackOverlay failed", e)
+            kioskOverlayView = null
+            physicalTvOverlayActive = false
+        }
+    }
+
+    /**
+     * Android 9/10 Device Owner only: tiny SYSTEM_ALERT_WINDOW overlay to reduce
+     * HOME launcher flash. No-ops without [Settings.canDrawOverlays] or on API 30+.
      */
     private fun setupLegacyOverlayBarrier() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return
+        if (physicalTvOverlayActive) return
         if (kioskOverlayView != null) return
         if (!Settings.canDrawOverlays(this)) {
             Log.d(TAG, "setupLegacyOverlayBarrier — overlay permission missing, skip")
@@ -1432,6 +1557,7 @@ class MainActivity : ComponentActivity() {
             val view = android.view.View(this)
             windowManager.addView(view, layoutParams)
             kioskOverlayView = view
+            physicalTvOverlayActive = false
             Log.i(TAG, "Legacy overlay barrier attached (API ${Build.VERSION.SDK_INT})")
         } catch (e: Exception) {
             Log.w(TAG, "setupLegacyOverlayBarrier failed", e)
@@ -1440,18 +1566,22 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Removes [kioskOverlayView] if present — safe to call from any lifecycle state. */
-    private fun removeLegacyOverlayBarrier() {
+    private fun removeKioskOverlayBarrier() {
         val view = kioskOverlayView ?: return
         try {
             val windowManager = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
             windowManager.removeView(view)
-            Log.d(TAG, "Legacy overlay barrier removed")
+            Log.d(TAG, "Kiosk overlay barrier removed (physicalTv=$physicalTvOverlayActive)")
         } catch (e: Exception) {
-            Log.w(TAG, "removeLegacyOverlayBarrier failed", e)
+            Log.w(TAG, "removeKioskOverlayBarrier failed", e)
         } finally {
             kioskOverlayView = null
+            physicalTvOverlayActive = false
         }
     }
+
+    /** @deprecated Use [removeKioskOverlayBarrier]. */
+    private fun removeLegacyOverlayBarrier() = removeKioskOverlayBarrier()
 
     private fun markUserActive(dismissScreensaver: Boolean) {
         lastInteractionAt = System.currentTimeMillis()

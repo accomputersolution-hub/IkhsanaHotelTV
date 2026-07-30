@@ -151,6 +151,27 @@ object KioskPolicy {
     }
 
     /**
+     * True when this package is provisioned as Device Owner.
+     * Never throws — physical TVs where `dpm set-device-owner` was rejected return false.
+     */
+    fun isDeviceOwner(context: Context): Boolean {
+        return try {
+            val dpm =
+                context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            dpm.isDeviceOwnerApp(context.packageName)
+        } catch (e: Exception) {
+            Log.w(TAG, "isDeviceOwner check failed — treating as non-owner", e)
+            false
+        }
+    }
+
+    /**
+     * Kiosk ON but Device Owner missing / rejected → use Screen Pinning + Overlay fallback.
+     */
+    fun needsPhysicalTvFallback(context: Context): Boolean =
+        isKioskModeEnabled(context) && !isDeviceOwner(context)
+
+    /**
      * Persist Super Admin package whitelist for [hotelId] only.
      * Never write a global/unscoped list — empty [hotelId] clears the cache.
      */
@@ -754,14 +775,18 @@ object KioskPolicy {
     /**
      * Bring MainActivity to front under kiosk.
      *
-     * **API 31+ (S):** existing PendingIntent + debounce path — do not change.
+     * **API 31+ (S):** PendingIntent + debounce (unless [skipDebounce] for physical-TV fallback).
      * **API 29–30:** ActivityOptions [startActivity] (HOME slip fix; no debounce).
-     * **API &lt; 29:** PendingIntent + debounce (Android 9 storm guard).
+     * **API &lt; 29:** PendingIntent + debounce (unless [skipDebounce]).
+     *
+     * @param skipDebounce when true (physical TV / non–Device Owner focus loss), reclaim
+     *   immediately with no debounce so Home cannot flash the stock launcher.
      */
     fun forceBringToFront(
         context: Context,
         navigateToHome: Boolean = true,
         requestCode: Int = FORCE_BRING_REQUEST_CODE,
+        skipDebounce: Boolean = false,
     ): Boolean {
         if (!isKioskModeEnabled(context)) return false
         if (isExternalAppActive(context)) {
@@ -780,14 +805,19 @@ object KioskPolicy {
             }
         }
 
-        // ——— Android 12+ (API 31+): UNTOUCHED PendingIntent + debounce path ———
+        // ——— Android 12+ (API 31+): PendingIntent (+ optional no-debounce for physical TV) ———
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val now = System.currentTimeMillis()
-            if (now - lastForceBringAtMs <= FORCE_BRING_DEBOUNCE_MS) {
-                Log.d(TAG, "forceBringToFront debounced (${now - lastForceBringAtMs}ms) api=${Build.VERSION.SDK_INT}")
-                return false
+            if (!skipDebounce) {
+                val now = System.currentTimeMillis()
+                if (now - lastForceBringAtMs <= FORCE_BRING_DEBOUNCE_MS) {
+                    Log.d(TAG, "forceBringToFront debounced (${now - lastForceBringAtMs}ms) api=${Build.VERSION.SDK_INT}")
+                    return false
+                }
+                lastForceBringAtMs = now
+            } else {
+                lastForceBringAtMs = System.currentTimeMillis()
+                Log.i(TAG, "forceBringToFront — skipDebounce (physical TV fallback)")
             }
-            lastForceBringAtMs = now
             return sendForceBringPendingIntent(context, appContext, intent, requestCode)
         }
 
@@ -818,13 +848,18 @@ object KioskPolicy {
             }
         }
 
-        // ——— API < 29 (Android 9): PendingIntent + debounce ———
-        val now = System.currentTimeMillis()
-        if (now - lastForceBringAtMs <= FORCE_BRING_DEBOUNCE_MS) {
-            Log.d(TAG, "forceBringToFront debounced (${now - lastForceBringAtMs}ms) api=${Build.VERSION.SDK_INT}")
-            return false
+        // ——— API < 29 (Android 9): PendingIntent + debounce (unless skipDebounce) ———
+        if (!skipDebounce) {
+            val now = System.currentTimeMillis()
+            if (now - lastForceBringAtMs <= FORCE_BRING_DEBOUNCE_MS) {
+                Log.d(TAG, "forceBringToFront debounced (${now - lastForceBringAtMs}ms) api=${Build.VERSION.SDK_INT}")
+                return false
+            }
+            lastForceBringAtMs = now
+        } else {
+            lastForceBringAtMs = System.currentTimeMillis()
+            Log.i(TAG, "forceBringToFront API<29 — skipDebounce (physical TV fallback)")
         }
-        lastForceBringAtMs = now
         return sendForceBringPendingIntent(context, appContext, intent, requestCode)
     }
 
