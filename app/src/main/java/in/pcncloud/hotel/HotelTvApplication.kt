@@ -7,25 +7,37 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import `in`.pcncloud.hotel.kiosk.HomeKeyInterceptorService
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
-import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
 import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
 
 /**
  * Process-wide lifecycle + crash bookkeeping for kiosk bring-to-front gating.
+ *
+ * Do **not** start [KioskWatchdogService] here — Android 12+ / 16 blocks
+ * foreground-service starts from [Application.onCreate] (Background FGS
+ * restrictions). Watchdog is started from [MainActivity.onResume] once UI is visible.
  */
 class HotelTvApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        MyDeviceAdminReceiver.logProvisioningDiagnostics(this)
-        HomeKeyInterceptorService.logStatus(this)
-        KioskPolicy.onProcessStart(this)
+        try {
+            MyDeviceAdminReceiver.logProvisioningDiagnostics(this)
+        } catch (e: Exception) {
+            Log.w(TAG, "logProvisioningDiagnostics failed during Application.onCreate", e)
+        }
+        try {
+            HomeKeyInterceptorService.logStatus(this)
+        } catch (e: Exception) {
+            Log.w(TAG, "HomeKeyInterceptorService.logStatus failed during Application.onCreate", e)
+        }
+        try {
+            KioskPolicy.onProcessStart(this)
+        } catch (e: Exception) {
+            // Direct Boot / CE storage must never crash the process.
+            Log.w(TAG, "KioskPolicy.onProcessStart failed during Application.onCreate", e)
+        }
         installCrashMarker()
         observeProcessLifecycle()
-
-        if (KioskPolicy.isKioskModeEnabled(this)) {
-            KioskWatchdogService.start(this)
-        }
     }
 
     private fun installCrashMarker() {
@@ -51,6 +63,13 @@ class HotelTvApplication : Application() {
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
+                    // Under kiosk, brief Home task-switches must NOT stick as "user minimized"
+                    // (that raced with reclaim skips and let Process ON_STOP escape).
+                    if (KioskPolicy.isKioskModeEnabled(this@HotelTvApplication)) {
+                        KioskPolicy.markCleanExit(this@HotelTvApplication)
+                        Log.d(TAG, "Process ON_STOP — kiosk ON, skip markUserMinimized")
+                        return
+                    }
                     // Do not treat OTT viewing as "user minimized" — watchdog must stay quiet.
                     if (!KioskPolicy.isExternalAppActive(this@HotelTvApplication)) {
                         KioskPolicy.markUserMinimized(this@HotelTvApplication)

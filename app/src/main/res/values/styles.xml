@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+      Boot window theme for MainActivity (manifest only).
+      Paints [splash_background] instantly at the OS level; MainActivity.onCreate
+      then calls setTheme(Theme.IkhsanaHotelTV) before setContent — no SplashScreen API.
+    -->
+    <style name="Theme.HotelTv.BootSplash" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@drawable/splash_background</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowDisablePreview">false</item>
+        <item name="android:windowAnimationStyle">@style/Theme.IkhsanaHotelTV.NoAnimation</item>
+        <item name="android:defaultFocusHighlightEnabled">false</item>
+        <item name="android:colorControlHighlight">@android:color/transparent</item>
+        <item name="colorControlHighlight">@android:color/transparent</item>
+    </style>
+
+</resources>

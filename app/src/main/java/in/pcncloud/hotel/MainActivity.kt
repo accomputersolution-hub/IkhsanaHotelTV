@@ -4,6 +4,8 @@ import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
@@ -33,6 +35,7 @@ import `in`.pcncloud.hotel.kiosk.HomeKeyInterceptorService
 import `in`.pcncloud.hotel.kiosk.HotelSessionManager
 import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
+import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
 import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.ScreensaverOverlay
@@ -106,15 +109,45 @@ class MainActivity : ComponentActivity() {
      */
     private var ottTransitionCover by mutableStateOf(false)
 
+    /**
+     * Local foreground gate — blocks self-reclaim loops while MainActivity is already
+     * active. Synced to [KioskPolicy.setMainActivityForeground] for Watchdog.
+     */
+    private var isAppInForeground: Boolean = false
+
+    /**
+     * API &lt; 30: debounce + in-flight guard for pause/resume reclaim storms
+     * (forceBringToFront → onNewIntent/onResume → onPause → …).
+     */
+    private var lastReclaimTimeMs: Long = 0L
+    private var reclaimInFlight: Boolean = false
+
+    /** Avoid repeatedly opening overlay settings when SYSTEM_ALERT_WINDOW is missing. */
+    private var overlayPromptShown: Boolean = false
+
+    /**
+     * API &lt; 30 only: 1×1 transparent overlay (SYSTEM_ALERT_WINDOW) that helps
+     * keep process privileges so HOME cannot flash the stock TV launcher.
+     * Never used on API 30+ / Android 16.
+     */
+    private var kioskOverlayView: android.view.View? = null
+
     private fun kioskPrefs() =
         applicationContext.getSharedPreferences(KIOSK_PREFS, Context.MODE_PRIVATE)
 
     /**
-     * Authoritative local kiosk flag: in-memory RTDB value, else SharedPreferences.
-     * Default **false** so a missing/stale preference never re-locks after Admin unlock.
+     * Authoritative local kiosk flag from SharedPreferences (RTDB + Admin toggle).
+     * Always re-sync memory from prefs so a local Admin unlock is not overwritten by
+     * a stale [currentKioskState] on resume / Lock Task re-apply (Android 9/11).
      */
-    private fun resolveKioskEnabled(): Boolean =
-        currentKioskState ?: kioskPrefs().getBoolean(PREF_KIOSK_ENABLED, false)
+    private fun resolveKioskEnabled(): Boolean {
+        val fromPrefs = kioskPrefs().getBoolean(PREF_KIOSK_ENABLED, false)
+        if (currentKioskState != fromPrefs) {
+            currentKioskState = fromPrefs
+            isKioskModeEnabled = fromPrefs
+        }
+        return fromPrefs
+    }
 
     /** Persist cloud kiosk flag locally so resume/focus cannot re-enable after unlock. */
     private fun persistKioskState(enabled: Boolean) {
@@ -141,13 +174,13 @@ class MainActivity : ComponentActivity() {
         if (isKioskEnabled) {
             ensureDeviceOwnerLockTask(reason)
         } else {
-            try {
-                stopLockTask()
-                Log.d("KioskMode", "Lock Task Mode DISABLED ($reason)")
-            } catch (e: Exception) {
-                e.printStackTrace()
-                Log.w(TAG, "stopLockTask failed ($reason)", e)
-            }
+            // Android 9/11: must clear DPM Lock Task packages, not only stopLockTask.
+            KioskPolicy.disableKioskMode(
+                activity = this,
+                source = KioskPolicy.KioskSource.SYSTEM_DEFAULT,
+                persistFlag = false,
+            )
+            Log.d("KioskMode", "Lock Task Mode DISABLED ($reason)")
         }
     }
 
@@ -201,7 +234,13 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Manifest uses Theme.HotelTv.BootSplash (instant black+logo window).
+        // Switch to the main theme before inflating so Compose draws under IkhsanaHotelTV.
+        setTheme(R.style.Theme_IkhsanaHotelTV)
         super.onCreate(savedInstanceState)
+
+        // LOCKED_BOOT_COMPLETED / Keyguard: show over lock + wake display.
+        enableShowOverLockScreen()
 
         if (FirebaseApp.getApps(this).isEmpty()) {
             FirebaseApp.initializeApp(this)
@@ -318,6 +357,53 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Complements manifest [android:showWhenLocked] / [android:turnScreenOn] so
+     * MainActivity can render during Direct Boot / LOCKED_BOOT_COMPLETED when
+     * Keyguard would otherwise keep the window invisible.
+     */
+    private fun enableShowOverLockScreen() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(true)
+                setTurnScreenOn(true)
+            } else {
+                @Suppress("DEPRECATION")
+                window.addFlags(
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "enableShowOverLockScreen failed", e)
+        }
+    }
+
+    /**
+     * Android 10+ (API 29+): [SYSTEM_ALERT_WINDOW] grants a BAL exemption for
+     * background Home reclaim. Prompt once if missing (SplashActivity also requests).
+     */
+    private fun ensureOverlayPermissionForBal() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        if (Settings.canDrawOverlays(this)) return
+        if (overlayPromptShown) return
+        overlayPromptShown = true
+        Log.w(
+            TAG,
+            "SYSTEM_ALERT_WINDOW missing — required for Android 10+ HOME reclaim BAL exemption",
+        )
+        try {
+            startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName"),
+                ),
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to open overlay permission settings", e)
         }
     }
 
@@ -507,17 +593,16 @@ class MainActivity : ComponentActivity() {
                         if (isKioskEnabled) {
                             ensureDeviceOwnerLockTask("rtdb")
                         } else {
-                            // Unlock: stop Lock Task first, then background (no GTPL intents).
-                            try {
-                                stopLockTask()
-                                Log.d("KioskMode", "Lock Task Mode DISABLED")
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                                Log.w(TAG, "stopLockTask failed", e)
-                            }
+                            // Unlock: stop Lock Task + clear DPM whitelist (Android 9/11 OTT fix).
+                            KioskPolicy.disableKioskMode(
+                                activity = this@MainActivity,
+                                source = KioskPolicy.KioskSource.REALTIME_DATABASE,
+                                persistFlag = false,
+                            )
+                            Log.d("KioskMode", "Lock Task Mode DISABLED")
                             KioskPolicy.markUserMinimized(this@MainActivity)
                             if (turningOff) {
-                                Log.i(TAG, "Kiosk OFF via RTDB — stopLockTask + moveTaskToBack")
+                                Log.i(TAG, "Kiosk OFF via RTDB — disableKioskMode + moveTaskToBack")
                                 KioskPolicy.launchSystemDefaultLauncher(this@MainActivity)
                             }
                         }
@@ -662,10 +747,18 @@ class MainActivity : ComponentActivity() {
      * Apply Lock Task package whitelist via [DevicePolicyManager.setLockTaskPackages]
      * and suppress system UI with [DevicePolicyManager.setLockTaskFeatures]
      * (`LOCK_TASK_FEATURE_NONE`). Persists Admin packages scoped to the paired hotelId.
+     *
+     * When kiosk is OFF, packages are persisted for later but the live DPM whitelist
+     * is cleared so Android 9/11 do not keep blocking OTT with "Unauthorized by Admin".
      */
     private fun applyLockTaskPackages(allowedPackagesList: List<String>) {
         val hotelId = currentHotelIdOrNull()
         KioskPolicy.setAllowedPackagesList(this, allowedPackagesList, hotelId)
+        if (!resolveKioskEnabled()) {
+            KioskPolicy.clearDeviceOwnerLockTaskPackages(this)
+            Log.d(TAG, "applyLockTaskPackages — kiosk OFF, DPM whitelist cleared")
+            return
+        }
         KioskLockTask.applyAllowlist(this, allowedPackagesList)
         MyDeviceAdminReceiver.applyStrictLockTaskFeatures(this)
     }
@@ -704,9 +797,13 @@ class MainActivity : ComponentActivity() {
                 Log.d("KioskMode", "Lock Task Mode ENABLED")
                 Log.i(TAG, "startLockTask() — Home/Back locked")
             } else {
-                stopLockTask()
+                KioskPolicy.disableKioskMode(
+                    activity = this,
+                    source = KioskPolicy.KioskSource.SYSTEM_DEFAULT,
+                    persistFlag = false,
+                )
                 Log.d("KioskMode", "Lock Task Mode DISABLED")
-                Log.i(TAG, "stopLockTask() — normal navigation restored")
+                Log.i(TAG, "disableKioskMode() — normal navigation restored")
             }
         } catch (e: IllegalArgumentException) {
             Log.w(TAG, "Lock Task not permitted (not device-owner / not allowlisted)", e)
@@ -752,7 +849,12 @@ class MainActivity : ComponentActivity() {
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
                     if (isKioskActive()) {
-                        Log.d(TAG, "Kiosk safety-net: Back blocked at Activity")
+                        if (isSubViewActive()) {
+                            // Entertainment / section cards — return to Root Home
+                            navigateToRootHome()
+                        } else {
+                            Log.d(TAG, "Kiosk safety-net: Back blocked at Root Home")
+                        }
                     } else {
                         Log.d(TAG, "Kiosk off safety-net: moveTaskToBack")
                         moveTaskToBack(true)
@@ -767,6 +869,12 @@ class MainActivity : ComponentActivity() {
         markUserActive(dismissScreensaver = true)
     }
 
+    /**
+     * Capture Remote HOME / BACK even under Device Owner Lock Task Mode.
+     * Lock Task normally drops these at the OS layer; when they do reach us
+     * (or OEM delivers them to the focused Activity), force Root Home instead
+     * of letting the guest stay trapped in Entertainment / section cards.
+     */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (screensaverVisible) {
             // Consume every remote key so dining/services focus does not move;
@@ -777,8 +885,35 @@ class MainActivity : ComponentActivity() {
             }
             return true
         }
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_HOME -> {
+                    if (isKioskModeEnabled || resolveKioskEnabled()) {
+                        // Force navigation back to Main Root Home View instead of letting OS drop it
+                        navigateToRootHome()
+                        return true
+                    }
+                }
+                KeyEvent.KEYCODE_BACK -> {
+                    if ((isKioskModeEnabled || resolveKioskEnabled()) && isSubViewActive()) {
+                        navigateToRootHome()
+                        return true
+                    }
+                }
+            }
+        }
         return super.dispatchKeyEvent(event)
     }
+
+    /** In-app Root Home switch for Lock Task key capture (no OTT cover flash). */
+    private fun navigateToRootHome() {
+        markUserActive(dismissScreensaver = true)
+        Log.i(TAG, "navigateToRootHome — HOME/BACK under Lock Task → Root Home")
+        navigateToRootHomeScreen(showCover = false)
+    }
+
+    /** True when Compose is on Entertainment / Dining / Services / etc. (not guest Home). */
+    private fun isSubViewActive(): Boolean = !KioskPolicy.isOnGuestHomeScreen(this)
 
     /**
      * When kiosk is OFF, HOME releases Lock Task and backgrounds this app
@@ -786,12 +921,12 @@ class MainActivity : ComponentActivity() {
      */
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_HOME && !resolveKioskEnabled()) {
-            Log.i(TAG, "onKeyDown HOME — kiosk OFF → stopLockTask + moveTaskToBack")
-            try {
-                stopLockTask()
-            } catch (e: Exception) {
-                Log.w(TAG, "stopLockTask on HOME (kiosk off)", e)
-            }
+            Log.i(TAG, "onKeyDown HOME — kiosk OFF → disableKioskMode + moveTaskToBack")
+            KioskPolicy.disableKioskMode(
+                activity = this,
+                source = KioskPolicy.KioskSource.SYSTEM_DEFAULT,
+                persistFlag = false,
+            )
             KioskPolicy.launchSystemDefaultLauncher(this)
             return true
         }
@@ -799,23 +934,68 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Android 9/10: focus is lost to the TV launcher *before* [onPause] finishes, while
-     * window animations still run (~5–6s flash). Collapse system dialogs and reclaim
-     * immediately when focus drops under kiosk — earlier than [onUserLeaveHint]/[onPause].
-     * When focus returns, re-sync Lock Task.
+     * Focus-loss reclaim is **API-gated** (API 31+ path must stay untouched):
+     * - API 29–30: reclaim on focus loss (HOME slip fix).
+     * - API &lt; 29: debounced legacy reclaim.
+     * - API 31+: ignore transient focus loss while still resumed.
      */
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
 
         if (!hasFocus) {
-            val isKioskActive = KioskPolicy.isKioskModeEnabled(this)
-            if (!isKioskActive) return
+            if (!KioskPolicy.isKioskModeEnabled(this)) return
             if (KioskPolicy.isExternalAppActive(this)) {
                 Log.d(TAG, "onWindowFocusChanged — OTT session, skip reclaim")
                 return
             }
 
-            Log.d(TAG, "onWindowFocusChanged — focus lost under kiosk, reclaim now")
+            // ——— API 29 & 30 only: reclaim on focus loss (do not skip while "resumed") ———
+            if (Build.VERSION.SDK_INT in 29..30) {
+                Log.d(TAG, "onWindowFocusChanged — API 29/30 focus lost, reclaim")
+                try {
+                    @Suppress("DEPRECATION")
+                    sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+                } catch (e: Exception) {
+                    Log.w(TAG, "ACTION_CLOSE_SYSTEM_DIALOGS failed", e)
+                }
+                isAppInForeground = false
+                KioskPolicy.setMainActivityForeground(this, false)
+                KioskPolicy.forceBringToFront(this)
+                try {
+                    startLockTask()
+                } catch (e: Exception) {
+                    Log.w(TAG, "API 29/30 startLockTask re-pin failed", e)
+                }
+                return
+            }
+
+            // ——— API < 29 (Android 9): debounced legacy reclaim ———
+            if (Build.VERSION.SDK_INT < 29) {
+                try {
+                    @Suppress("DEPRECATION")
+                    sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+                } catch (e: Exception) {
+                    Log.w(TAG, "ACTION_CLOSE_SYSTEM_DIALOGS failed", e)
+                }
+                if (tryLegacyKioskReclaim("onWindowFocusChanged")) {
+                    try {
+                        startLockTask()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "API<29 startLockTask re-pin failed", e)
+                    }
+                }
+                return
+            }
+
+            // ——— API 31+: UNTOUCHED ———
+            if (isAppInForeground ||
+                lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+            ) {
+                Log.d(TAG, "onWindowFocusChanged — API31+ transient focus loss, skip reclaim")
+                return
+            }
+
+            Log.d(TAG, "onWindowFocusChanged — API31+ focus lost under kiosk, reclaim now")
             try {
                 @Suppress("DEPRECATION")
                 sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
@@ -826,6 +1006,7 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        // Focus regained — re-sync Lock Task on all APIs while kiosk is ON.
         if (!resolveKioskEnabled()) return
         applyLockTaskFromPersistedState("onWindowFocusChanged")
     }
@@ -835,12 +1016,15 @@ class MainActivity : ComponentActivity() {
         overridePendingTransition(0, 0)
 
         super.onResume()
+        reclaimInFlight = false
+        isAppInForeground = true
         KioskPolicy.setMainActivityForeground(this, true)
         if (!screensaverVisible) {
             lastInteractionAt = System.currentTimeMillis()
         }
 
         // UI should already be Root Home (switched before OTT launch). Cleanup only.
+        // Do NOT call bringAppToFront() here — already active.
         if (pendingReturnToHome ||
             intent?.getBooleanExtra(EXTRA_NAVIGATE_TO_HOME, false) == true
         ) {
@@ -854,23 +1038,82 @@ class MainActivity : ComponentActivity() {
 
         if (resolveKioskEnabled()) {
             ensureDeviceOwnerLockTask("onResume")
+            // Safe here: Activity is foreground — Android 12+/16 allow FGS starts.
+            try {
+                KioskWatchdogService.start(this)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start KioskWatchdogService", e)
+            }
+            // Android 10 BAL exemption: overlay permission must be granted.
+            ensureOverlayPermissionForBal()
+            // Android 9/10 only: attach overlay barrier against HOME launcher flash.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                setupLegacyOverlayBarrier()
+            }
+        } else {
+            removeLegacyOverlayBarrier()
         }
     }
 
     override fun onPause() {
+        isAppInForeground = false
         KioskPolicy.setMainActivityForeground(this, false)
         super.onPause()
-        // Android 9/10: HOME can wait ~10s on task-transition animations.
-        // Reclaim from onPause (in addition to onUserLeaveHint) with NO_ANIMATION.
-        if (KioskPolicy.isKioskModeEnabled(this)) {
-            bringAppToFront()
+
+        val kioskOn = KioskPolicy.isKioskModeEnabled(this)
+        if (!kioskOn) return
+
+        // API 29–30: ActivityOptions reclaim (no legacy debounce).
+        if (Build.VERSION.SDK_INT in 29..30) {
+            if (KioskPolicy.isExternalAppActive(this)) return
+            Log.d(TAG, "onPause — API 29/30 kiosk reclaim")
+            KioskPolicy.forceBringToFront(this)
+            return
         }
+
+        // API < 29: debounced reclaim — prevents onPause↔forceBringToFront storm.
+        if (Build.VERSION.SDK_INT < 29) {
+            tryLegacyKioskReclaim("onPause")
+            return
+        }
+
+        // API 31+: UNTOUCHED existing reclaim path.
+        bringAppToFront()
     }
 
     override fun onStart() {
         super.onStart()
+        isAppInForeground = true
+        KioskPolicy.setMainActivityForeground(this, true)
         if (resolveKioskEnabled()) {
             KioskPolicy.clearUserMinimized(this)
+        }
+    }
+
+    override fun onStop() {
+        isAppInForeground = false
+        KioskPolicy.setMainActivityForeground(this, false)
+        super.onStop()
+
+        // API 31+: UNTOUCHED — no onStop reclaim.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return
+
+        // API 29–30: post reclaim after Home task-switch.
+        if (Build.VERSION.SDK_INT in 29..30) {
+            if (KioskPolicy.isExternalAppActive(this)) return
+            Log.d(TAG, "onStop — API 29/30 kiosk reclaim (post)")
+            window.decorView.post {
+                if (!KioskPolicy.isKioskModeEnabled(this@MainActivity)) return@post
+                if (KioskPolicy.isExternalAppActive(this@MainActivity)) return@post
+                KioskPolicy.forceBringToFront(this@MainActivity)
+            }
+            return
+        }
+
+        // API < 29: post + debounced reclaim.
+        Log.d(TAG, "onStop — API<29 kiosk reclaim (post+PendingIntent)")
+        window.decorView.post {
+            tryLegacyKioskReclaim("onStop")
         }
     }
 
@@ -894,14 +1137,14 @@ class MainActivity : ComponentActivity() {
             (intent.action == Intent.ACTION_MAIN &&
                 intent.hasCategory(Intent.CATEGORY_HOME))
 
-        // Kiosk OFF + HOME → unpin and background (do not start invalid launchers).
+        // Kiosk OFF + HOME → unpin, clear DPM whitelist, and background.
         if (!isKioskActive && isHomeIntent) {
-            Log.i(TAG, "onNewIntent HOME while kiosk OFF — stopLockTask + moveTaskToBack")
-            try {
-                stopLockTask()
-            } catch (e: Exception) {
-                Log.w(TAG, "stopLockTask onNewIntent (kiosk off)", e)
-            }
+            Log.i(TAG, "onNewIntent HOME while kiosk OFF — disableKioskMode + moveTaskToBack")
+            KioskPolicy.disableKioskMode(
+                activity = this,
+                source = KioskPolicy.KioskSource.SYSTEM_DEFAULT,
+                persistFlag = false,
+            )
             KioskPolicy.launchSystemDefaultLauncher(this)
             return
         }
@@ -1017,9 +1260,10 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Instant kiosk reclaim for Android 9/10 — [FLAG_ACTIVITY_NO_ANIMATION] plus
-     * [overridePendingTransition](0, 0) bypasses the ~10s task-transition wait after HOME.
-     * No-ops when kiosk is OFF or an intentional OTT/IPTV session is active.
+     * Instant kiosk reclaim.
+     * API 29–30 → [KioskPolicy.forceBringToFront] (ActivityOptions).
+     * API &lt; 29 → [tryLegacyKioskReclaim].
+     * API 31+ → PendingIntent path inside [KioskPolicy.forceBringToFront] (untouched).
      */
     private fun bringAppToFront() {
         val isKioskActive = KioskPolicy.isKioskModeEnabled(this)
@@ -1032,27 +1276,69 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        Log.d(TAG, "KioskInterceptor — forcing MainActivity to front (no animation)")
-        try {
-            val intent = Intent(this, MainActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                putExtra(EXTRA_NAVIGATE_TO_HOME, true)
-            }
-            startActivity(intent)
-            @Suppress("DEPRECATION")
-            overridePendingTransition(0, 0)
-        } catch (e: Exception) {
-            Log.w(TAG, "KioskInterceptor — failed to bring MainActivity to front", e)
+        if (Build.VERSION.SDK_INT in 29..30) {
+            Log.d(TAG, "KioskInterceptor — API 29/30 reclaim")
+            isAppInForeground = false
+            KioskPolicy.setMainActivityForeground(this, false)
+            KioskPolicy.forceBringToFront(this)
+            return
         }
+
+        if (Build.VERSION.SDK_INT < 29) {
+            tryLegacyKioskReclaim("bringAppToFront")
+            return
+        }
+
+        // API 31+
+        Log.d(TAG, "KioskInterceptor — forcing MainActivity to front (PendingIntent)")
+        isAppInForeground = false
+        KioskPolicy.setMainActivityForeground(this, false)
+        KioskPolicy.forceBringToFront(this)
+    }
+
+    /**
+     * API &lt; 29 only: reclaim with 500ms debounce + in-flight guard.
+     * API 29–30 bypasses this (see [KioskPolicy.forceBringToFront]).
+     * API 31+ never enters here.
+     */
+    private fun tryLegacyKioskReclaim(reason: String): Boolean {
+        if (Build.VERSION.SDK_INT >= 29) return false
+        if (!KioskPolicy.isKioskModeEnabled(this)) return false
+        if (KioskPolicy.isExternalAppActive(this)) {
+            Log.d(TAG, "KioskInterceptor — OTT session, skip reclaim ($reason)")
+            return false
+        }
+        if (reclaimInFlight) {
+            Log.d(TAG, "KioskInterceptor — reclaim in-flight, skip ($reason)")
+            return false
+        }
+        if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) &&
+            reason != "onUserLeaveHint"
+        ) {
+            Log.d(TAG, "KioskInterceptor — already RESUMED, skip reclaim ($reason)")
+            return false
+        }
+
+        val now = System.currentTimeMillis()
+        if (now - lastReclaimTimeMs <= RECLAIM_DEBOUNCE_MS) {
+            Log.d(TAG, "KioskInterceptor — reclaim debounced ($reason)")
+            return false
+        }
+        lastReclaimTimeMs = now
+        reclaimInFlight = true
+        isAppInForeground = false
+        KioskPolicy.setMainActivityForeground(this, false)
+        Log.d(TAG, "KioskInterceptor — legacy reclaim ($reason)")
+        val ok = KioskPolicy.forceBringToFront(this)
+        if (!ok) {
+            reclaimInFlight = false
+        }
+        return ok
     }
 
     /**
      * Dynamic HOME interceptor — no system-launcher disable required.
-     * Kiosk ON → instantly reorder MainActivity to front (see [bringAppToFront]).
-     * Kiosk OFF → allow default TV home / normal minimization.
+     * API 29–30 / API 31+ / API &lt; 29 are branched; API 31+ PendingIntent path unchanged.
      */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
@@ -1063,10 +1349,43 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        bringAppToFront()
+        if (KioskPolicy.isExternalAppActive(this)) {
+            Log.d(TAG, "KioskInterceptor — OTT/IPTV session, skip onUserLeaveHint reclaim")
+            return
+        }
+
+        isAppInForeground = false
+        KioskPolicy.setMainActivityForeground(this, false)
+
+        if (Build.VERSION.SDK_INT in 29..30) {
+            Log.d(TAG, "KioskInterceptor — API 29/30 onUserLeaveHint reclaim")
+            KioskPolicy.forceBringToFront(this)
+            try {
+                startLockTask()
+            } catch (e: Exception) {
+                Log.w(TAG, "API 29/30 onUserLeaveHint startLockTask failed", e)
+            }
+            return
+        }
+
+        if (Build.VERSION.SDK_INT < 29) {
+            if (tryLegacyKioskReclaim("onUserLeaveHint")) {
+                try {
+                    startLockTask()
+                } catch (e: Exception) {
+                    Log.w(TAG, "API<29 onUserLeaveHint startLockTask failed", e)
+                }
+            }
+            return
+        }
+
+        // API 31+
+        Log.d(TAG, "KioskInterceptor — onUserLeaveHint immediate reclaim")
+        KioskPolicy.forceBringToFront(this)
     }
 
     override fun onDestroy() {
+        removeLegacyOverlayBarrier()
         detachRoomSessionRealtimeListener()
         detachKioskConfigRealtimeListener()
 
@@ -1076,6 +1395,62 @@ class MainActivity : ComponentActivity() {
         syncListeners.clear()
         Log.d(TAG, "MainActivity sync listeners removed")
         super.onDestroy()
+    }
+
+    /**
+     * Android 9/10 only: tiny SYSTEM_ALERT_WINDOW overlay to reduce HOME launcher flash.
+     * No-ops without [Settings.canDrawOverlays] or on API 30+.
+     */
+    private fun setupLegacyOverlayBarrier() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return
+        if (kioskOverlayView != null) return
+        if (!Settings.canDrawOverlays(this)) {
+            Log.d(TAG, "setupLegacyOverlayBarrier — overlay permission missing, skip")
+            return
+        }
+
+        try {
+            val windowManager = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
+            val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                android.view.WindowManager.LayoutParams.TYPE_PHONE
+            }
+            val layoutParams = android.view.WindowManager.LayoutParams(
+                1,
+                1,
+                type,
+                android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                android.graphics.PixelFormat.TRANSPARENT,
+            ).apply {
+                gravity = android.view.Gravity.TOP or android.view.Gravity.START
+            }
+
+            val view = android.view.View(this)
+            windowManager.addView(view, layoutParams)
+            kioskOverlayView = view
+            Log.i(TAG, "Legacy overlay barrier attached (API ${Build.VERSION.SDK_INT})")
+        } catch (e: Exception) {
+            Log.w(TAG, "setupLegacyOverlayBarrier failed", e)
+            kioskOverlayView = null
+        }
+    }
+
+    /** Removes [kioskOverlayView] if present — safe to call from any lifecycle state. */
+    private fun removeLegacyOverlayBarrier() {
+        val view = kioskOverlayView ?: return
+        try {
+            val windowManager = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
+            windowManager.removeView(view)
+            Log.d(TAG, "Legacy overlay barrier removed")
+        } catch (e: Exception) {
+            Log.w(TAG, "removeLegacyOverlayBarrier failed", e)
+        } finally {
+            kioskOverlayView = null
+        }
     }
 
     private fun markUserActive(dismissScreensaver: Boolean) {
@@ -1090,6 +1465,8 @@ class MainActivity : ComponentActivity() {
         private const val KIOSK_PREFS = "hotel_tv_kiosk"
         /** SharedPreferences key — matches Admin Panel / RTDB field name. */
         private const val PREF_KIOSK_ENABLED = "isKioskModeEnabled"
+        /** API &lt; 30: min gap between reclaim attempts (breaks pause/resume storms). */
+        private const val RECLAIM_DEBOUNCE_MS = 500L
         /** Must match admin-panel RTDB region (google-services.json may still list us-central). */
         private const val RTDB_URL =
             "https://ikhsana-hotel-tv-default-rtdb.asia-southeast1.firebasedatabase.app"

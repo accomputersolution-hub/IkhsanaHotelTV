@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.PairingActivity
@@ -17,10 +18,10 @@ import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
  * Auto-starts the hotel UI after device restart.
  * Paired → [MainActivity]; unpaired → [PairingActivity].
  *
- * On Android 14+ (API 34 / 35 / 36), bare [Context.startActivity] from a
- * [BroadcastReceiver] is blocked by Background Activity Launch restrictions.
- * We launch via [PendingIntent] + [ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED],
- * and start the kiosk foreground service first when kiosk is ON.
+ * Bare [Context.startActivity] from a [BroadcastReceiver] is suppressed by
+ * Background Activity Launch (BAL) on modern Android (and flaky on 9/10+).
+ * Always launch via [PendingIntent.send]; on API 34+ also pass
+ * [ActivityOptions.setPendingIntentBackgroundActivityStartMode].
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -33,6 +34,7 @@ class BootReceiver : BroadcastReceiver() {
             Intent.ACTION_LOCKED_BOOT_COMPLETED,
             "android.intent.action.QUICKBOOT_POWERON",
             "com.htc.intent.action.QUICKBOOT_POWERON",
+            "com.android.internal.intent.action.QUICKBOOT_POWERON",
         )
     }
 
@@ -46,11 +48,12 @@ class BootReceiver : BroadcastReceiver() {
         val appContext = context.applicationContext
         val hotelConfig = HotelConfig(appContext)
         val isKioskActive = KioskPolicy.isKioskModeEnabled(appContext)
+        val canDrawOverlays = Settings.canDrawOverlays(appContext)
         Log.i(
             TAG,
             "Boot event → action=$action paired=${hotelConfig.isPaired()} " +
-                "kiosk=$isKioskActive hotel=${hotelConfig.getHotelId()} " +
-                "room=${hotelConfig.getRoomNumberOrNull()}",
+                "kiosk=$isKioskActive overlay=$canDrawOverlays " +
+                "hotel=${hotelConfig.getHotelId()} room=${hotelConfig.getRoomNumberOrNull()}",
         )
 
         // Fresh boot: clear stale minimize / OTT session gates from previous power cycle.
@@ -65,13 +68,16 @@ class BootReceiver : BroadcastReceiver() {
         }
 
         val launchIntent = Intent(context, target).apply {
+            this.action = action
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
             addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
         }
 
-        // Android 14+: bring up FGS first when kiosk is ON — privileged path for BAL.
+        // PendingIntent launch first (BAL-safe). Watchdog after UI attempt.
+        launchUiAfterBoot(context, launchIntent, target.simpleName, action)
+
         if (hotelConfig.isPaired() && isKioskActive) {
             try {
                 KioskWatchdogService.start(appContext)
@@ -79,13 +85,11 @@ class BootReceiver : BroadcastReceiver() {
                 Log.w(TAG, "Watchdog start after boot failed", e)
             }
         }
-
-        launchUiAfterBoot(context, launchIntent, target.simpleName, action)
     }
 
     /**
-     * Android 14 / 15 / 16: [PendingIntent.send] with background-activity-start allowed.
-     * Older APIs: direct [Context.startActivity].
+     * Always prefer [PendingIntent.send] over bare [Context.startActivity] so
+     * Android 9/10+ and 14–16 do not suppress the boot UI launch.
      */
     private fun launchUiAfterBoot(
         context: Context,
@@ -93,20 +97,24 @@ class BootReceiver : BroadcastReceiver() {
         targetName: String,
         action: String?,
     ) {
+        val piFlags = PendingIntent.FLAG_UPDATE_CURRENT or
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_IMMUTABLE
+            } else {
+                0
+            }
+
         try {
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                BOOT_REQUEST_CODE,
+                launchIntent,
+                piFlags,
+            )
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                val pendingIntent = PendingIntent.getActivity(
-                    context,
-                    BOOT_REQUEST_CODE,
-                    launchIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                )
+                val options = balActivityOptions()
                 try {
-                    val options = ActivityOptions.makeBasic().apply {
-                        setPendingIntentBackgroundActivityStartMode(
-                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED,
-                        )
-                    }
                     pendingIntent.send(
                         context,
                         0,
@@ -116,18 +124,51 @@ class BootReceiver : BroadcastReceiver() {
                         null,
                         options.toBundle(),
                     )
-                    Log.i(TAG, "Boot launch via PendingIntent → $targetName action=$action")
+                    Log.i(TAG, "Boot launch via PendingIntent+BAL → $targetName action=$action")
+                    return
                 } catch (e: Exception) {
-                    Log.w(TAG, "PendingIntent.send failed, falling back to startActivity", e)
-                    context.startActivity(launchIntent)
-                    Log.i(TAG, "Boot launch fallback startActivity → $targetName action=$action")
+                    Log.e(TAG, "PendingIntent+BAL send failed", e)
+                    try {
+                        context.startActivity(launchIntent, options.toBundle())
+                        Log.i(TAG, "Boot launch fallback startActivity+BAL → $targetName")
+                        return
+                    } catch (e2: Exception) {
+                        Log.e(TAG, "Fallback startActivity+BAL failed for $targetName", e2)
+                    }
                 }
-            } else {
+            }
+
+            try {
+                pendingIntent.send()
+                Log.i(TAG, "Boot launch via PendingIntent → $targetName action=$action")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to send pending intent", e)
                 context.startActivity(launchIntent)
-                Log.i(TAG, "Boot launch → $targetName action=$action")
+                Log.i(TAG, "Boot launch fallback startActivity → $targetName action=$action")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch $targetName after boot ($action)", e)
+            try {
+                context.startActivity(launchIntent)
+            } catch (e2: Exception) {
+                Log.e(TAG, "Final startActivity fallback failed for $targetName", e2)
+            }
         }
     }
+
+    /**
+     * Explicit BAL opt-in for API 34+ / 36 boot launches (app not visible yet).
+     * API 36 deprecates [ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED]
+     * in favor of [ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS].
+     */
+    private fun balActivityOptions(): ActivityOptions =
+        ActivityOptions.makeBasic().apply {
+            val mode = if (Build.VERSION.SDK_INT >= 36) {
+                ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
+            } else {
+                @Suppress("DEPRECATION")
+                ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+            }
+            setPendingIntentBackgroundActivityStartMode(mode)
+        }
 }

@@ -2,13 +2,19 @@ package `in`.pcncloud.hotel.kiosk
 
 import android.app.Activity
 import android.app.ActivityManager
+import android.app.ActivityOptions
+import android.app.PendingIntent
+import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Build
+import android.os.UserManager
 import android.provider.Settings
 import android.util.Log
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
+import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.config.HotelConfig
 
 /**
@@ -28,6 +34,12 @@ object KioskPolicy {
 
     private const val TAG = "KioskPolicy"
     private const val PREFS = "hotel_tv_kiosk"
+    private const val FORCE_BRING_REQUEST_CODE = 2002
+    /** Shared debounce for PendingIntent reclaim (breaks pause/resume storms). */
+    private const val FORCE_BRING_DEBOUNCE_MS = 500L
+
+    @Volatile
+    private var lastForceBringAtMs: Long = 0L
 
     /** Product / Remote Config key name — also stored in SharedPreferences. */
     const val KEY_KIOSK_ENABLED = "is_kiosk_mode_enabled"
@@ -72,19 +84,55 @@ object KioskPolicy {
         SYSTEM_DEFAULT,
     }
 
-    private fun prefs(context: Context) =
-        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    /**
+     * Credential-encrypted prefs are unavailable until unlock (Direct Boot /
+     * LOCKED_BOOT_COMPLETED). Use device-protected storage while the user is locked.
+     */
+    private fun prefs(context: Context): SharedPreferences {
+        val app = context.applicationContext
+        val safeContext = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !app.isUserUnlocked) {
+                app.createDeviceProtectedStorageContext()
+            } else {
+                app
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "prefs: CE storage unavailable — using device-protected context", e)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                app.createDeviceProtectedStorageContext()
+            } else {
+                app
+            }
+        }
+        return safeContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    }
+
+    private val Context.isUserUnlocked: Boolean
+        get() {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return true
+            return try {
+                val userManager = getSystemService(Context.USER_SERVICE) as? UserManager
+                userManager?.isUserUnlocked ?: true
+            } catch (_: Exception) {
+                // Fail open — prefer attempting CE; prefs() catch falls back to DE.
+                true
+            }
+        }
 
     private fun migrateIfNeeded(context: Context) {
-        val p = prefs(context)
-        if (p.contains(KEY_KIOSK_ENABLED)) return
-        if (p.contains(KEY_KIOSK_ENABLED_LEGACY)) {
-            val legacy = p.getBoolean(KEY_KIOSK_ENABLED_LEGACY, true)
-            p.edit()
-                .putBoolean(KEY_KIOSK_ENABLED, legacy)
-                .remove(KEY_KIOSK_ENABLED_LEGACY)
-                .apply()
-            Log.i(TAG, "Migrated legacy kiosk flag → $KEY_KIOSK_ENABLED=$legacy")
+        try {
+            val p = prefs(context)
+            if (p.contains(KEY_KIOSK_ENABLED)) return
+            if (p.contains(KEY_KIOSK_ENABLED_LEGACY)) {
+                val legacy = p.getBoolean(KEY_KIOSK_ENABLED_LEGACY, true)
+                p.edit()
+                    .putBoolean(KEY_KIOSK_ENABLED, legacy)
+                    .remove(KEY_KIOSK_ENABLED_LEGACY)
+                    .apply()
+                Log.i(TAG, "Migrated legacy kiosk flag → $KEY_KIOSK_ENABLED=$legacy")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "migrateIfNeeded skipped (Direct Boot / storage locked?)", e)
         }
     }
 
@@ -255,6 +303,77 @@ object KioskPolicy {
             KioskWatchdogService.start(context.applicationContext)
         } else {
             KioskWatchdogService.stop(context.applicationContext)
+            // Drop DPM whitelist immediately so Android 9/11 cannot keep blocking OTT
+            // launches with "Unauthorized by Admin" after kiosk is turned off.
+            clearDeviceOwnerLockTaskPackages(context)
+            resolveActivity(context)?.let { activity ->
+                try {
+                    activity.stopLockTask()
+                    Log.i(TAG, "setKioskModeEnabled(false) — stopLockTask")
+                } catch (e: Exception) {
+                    Log.w(TAG, "setKioskModeEnabled(false) — stopLockTask failed", e)
+                }
+            }
+        }
+    }
+
+    /**
+     * Fully release kiosk Lock Task on Android 9 / 11 (and all APIs):
+     * 1. Persist [isKioskModeEnabled] = false (optional)
+     * 2. [Activity.stopLockTask]
+     * 3. Clear Device Owner [DevicePolicyManager.setLockTaskPackages] whitelist
+     *
+     * Without step 3, OEM Lock Task can still refuse YouTube / Netflix with
+     * "Unauthorized by Admin" even after the kiosk flag is off.
+     */
+    fun disableKioskMode(
+        activity: Activity,
+        source: KioskSource = KioskSource.SYSTEM_DEFAULT,
+        persistFlag: Boolean = true,
+    ) {
+        if (persistFlag) {
+            setKioskModeEnabled(
+                context = activity,
+                enabled = false,
+                source = source,
+            )
+        }
+
+        try {
+            // 1. Stop active Lock Task Mode (must run before clearing packages on some OEMs).
+            try {
+                activity.stopLockTask()
+                Log.i(TAG, "disableKioskMode — stopLockTask ok")
+            } catch (e: Exception) {
+                Log.w(TAG, "disableKioskMode — stopLockTask failed (may already be off)", e)
+            }
+
+            // 2. Clear Device Owner LockTask whitelist so external apps can launch freely.
+            clearDeviceOwnerLockTaskPackages(activity)
+            Log.i(TAG, "disableKioskMode — Lock Task released, packages cleared")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error disabling kiosk mode", e)
+        }
+    }
+
+    /**
+     * Unset Device Owner Lock Task packages (`arrayOf()`).
+     * No-op when not Device Owner. Safe to call without an [Activity].
+     */
+    fun clearDeviceOwnerLockTaskPackages(context: Context) {
+        try {
+            val dpm =
+                context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val adminComponent = MyDeviceAdminReceiver.getComponentName(context)
+            if (!dpm.isDeviceOwnerApp(context.packageName)) {
+                Log.d(TAG, "clearDeviceOwnerLockTaskPackages — not Device Owner, skip")
+                return
+            }
+            // Empty array: no restricted Lock Task allowlist (OTT launches freely).
+            dpm.setLockTaskPackages(adminComponent, arrayOf())
+            Log.i(TAG, "clearDeviceOwnerLockTaskPackages → setLockTaskPackages([])")
+        } catch (e: Exception) {
+            Log.e(TAG, "clearDeviceOwnerLockTaskPackages failed", e)
         }
     }
 
@@ -469,19 +588,24 @@ object KioskPolicy {
     /**
      * Call from [android.app.Application.onCreate] before UI starts.
      * If the previous process did not exit cleanly, arm crash recovery once.
+     * Safe under Direct Boot — never throws into Application.onCreate.
      */
     fun onProcessStart(context: Context) {
-        migrateIfNeeded(context)
-        val p = prefs(context)
-        val exitedCleanly = p.getBoolean(KEY_EXITED_CLEANLY, true)
-        if (!exitedCleanly) {
-            p.edit()
-                .putBoolean(KEY_PENDING_CRASH_RECOVERY, true)
-                .apply()
-            Log.w(TAG, "Previous process exited uncleanly — crash recovery armed")
+        try {
+            migrateIfNeeded(context)
+            val p = prefs(context)
+            val exitedCleanly = p.getBoolean(KEY_EXITED_CLEANLY, true)
+            if (!exitedCleanly) {
+                p.edit()
+                    .putBoolean(KEY_PENDING_CRASH_RECOVERY, true)
+                    .apply()
+                Log.w(TAG, "Previous process exited uncleanly — crash recovery armed")
+            }
+            // New session starts unclean until ProcessLifecycle ON_STOP or explicit clean exit.
+            p.edit().putBoolean(KEY_EXITED_CLEANLY, false).apply()
+        } catch (e: Exception) {
+            Log.w(TAG, "onProcessStart aborted (Direct Boot / encrypted storage)", e)
         }
-        // New session starts unclean until ProcessLifecycle ON_STOP or explicit clean exit.
-        p.edit().putBoolean(KEY_EXITED_CLEANLY, false).apply()
     }
 
     /** Foreground session active — dying now without ON_STOP counts as unclean. */
@@ -572,6 +696,12 @@ object KioskPolicy {
             return false
         }
 
+        // MainActivity already foreground — Watchdog must not re-launch (log loop).
+        if (isMainActivityForeground(context)) {
+            Log.d(TAG, "shouldBringAppToFront=false (MainActivity already foreground)")
+            return false
+        }
+
         val kiosk = isKioskModeEnabled(context)
         val crash = hasPendingCrashRecovery(context)
 
@@ -591,7 +721,7 @@ object KioskPolicy {
 
     /**
      * Safe startActivity for services / receivers. Returns false if blocked.
-     * Always adds NEW_TASK when starting from non-Activity context.
+     * Uses [forceBringToFront] (PendingIntent) to avoid Android 10 BAL rejects.
      */
     fun startActivityIfAllowed(
         context: Context,
@@ -602,22 +732,168 @@ object KioskPolicy {
             Log.i(TAG, "Blocked startActivity ($reason)")
             return false
         }
-        return try {
-            val launch = Intent(intent).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-            }
-            context.startActivity(launch)
+        val ok = forceBringToFront(
+            context = context,
+            navigateToHome = intent.getBooleanExtra(
+                MainActivity.EXTRA_NAVIGATE_TO_HOME,
+                true,
+            ),
+        )
+        if (ok) {
             if (hasPendingCrashRecovery(context)) {
                 consumeCrashRecovery(context)
             }
             clearUserMinimized(context)
-            Log.i(TAG, "startActivity allowed ($reason)")
+            Log.i(TAG, "startActivity allowed via PendingIntent ($reason)")
+        } else {
+            Log.e(TAG, "startActivity failed ($reason)")
+        }
+        return ok
+    }
+
+    /**
+     * Bring MainActivity to front under kiosk.
+     *
+     * **API 31+ (S):** existing PendingIntent + debounce path — do not change.
+     * **API 29–30:** ActivityOptions [startActivity] (HOME slip fix; no debounce).
+     * **API &lt; 29:** PendingIntent + debounce (Android 9 storm guard).
+     */
+    fun forceBringToFront(
+        context: Context,
+        navigateToHome: Boolean = true,
+        requestCode: Int = FORCE_BRING_REQUEST_CODE,
+    ): Boolean {
+        if (!isKioskModeEnabled(context)) return false
+        if (isExternalAppActive(context)) {
+            Log.d(TAG, "forceBringToFront skipped — OTT/external session active")
+            return false
+        }
+
+        val appContext = context.applicationContext
+        val intent = Intent(appContext, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            if (navigateToHome) {
+                putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
+            }
+        }
+
+        // ——— Android 12+ (API 31+): UNTOUCHED PendingIntent + debounce path ———
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val now = System.currentTimeMillis()
+            if (now - lastForceBringAtMs <= FORCE_BRING_DEBOUNCE_MS) {
+                Log.d(TAG, "forceBringToFront debounced (${now - lastForceBringAtMs}ms) api=${Build.VERSION.SDK_INT}")
+                return false
+            }
+            lastForceBringAtMs = now
+            return sendForceBringPendingIntent(context, appContext, intent, requestCode)
+        }
+
+        // ——— Android 10 & 11 (API 29–30) only: ActivityOptions startActivity ———
+        if (Build.VERSION.SDK_INT in 29..30) {
+            return try {
+                val options = ActivityOptions.makeBasic()
+                context.startActivity(intent, options.toBundle())
+                if (context is Activity) {
+                    @Suppress("DEPRECATION")
+                    context.overridePendingTransition(0, 0)
+                }
+                Log.i(TAG, "forceBringToFront API 29/30 via ActivityOptions startActivity")
+                true
+            } catch (e: Exception) {
+                Log.w(TAG, "forceBringToFront API 29/30 ActivityOptions failed — fallback", e)
+                try {
+                    context.startActivity(intent)
+                    if (context is Activity) {
+                        @Suppress("DEPRECATION")
+                        context.overridePendingTransition(0, 0)
+                    }
+                    true
+                } catch (e2: Exception) {
+                    Log.e(TAG, "forceBringToFront API 29/30 startActivity failed", e2)
+                    false
+                }
+            }
+        }
+
+        // ——— API < 29 (Android 9): PendingIntent + debounce ———
+        val now = System.currentTimeMillis()
+        if (now - lastForceBringAtMs <= FORCE_BRING_DEBOUNCE_MS) {
+            Log.d(TAG, "forceBringToFront debounced (${now - lastForceBringAtMs}ms) api=${Build.VERSION.SDK_INT}")
+            return false
+        }
+        lastForceBringAtMs = now
+        return sendForceBringPendingIntent(context, appContext, intent, requestCode)
+    }
+
+    /** PendingIntent reclaim used by API 31+ and API &lt; 29. */
+    private fun sendForceBringPendingIntent(
+        context: Context,
+        appContext: Context,
+        intent: Intent,
+        requestCode: Int,
+    ): Boolean {
+        val piFlags = PendingIntent.FLAG_UPDATE_CURRENT or
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_IMMUTABLE
+            } else {
+                0
+            }
+
+        return try {
+            val pendingIntent = PendingIntent.getActivity(
+                appContext,
+                requestCode,
+                intent,
+                piFlags,
+            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                val options = ActivityOptions.makeBasic().apply {
+                    val mode = if (Build.VERSION.SDK_INT >= 36) {
+                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
+                    } else {
+                        @Suppress("DEPRECATION")
+                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                    }
+                    setPendingIntentBackgroundActivityStartMode(mode)
+                }
+                pendingIntent.send(
+                    appContext,
+                    0,
+                    null,
+                    null,
+                    null,
+                    null,
+                    options.toBundle(),
+                )
+            } else {
+                pendingIntent.send()
+            }
+            if (context is Activity) {
+                @Suppress("DEPRECATION")
+                context.overridePendingTransition(0, 0)
+            }
+            Log.i(
+                TAG,
+                "forceBringToFront via PendingIntent " +
+                    "(overlay=${Settings.canDrawOverlays(appContext)} api=${Build.VERSION.SDK_INT})",
+            )
             true
         } catch (e: Exception) {
-            Log.e(TAG, "startActivity failed ($reason)", e)
-            false
+            Log.w(TAG, "forceBringToFront PendingIntent failed — fallback startActivity", e)
+            try {
+                context.startActivity(intent)
+                if (context is Activity) {
+                    @Suppress("DEPRECATION")
+                    context.overridePendingTransition(0, 0)
+                }
+                true
+            } catch (e2: Exception) {
+                Log.e(TAG, "forceBringToFront startActivity failed", e2)
+                false
+            }
         }
     }
 

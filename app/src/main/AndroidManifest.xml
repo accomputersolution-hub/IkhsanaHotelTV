@@ -4,8 +4,16 @@
     package="in.pcncloud.hotel">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Required for BootReceiver to receive system boot broadcasts -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.QUICKBOOT_POWERON" />
+    <!--
+      SYSTEM_ALERT_WINDOW ("Display over other apps"):
+      - Android 10+ BAL exemptions for BootReceiver PendingIntent launches
+      - Android 9 (API < 30) HOME reclaim / overlay protection when System UI
+        swallows KEYCODE_HOME before the Activity can consume it
+      Runtime grant via Settings.canDrawOverlays (requested in SplashActivity).
+    -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -48,6 +56,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
+        android:directBootAware="true"
         android:theme="@style/Theme.IkhsanaHotelTV"
         tools:ignore="GoogleAppIndexingWarning">
 
@@ -69,23 +78,31 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTask"
+            android:directBootAware="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:launchMode="singleInstance"
             android:stateNotNeeded="true"
             android:clearTaskOnLaunch="true"
+            android:excludeFromRecents="true"
             android:screenOrientation="landscape"
             android:configChanges="keyboard|keyboardHidden|navigation"
             android:defaultFocusHighlightEnabled="false"
-            android:theme="@style/Theme.IkhsanaHotelTV"
+            android:theme="@style/Theme.HotelTv.BootSplash"
             android:banner="@drawable/pcn_banner"
             android:icon="@drawable/pcn_logo"
             android:label="@string/app_name">
-            <!-- Default Home / TV launcher eligibility for MainActivity -->
+            <!-- App drawer / Leanback launcher entry -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <!-- Required for OS Home button / set-home-activity (must be a separate filter) -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
 
@@ -100,20 +117,26 @@
             android:theme="@style/Theme.IkhsanaHotelTV" />
 
         <!--
-          Auto-launch hotel UI after reboot / OEM quick-boot.
-          Requires RECEIVE_BOOT_COMPLETED (+ QUICKBOOT_POWERON on some OEMs).
+          Auto-launch hotel UI after reboot / OEM quick-boot / Direct Boot.
+          Requires RECEIVE_BOOT_COMPLETED + QUICKBOOT_POWERON.
+          directBootAware + LOCKED_BOOT_COMPLETED cover pre-unlock Android TV boots.
+          Separate intent-filters (no CATEGORY_DEFAULT) so system boot intents match.
         -->
         <receiver
             android:name=".receiver.BootReceiver"
             android:directBootAware="true"
             android:enabled="true"
             android:exported="true">
-            <intent-filter android:priority="1000">
+            <intent-filter android:priority="999">
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+            <intent-filter android:priority="999">
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+            </intent-filter>
+            <intent-filter android:priority="999">
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
-                <category android:name="android.intent.category.DEFAULT" />
+                <action android:name="com.android.internal.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
 
@@ -146,6 +169,7 @@
             android:name=".kiosk.KioskWatchdogService"
             android:enabled="true"
             android:exported="false"
+            android:directBootAware="true"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"

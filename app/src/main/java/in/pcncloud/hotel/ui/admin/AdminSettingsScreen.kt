@@ -216,11 +216,21 @@ fun AdminSettingsScreen(
                         onToggleKiosk = {
                             onRemoteActivity()
                             val next = !kioskEnabled
-                            KioskPolicy.setKioskModeEnabled(
-                                context = context,
-                                enabled = next,
-                                source = KioskPolicy.KioskSource.LOCAL_ADMIN,
-                            )
+                            val host = activity
+                            if (!next && host != null) {
+                                // Android 9/11: stopLockTask + clear DPM packages or OTT stays blocked.
+                                KioskPolicy.disableKioskMode(
+                                    activity = host,
+                                    source = KioskPolicy.KioskSource.LOCAL_ADMIN,
+                                    persistFlag = true,
+                                )
+                            } else {
+                                KioskPolicy.setKioskModeEnabled(
+                                    context = context,
+                                    enabled = next,
+                                    source = KioskPolicy.KioskSource.LOCAL_ADMIN,
+                                )
+                            }
                             kioskEnabled = next
                             Toast.makeText(
                                 context,
@@ -246,27 +256,30 @@ fun AdminSettingsScreen(
                         onExitToAndroidTv = {
                             onRemoteActivity()
                             // Leave guest lock; never start GTPL (black screen).
+                            val host = activity
                             if (kioskEnabled) {
-                                KioskPolicy.setKioskModeEnabled(
-                                    context = context,
-                                    enabled = false,
-                                    source = KioskPolicy.KioskSource.LOCAL_ADMIN,
-                                )
+                                if (host != null) {
+                                    KioskPolicy.disableKioskMode(
+                                        activity = host,
+                                        source = KioskPolicy.KioskSource.LOCAL_ADMIN,
+                                        persistFlag = true,
+                                    )
+                                } else {
+                                    KioskPolicy.setKioskModeEnabled(
+                                        context = context,
+                                        enabled = false,
+                                        source = KioskPolicy.KioskSource.LOCAL_ADMIN,
+                                    )
+                                }
                                 kioskEnabled = false
                             }
                             AdminSession.clear()
-                            val host = activity
                             if (host != null) {
-                                try {
-                                    host.stopLockTask()
-                                } catch (e: Exception) {
-                                    Log.w(TAG, "stopLockTask on exit to Android TV", e)
-                                }
                                 KioskPolicy.launchSystemDefaultLauncher(host)
                             } else {
                                 KioskPolicy.launchSystemDefaultLauncher(context)
                             }
-                            Log.i(TAG, "Technician exit → stopLockTask + moveTaskToBack")
+                            Log.i(TAG, "Technician exit → disableKioskMode + moveTaskToBack")
                         },
                         onUnpair = {
                             onRemoteActivity()

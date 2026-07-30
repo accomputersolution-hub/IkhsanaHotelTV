@@ -49,6 +49,12 @@ object KioskLockTask {
      * plus this hotel launcher package.
      */
     fun applyAllowlist(context: Context, firebasePackages: List<String>) {
+        // Never re-pin a DPM whitelist while kiosk is OFF (Android 9/11 OTT block).
+        if (!KioskPolicy.isKioskModeEnabled(context)) {
+            KioskPolicy.clearDeviceOwnerLockTaskPackages(context)
+            Log.d(TAG, "applyAllowlist skipped — kiosk OFF, DPM packages cleared")
+            return
+        }
         try {
             val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             val adminName = adminComponent(context)

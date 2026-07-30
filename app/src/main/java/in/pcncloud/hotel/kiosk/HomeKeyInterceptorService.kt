@@ -5,6 +5,7 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
@@ -89,6 +90,14 @@ class HomeKeyInterceptorService : AccessibilityService() {
     private fun bringToRootHome() {
         try {
             KioskPolicy.clearUserMinimized(this)
+
+            // API 29–30: use shared ActivityOptions reclaim (HOME slip fix).
+            // API 31+ / others: keep direct startActivity (working path).
+            if (Build.VERSION.SDK_INT in 29..30) {
+                KioskPolicy.forceBringToFront(this, navigateToHome = true)
+                Log.i(TAG, "HOME → forceBringToFront (API 29/30)")
+                return
+            }
 
             val intent = Intent(this, MainActivity::class.java).apply {
                 addFlags(
