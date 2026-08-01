@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Key-filter AccessibilityService config.
-  flagRequestFilterKeyEvents + canRequestFilterKeyEvents are required for onKeyEvent().
+  App-level kiosk interceptor (no system package disables).
+  - flagRequestFilterKeyEvents: HOME + dedicated OTT buttons
+  - typeWindowStateChanged: GTPL / setup popup reclaim under kiosk
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged"

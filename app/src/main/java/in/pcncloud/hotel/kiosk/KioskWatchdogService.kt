@@ -14,33 +14,27 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
-import `in`.pcncloud.hotel.SplashActivity
 
 /**
- * Foreground keep-alive for hotel kiosk.
+ * Foreground keep-alive for optional hotel kiosk / overlay scenarios.
  *
- * - Every [ACCESSIBILITY_HEAL_INTERVAL_MS]: re-enable [HomeKeyInterceptorService]
- *   if OEM HOME turned accessibility off while kiosk is ON.
- * - Every [POLL_INTERVAL_MS]: optional bring-to-front when policy allows
- *   (never while [KioskPolicy.isExternalAppActive]).
+ * **Critical:** [START_STICKY] must NOT relaunch the Activity on service re-create.
+ * Bring-to-front runs only when [KioskPolicy.shouldBringAppToFront] is true
+ * (explicit kiosk mode or crash recovery) — never on ordinary minimize, and
+ * never while [KioskPolicy.isExternalAppActive] (YouTube / OTT viewing).
+ *
+ * Reclaim targets [MainActivity] (never Splash) to avoid EGL BufferQueue
+ * abandoned crashes from destroying splash mid-frame.
  */
 class KioskWatchdogService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
-
-    private var bringPollTicks: Int = 0
-
-    private val healRunnable = object : Runnable {
+    private val pollRunnable = object : Runnable {
         override fun run() {
-            healAccessibilityIfNeeded()
-            // Bring-to-front less often than the 1s accessibility heal.
-            bringPollTicks++
-            if (bringPollTicks >= BRING_POLL_EVERY_N_HEALS) {
-                bringPollTicks = 0
-                maybeBringToFront("watchdog_poll")
-            }
-            handler.postDelayed(this, ACCESSIBILITY_HEAL_INTERVAL_MS)
+            maybeBringToFront("watchdog_poll")
+            handler.postDelayed(this, POLL_INTERVAL_MS)
         }
     }
 
@@ -50,6 +44,7 @@ class KioskWatchdogService : Service() {
         super.onCreate()
         Log.d(TAG, "onCreate")
         startAsForeground()
+        // Intentionally no startActivity here — sticky restarts must not pop the UI.
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -61,68 +56,60 @@ class KioskWatchdogService : Service() {
 
         when (intent?.action) {
             ACTION_STOP -> {
-                handler.removeCallbacks(healRunnable)
+                handler.removeCallbacks(pollRunnable)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
             }
-            ACTION_CHECK_NOW -> {
-                healAccessibilityIfNeeded()
-                maybeBringToFront("check_now")
-            }
+            ACTION_CHECK_NOW -> maybeBringToFront("check_now")
             else -> {
+                // Sticky re-delivery / first start: never auto-launch Activity.
                 if (KioskPolicy.isKioskModeEnabled(this)) {
-                    handler.removeCallbacks(healRunnable)
-                    handler.post(healRunnable)
+                    handler.removeCallbacks(pollRunnable)
+                    handler.postDelayed(pollRunnable, POLL_INTERVAL_MS)
                 } else {
-                    handler.removeCallbacks(healRunnable)
-                    Log.i(TAG, "Kiosk off — watchdog will not poll")
+                    handler.removeCallbacks(pollRunnable)
+                    Log.i(TAG, "Kiosk off — watchdog will not poll for bring-to-front")
                 }
             }
         }
 
+        // Survive process reclaim, but UI relaunch is gated in [maybeBringToFront].
         return START_STICKY
     }
 
     override fun onDestroy() {
-        handler.removeCallbacks(healRunnable)
+        handler.removeCallbacks(pollRunnable)
         Log.d(TAG, "onDestroy")
         super.onDestroy()
     }
 
-    /**
-     * If kiosk is ON and HomeKeyInterceptor was killed (common after OEM HOME),
-     * silently rewrite Secure settings to turn it back on.
-     */
-    private fun healAccessibilityIfNeeded() {
-        if (!KioskPolicy.isKioskModeEnabled(this)) {
-            handler.removeCallbacks(healRunnable)
-            return
-        }
-        if (HomeKeyInterceptorService.isEnabled(this)) {
-            return
-        }
-        Log.w(TAG, "HomeKeyInterceptor OFF while kiosk ON — attempting self-heal")
-        val ok = HomeKeyInterceptorService.tryReenableAccessibility(this)
-        Log.i(TAG, "Accessibility self-heal result=$ok")
-    }
-
     private fun maybeBringToFront(reason: String) {
+        // Hard gate: never steal focus from YouTube / Netflix / Live TV / etc.
         if (KioskPolicy.isExternalAppActive(this)) {
             Log.d(TAG, "maybeBringToFront skipped — isExternalAppActive=true ($reason)")
             return
         }
+        // Hard gate: never relaunch UI while kiosk is disabled.
         if (!KioskPolicy.isKioskModeEnabled(this)) {
             Log.d(TAG, "maybeBringToFront skipped — kiosk disabled ($reason)")
-            handler.removeCallbacks(healRunnable)
+            handler.removeCallbacks(pollRunnable)
             return
         }
         if (!KioskPolicy.shouldBringAppToFront(this)) {
             return
         }
 
-        val launch = packageManager.getLaunchIntentForPackage(packageName)
-            ?: Intent(this, SplashActivity::class.java)
+        // Reclaim MainActivity only — Splash mid-frame finish → EGL 12301.
+        val launch = Intent(this, MainActivity::class.java).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION,
+            )
+            putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
+        }
         KioskPolicy.startActivityIfAllowed(this, launch, reason)
     }
 
@@ -144,7 +131,13 @@ class KioskWatchdogService : Service() {
         val contentIntent = PendingIntent.getActivity(
             this,
             0,
-            Intent(this, SplashActivity::class.java),
+            Intent(this, MainActivity::class.java).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                )
+            },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
@@ -173,10 +166,7 @@ class KioskWatchdogService : Service() {
         private const val TAG = "KioskWatchdog"
         private const val CHANNEL_ID = "hotel_tv_kiosk"
         private const val NOTIFICATION_ID = 1001
-        /** Accessibility self-heal cadence (user requirement: every 1 second). */
-        private const val ACCESSIBILITY_HEAL_INTERVAL_MS = 1_000L
-        /** Bring-to-front every N heal ticks (~30s). */
-        private const val BRING_POLL_EVERY_N_HEALS = 30
+        private const val POLL_INTERVAL_MS = 30_000L
 
         const val ACTION_CHECK_NOW = "in.pcncloud.hotel.kiosk.CHECK_NOW"
         const val ACTION_STOP = "in.pcncloud.hotel.kiosk.STOP"
@@ -191,9 +181,19 @@ class KioskWatchdogService : Service() {
         }
 
         fun stop(context: Context) {
-            context.startService(
-                Intent(context, KioskWatchdogService::class.java).setAction(ACTION_STOP),
-            )
+            val app = context.applicationContext
+            try {
+                app.startService(
+                    Intent(app, KioskWatchdogService::class.java).setAction(ACTION_STOP),
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "ACTION_STOP startService failed", e)
+            }
+            try {
+                app.stopService(Intent(app, KioskWatchdogService::class.java))
+            } catch (e: Exception) {
+                Log.w(TAG, "stopService failed", e)
+            }
         }
     }
 }

@@ -3,10 +3,11 @@ package `in`.pcncloud.hotel
 import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
@@ -33,7 +34,6 @@ import `in`.pcncloud.hotel.data.model.HotelBranding
 import `in`.pcncloud.hotel.data.repository.FirestoreRepository
 import `in`.pcncloud.hotel.kiosk.HomeKeyInterceptorService
 import `in`.pcncloud.hotel.kiosk.HotelSessionManager
-import `in`.pcncloud.hotel.kiosk.KioskHotkeys
 import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
@@ -98,9 +98,67 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Bumped when HOME reclaim / pending OTT-return requests Root Home.
-     * Observed by [HotelNavGraph] to pop the Compose back stack to [Routes.HOME].
+     * Observed by [HotelNavGraph] to hide sub-screen overlays instantly.
      */
     private var navigateHomeSignal by mutableLongStateOf(0L)
+
+    /**
+     * Registered by [HotelNavGraph] — same action as the Top-Left Home / back control
+     * (hide overlay → reveal retained Home). Prefer this over [navigateHomeSignal] for
+     * remote BACK so there is no LaunchedEffect frame delay.
+     */
+    @Volatile
+    private var homeViewNavigator: (() -> Unit)? = null
+
+    /** True while Dining / Entertainment / Services / Alerts / Admin overlay is showing. */
+    @Volatile
+    private var subMenuVisible: Boolean = false
+
+    fun registerHomeViewNavigator(action: (() -> Unit)?) {
+        homeViewNavigator = action
+    }
+
+    /** Called from [HotelNavGraph] when a sub-menu overlay is shown or hidden. */
+    fun setSubMenuVisible(visible: Boolean) {
+        subMenuVisible = visible
+        KioskPolicy.setOnGuestHomeScreen(this, !visible)
+    }
+
+    /**
+     * Instant in-app return to Home — identical to the sub-screen Home / back control.
+     * Does not call [onBackPressed] / Activity back-stack finish.
+     */
+    fun navigateToHomeView() {
+        markUserActive(dismissScreensaver = true)
+        screensaverVisible = false
+        ottTransitionCover = false
+        val navigator = homeViewNavigator
+        if (navigator != null) {
+            Log.i(TAG, "navigateToHomeView — instant overlay hide (Home icon path)")
+            navigator.invoke()
+            subMenuVisible = false
+            return
+        }
+        Log.w(TAG, "navigateToHomeView — navigator not registered, signal fallback")
+        subMenuVisible = false
+        navigateHomeSignal = System.currentTimeMillis()
+        KioskPolicy.setOnGuestHomeScreen(this, true)
+    }
+
+    /**
+     * Remote / system Back while kiosk is active:
+     * - Sub-menu open → return to Home (hide overlay).
+     * - Already on Home → consume; never exit / minimize.
+     */
+    private fun handleKioskBackPressed() {
+        if (isSubViewActive()) {
+            Log.i(TAG, "Back — sub-menu open → navigateToHomeView")
+            navigateToHomeView()
+        } else {
+            markUserActive(dismissScreensaver = true)
+            Log.d(TAG, "Back — already on Home, blocked (kiosk)")
+        }
+    }
 
     /**
      * Set true when launching OTT after a synchronous Root Home switch.
@@ -135,6 +193,34 @@ class MainActivity : ComponentActivity() {
     /** True while onNewIntent / onResume is handling a reclaim — blocks onPause loops. */
     private var handlingReclaimLifecycle: Boolean = false
 
+    /** Main-thread handler — Physical TV reclaim retries must run while paused (not decorView). */
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private val clearHandlingReclaimRunnable = Runnable {
+        handlingReclaimLifecycle = false
+    }
+
+    private val physicalTvReclaimRetryRunnable = Runnable {
+        if (isActivitySurfaceGone()) return@Runnable
+        if (!KioskPolicy.isKioskModeEnabled(this)) return@Runnable
+        if (KioskPolicy.isExternalAppActive(this)) return@Runnable
+        if (KioskPolicy.isMainActivityForeground(this) &&
+            lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+        ) {
+            Log.d(TAG, "physicalTvReclaimRetry — already resumed, skip")
+            return@Runnable
+        }
+        Log.i(TAG, "physicalTvReclaimRetry — forceBringToFront skipDebounce")
+        reclaimPhysicalTvImmediate("retry")
+    }
+
+    /** Instant Admin / RTDB kiosk toggle — cancel reclaim retries & sync memory. */
+    private val kioskModeChangedListener: (Boolean) -> Unit = { enabled ->
+        runOnUiThread {
+            applyKioskModeChangedLocally(enabled, "KioskPolicy.listener")
+        }
+    }
+
     /**
      * API &lt; 30 Device Owner path: tiny 1×1 overlay for process privilege.
      * Non–Device Owner physical TV: full-screen transparent overlay (any API)
@@ -167,12 +253,46 @@ class MainActivity : ComponentActivity() {
         currentKioskState = enabled
         isKioskModeEnabled = enabled
         kioskPrefs().edit().putBoolean(PREF_KIOSK_ENABLED, enabled).apply()
+        // setKioskModeEnabled notifies [kioskModeChangedListener] → applyKioskModeChangedLocally.
         KioskPolicy.setKioskModeEnabled(
             context = this,
             enabled = enabled,
             source = KioskPolicy.KioskSource.REALTIME_DATABASE,
         )
         Log.i(TAG, "persistKioskState → $enabled")
+    }
+
+    /**
+     * Instant local sync when Admin Panel or RTDB toggles kiosk — no reboot needed.
+     * OFF: cancel pending reclaim retries, drop overlay, stop Watchdog pulls.
+     * ON: re-apply Lock Task / physical TV fallback.
+     */
+    fun applyKioskModeChangedLocally(enabled: Boolean, reason: String) {
+        currentKioskState = enabled
+        isKioskModeEnabled = enabled
+        applyKeepScreenOn(enabled)
+
+        if (!enabled) {
+            mainHandler.removeCallbacks(physicalTvReclaimRetryRunnable)
+            mainHandler.removeCallbacks(clearHandlingReclaimRunnable)
+            handlingReclaimLifecycle = false
+            reclaimInFlight = false
+            removeKioskOverlayBarrier()
+            KioskPolicy.clearReclaimSuppression("kiosk_off")
+            Log.i(TAG, "Kiosk OFF ($reason) — interceptors/reclaim retries stopped")
+            return
+        }
+
+        if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+            ensureDeviceOwnerLockTask(reason)
+            startLockTaskSafely(reason)
+            if (KioskPolicy.needsPhysicalTvFallback(this)) {
+                setupPhysicalTvFallbackOverlay()
+            }
+        }
+        Log.i(TAG, "Kiosk ON ($reason) — Lock Task / Physical TV fallback armed")
+        // Prompt OS Home picker when this app is not yet the default launcher.
+        verifyAndRequestDefaultHomeLauncher()
     }
 
     /**
@@ -265,22 +385,72 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * True when the Activity window/surface must not start another reclaim
+     * (EGL / BufferQueue safety). Prefer this over quiet-period locks.
+     */
+    private fun isActivitySurfaceGone(): Boolean {
+        if (isFinishing) return true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed) {
+            return true
+        }
+        return false
+    }
+
+    /**
+     * Physical TV Home reclaim — immediate [KioskPolicy.forceBringToFront] with
+     * skipDebounce. Never finishes / recreates the Activity (surface stays alive).
+     */
+    private fun reclaimPhysicalTvImmediate(reason: String): Boolean {
+        if (isActivitySurfaceGone()) {
+            Log.d(TAG, "reclaimPhysicalTvImmediate skip — finishing/destroyed ($reason)")
+            return false
+        }
+        if (!KioskPolicy.isKioskModeEnabled(this)) return false
+        if (KioskPolicy.isExternalAppActive(this)) return false
+
+        Log.i(TAG, "reclaimPhysicalTvImmediate ($reason) — forceBringToFront skipDebounce")
+        return KioskPolicy.forceBringToFrontPhysicalTvUrgent(
+            context = this,
+            navigateToHome = true,
+        )
+    }
+
+    /**
+     * Schedule one follow-up reclaim on the **main Handler** (not decorView) so
+     * the callback still runs while the Activity is paused/stopped.
+     */
+    private fun schedulePhysicalTvReclaimRetry(reason: String) {
+        val elapsed = KioskPolicy.millisSinceLastForceBring()
+        val delayMs = (KioskPolicy.loopGuardMs(this) - elapsed).coerceAtLeast(0L) + 16L
+        Log.d(TAG, "schedulePhysicalTvReclaimRetry ($reason) in ${delayMs}ms")
+        mainHandler.removeCallbacks(physicalTvReclaimRetryRunnable)
+        mainHandler.postDelayed(physicalTvReclaimRetryRunnable, delayMs)
+    }
+
+    /** Pulse local + policy busy for ≤100ms so nested pause cannot stall Home reclaim. */
+    private fun markReclaimLifecycleBusyBriefly() {
+        handlingReclaimLifecycle = true
+        KioskPolicy.setReclaimLifecycleBusy(true)
+        mainHandler.removeCallbacks(clearHandlingReclaimRunnable)
+        mainHandler.postDelayed(clearHandlingReclaimRunnable, 100L)
+    }
+
+    /**
      * Best-effort [startLockTask] — **only** while Activity is RESUMED / foreground.
      * Never call from [onPause], [onStop], [onUserLeaveHint], or focus-loss;
      * those throw `IllegalArgumentException: Invalid task, not in foreground`
      * and let the stock launcher flash for 1–2s.
+     *
+     * Skips when Lock Task / Screen Pinning is already active to avoid API 28 freezes
+     * from repeated startLockTask in onNewIntent / onResume.
      */
     private fun startLockTaskSafely(reason: String = "kiosk") {
         if (!resolveKioskEnabled() && !isKioskModeEnabled) {
             Log.d(TAG, "startLockTaskSafely skip — kiosk off ($reason)")
             return
         }
-        if (isFinishing) {
-            Log.d(TAG, "startLockTaskSafely skip — finishing ($reason)")
-            return
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed) {
-            Log.d(TAG, "startLockTaskSafely skip — destroyed ($reason)")
+        if (isActivitySurfaceGone()) {
+            Log.d(TAG, "startLockTaskSafely skip — finishing/destroyed ($reason)")
             return
         }
         // Strict: only pin when the task is actually in the foreground.
@@ -290,6 +460,10 @@ class MainActivity : ComponentActivity() {
                 "startLockTaskSafely skip — not RESUMED " +
                     "(state=${lifecycle.currentState}, reason=$reason)",
             )
+            return
+        }
+        if (isLockTaskAlreadyActive()) {
+            Log.d(TAG, "startLockTaskSafely skip — already locked/pinned ($reason)")
             return
         }
         try {
@@ -306,10 +480,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** True when Lock Task Mode or Screen Pinning is already holding this task. */
+    private fun isLockTaskAlreadyActive(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+                ?: return false
+            am.lockTaskModeState != android.app.ActivityManager.LOCK_TASK_MODE_NONE
+        } catch (e: Exception) {
+            Log.w(TAG, "isLockTaskAlreadyActive check failed", e)
+            false
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Manifest uses Theme.HotelTv.BootSplash (instant black+logo window).
         // Switch to the main theme before inflating so Compose draws under IkhsanaHotelTV.
         setTheme(R.style.Theme_IkhsanaHotelTV)
+        // Match Home base color so route pops never flash Material / AppCompat blue.
+        window.setBackgroundDrawableResource(R.color.dark_bg_or_transparent)
         super.onCreate(savedInstanceState)
 
         // LOCKED_BOOT_COMPLETED / Keyguard: show over lock + wake display.
@@ -318,6 +507,9 @@ class MainActivity : ComponentActivity() {
         if (FirebaseApp.getApps(this).isEmpty()) {
             FirebaseApp.initializeApp(this)
         }
+
+        // Instant Admin / RTDB kiosk toggles (no reboot).
+        KioskPolicy.addKioskModeChangedListener(kioskModeChangedListener)
 
         // Seed from last persisted RTDB value (default unlocked until cloud says otherwise).
         isKioskModeEnabled = resolveKioskEnabled()
@@ -481,18 +673,8 @@ class MainActivity : ComponentActivity() {
     }
 
     /** True when this package is the resolved default HOME launcher. */
-    private fun isDefaultHomeLauncher(): Boolean {
-        return try {
-            val intent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_HOME)
-            }
-            val resolveInfo = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
-            resolveInfo?.activityInfo?.packageName == packageName
-        } catch (e: Exception) {
-            Log.w(TAG, "isDefaultHomeLauncher check failed", e)
-            false
-        }
-    }
+    private fun isDefaultHomeLauncher(): Boolean =
+        KioskPolicy.isMyAppDefaultLauncher(this)
 
     /**
      * Diagnostic + prompt: logs Home launcher status and opens system Home settings
@@ -500,8 +682,8 @@ class MainActivity : ComponentActivity() {
      * Also logs whether the hardware HOME Accessibility interceptor is enabled.
      */
     private fun verifyAndRequestDefaultHomeLauncher() {
-        val isDefault = isDefaultHomeLauncher()
-        val kioskOn = resolveKioskEnabled()
+        val isDefault = KioskPolicy.isMyAppDefaultLauncher(this)
+        val kioskOn = resolveKioskEnabled() || KioskPolicy.isKioskModeEnabled(this)
         val homeKeyServiceOn = HomeKeyInterceptorService.isEnabled(this)
         Log.i(
             TAG,
@@ -523,6 +705,7 @@ class MainActivity : ComponentActivity() {
         }
 
         if (isDefault) {
+            KioskPolicy.clearReclaimSuppression("already_default_home")
             Log.i(TAG, "Already default HOME launcher")
             return
         }
@@ -532,48 +715,41 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Opens [Settings.ACTION_HOME_SETTINGS] so the user can select this app
-     * (`in.pcncloud.hotel`) as the permanent default Home / TV launcher.
+     * Opens Android's built-in Home picker so staff can set this app as default launcher.
+     * Prefers [Settings.ACTION_HOME_SETTINGS]; falls back to [Intent.createChooser].
+     * Suppresses kiosk reclaim briefly so Settings/chooser is not stolen back.
      */
-    private fun openHomeSettings() {
+    private fun openDefaultHomePicker() {
+        KioskPolicy.suppressReclaimFor(
+            durationMs = 180_000L,
+            reason = "default_home_picker",
+        )
         try {
-            startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
-            Log.i(TAG, "openHomeSettings — ACTION_HOME_SETTINGS opened")
+            val intent = Intent(Settings.ACTION_HOME_SETTINGS)
+            startActivity(intent)
+            Log.i(TAG, "openDefaultHomePicker — ACTION_HOME_SETTINGS opened")
         } catch (e: Exception) {
-            Log.w(TAG, "ACTION_HOME_SETTINGS failed — trying HOME chooser", e)
+            Log.w(TAG, "ACTION_HOME_SETTINGS failed — createChooser fallback", e)
             try {
-                val intent = Intent(Intent.ACTION_MAIN).apply {
+                val selector = Intent(Intent.ACTION_MAIN).apply {
                     addCategory(Intent.CATEGORY_HOME)
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
-                startActivity(intent)
+                startActivity(Intent.createChooser(selector, "Select Default Launcher"))
+                Log.i(TAG, "openDefaultHomePicker — HOME createChooser opened")
             } catch (ex: Exception) {
                 Log.e(TAG, "Could not open Home settings or chooser", ex)
-                try {
-                    startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
-                } catch (ex2: Exception) {
-                    Log.e(TAG, "Could not open default-apps settings", ex2)
-                }
+                KioskPolicy.clearReclaimSuppression("home_picker_failed")
             }
         }
     }
 
     /**
-     * Triggers the Android Default Home picker so staff can set this app as the
-     * system launcher (required for Lock Task / Home eligibility on TV).
+     * Opens [Settings.ACTION_HOME_SETTINGS] so the user can select this app
+     * (`in.pcncloud.hotel`) as the permanent default Home / TV launcher.
      */
-    private fun openDefaultHomePicker() {
-        try {
-            val intent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_HOME)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            startActivity(intent)
-            Log.i(TAG, "openDefaultHomePicker — HOME chooser intent fired")
-        } catch (e: Exception) {
-            Log.w(TAG, "HOME chooser failed — opening Home settings", e)
-            openHomeSettings()
-        }
+    private fun openHomeSettings() {
+        openDefaultHomePicker()
     }
 
     /**
@@ -581,15 +757,31 @@ class MainActivity : ComponentActivity() {
      * Required so Android TV surfaces this app in Home / default-launcher selection.
      */
     fun requestHomeLauncherSelection(context: Context) {
+        if (context is MainActivity) {
+            context.verifyAndRequestDefaultHomeLauncher()
+            return
+        }
         try {
-            val intent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_HOME)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            if (KioskPolicy.isMyAppDefaultLauncher(context)) {
+                Log.i(TAG, "requestHomeLauncherSelection — already default")
+                return
             }
-            context.startActivity(intent)
-            Log.i(TAG, "requestHomeLauncherSelection — fired HOME intent")
+            KioskPolicy.suppressReclaimFor(180_000L, "default_home_picker_external")
+            context.startActivity(Intent(Settings.ACTION_HOME_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (e: Exception) {
             Log.e(TAG, "requestHomeLauncherSelection failed", e)
+            try {
+                val selector = Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_HOME)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(
+                    Intent.createChooser(selector, "Select Default Launcher")
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            } catch (ex: Exception) {
+                Log.e(TAG, "requestHomeLauncherSelection chooser failed", ex)
+            }
         }
     }
 
@@ -913,7 +1105,7 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Fallback when Compose [androidx.activity.compose.BackHandler] is not in the tree
-     * (e.g. service-suspended screen). Kiosk ON → never finish; kiosk OFF → leave task.
+     * (e.g. service-suspended screen). Never finishes the Activity under kiosk.
      */
     private fun installKioskBackSafetyNet() {
         onBackPressedDispatcher.addCallback(
@@ -921,12 +1113,9 @@ class MainActivity : ComponentActivity() {
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
                     if (isKioskActive()) {
-                        if (isSubViewActive()) {
-                            // Entertainment / section cards — return to Root Home
-                            navigateToRootHome()
-                        } else {
-                            Log.d(TAG, "Kiosk safety-net: Back blocked at Root Home")
-                        }
+                        handleKioskBackPressed()
+                    } else if (isSubViewActive()) {
+                        navigateToHomeView()
                     } else {
                         Log.d(TAG, "Kiosk off safety-net: moveTaskToBack")
                         moveTaskToBack(true)
@@ -942,14 +1131,12 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Capture Remote HOME / BACK / dedicated OTT hotkeys under kiosk.
-     * Physical TV remotes fire Netflix(247) / YouTube(288) / Prime(289) / Apps(228)
-     * which would otherwise bypass kiosk and launch stock apps.
+     * Kiosk key gate:
+     * - HOME + OEM / OTT hotkeys: secured swallow (unchanged Home lock path).
+     * - BACK: sub-menu → Home; already Home → consume (never exit).
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (screensaverVisible) {
-            // Consume every remote key so dining/services focus does not move;
-            // session and back stack stay exactly as they were.
             if (event.action == KeyEvent.ACTION_DOWN) {
                 markUserActive(dismissScreensaver = true)
                 Log.d(TAG, "Screen saver dismissed by keyCode=${event.keyCode}")
@@ -958,55 +1145,71 @@ class MainActivity : ComponentActivity() {
         }
 
         val kioskOn = isKioskModeEnabled || resolveKioskEnabled()
-        if (kioskOn && event.action == KeyEvent.ACTION_DOWN) {
-            val keyCode = event.keyCode
-            when {
-                keyCode == KeyEvent.KEYCODE_HOME -> {
-                    navigateToRootHome()
+        if (kioskOn) {
+            // —— Home / OEM / OTT: keep fully secured (do not alter this path) ——
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_HOME,
+                228, // GTPL / OEM Home / Apps
+                247, // Netflix
+                288, // YouTube
+                289, // Prime Video
+                -> {
+                    if (event.action == KeyEvent.ACTION_DOWN) {
+                        Log.d("KeySwallower", "Swallowed key ${event.keyCode} in Kiosk mode")
+                        when (event.keyCode) {
+                            KeyEvent.KEYCODE_HOME -> navigateToRootHome()
+                            else -> markUserActive(dismissScreensaver = true)
+                        }
+                    }
                     return true
                 }
-                keyCode == KeyEvent.KEYCODE_BACK && isSubViewActive() -> {
-                    navigateToRootHome()
-                    return true
-                }
-                KioskHotkeys.shouldBlockUnderKiosk(keyCode) -> {
-                    Log.i(
-                        TAG,
-                        "Blocked remote hotkey ${KioskHotkeys.label(keyCode)} " +
-                            "(keyCode=$keyCode) under kiosk",
-                    )
-                    markUserActive(dismissScreensaver = true)
+                // —— Back only: sub-menu navigation / Home lock ——
+                KeyEvent.KEYCODE_BACK -> {
+                    if (event.action == KeyEvent.ACTION_DOWN) {
+                        Log.d("KeySwallower", "Back in Kiosk mode — handleKioskBackPressed")
+                        handleKioskBackPressed()
+                    }
                     return true
                 }
             }
-        } else if (kioskOn && event.action == KeyEvent.ACTION_UP) {
-            // Consume UP for hotkeys so OEM does not deliver a partial shortcut.
-            if (KioskHotkeys.shouldBlockUnderKiosk(event.keyCode) ||
-                event.keyCode == KeyEvent.KEYCODE_HOME
-            ) {
-                return true
-            }
+        } else if (event.keyCode == KeyEvent.KEYCODE_BACK &&
+            event.action == KeyEvent.ACTION_DOWN &&
+            isSubViewActive()
+        ) {
+            navigateToHomeView()
+            return true
         }
 
         return super.dispatchKeyEvent(event)
     }
 
-    /** In-app Root Home switch for Lock Task key capture (no OTT cover flash). */
+    /** In-app Root Home switch for Lock Task HOME key capture (Home button path only). */
     private fun navigateToRootHome() {
         markUserActive(dismissScreensaver = true)
-        Log.i(TAG, "navigateToRootHome — HOME/BACK under Lock Task → Root Home")
+        Log.i(TAG, "navigateToRootHome — HOME under Lock Task → Root Home")
         navigateToRootHomeScreen(showCover = false)
     }
 
-    /** True when Compose is on Entertainment / Dining / Services / etc. (not guest Home). */
-    private fun isSubViewActive(): Boolean = !KioskPolicy.isOnGuestHomeScreen(this)
+    /** True when a sub-menu overlay (Dining / Apps / Housekeeping / etc.) is visible. */
+    private fun isSubViewActive(): Boolean =
+        subMenuVisible || !KioskPolicy.isOnGuestHomeScreen(this)
 
     /**
-     * When kiosk is OFF, HOME releases Lock Task and backgrounds this app
-     * ([KioskPolicy.launchSystemDefaultLauncher]) — never starts GTPL intents.
+     * Kiosk ON → swallow HOME/BACK so OEM never forwards them to GTPL.
+     * Kiosk OFF → HOME releases Lock Task and backgrounds this app.
      */
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_HOME && !resolveKioskEnabled()) {
+        val kioskOn = isKioskModeEnabled || resolveKioskEnabled()
+        if (kioskOn &&
+            (keyCode == KeyEvent.KEYCODE_HOME ||
+                keyCode == KeyEvent.KEYCODE_BACK ||
+                keyCode == 228 || keyCode == 247 ||
+                keyCode == 288 || keyCode == 289)
+        ) {
+            Log.d("KeySwallower", "onKeyDown swallowed key $keyCode in Kiosk mode")
+            return true
+        }
+        if (keyCode == KeyEvent.KEYCODE_HOME && !kioskOn) {
             Log.i(TAG, "onKeyDown HOME — kiosk OFF → disableKioskMode + moveTaskToBack")
             KioskPolicy.disableKioskMode(
                 activity = this,
@@ -1017,6 +1220,20 @@ class MainActivity : ComponentActivity() {
             return true
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        val kioskOn = isKioskModeEnabled || resolveKioskEnabled()
+        if (kioskOn &&
+            (keyCode == KeyEvent.KEYCODE_HOME ||
+                keyCode == KeyEvent.KEYCODE_BACK ||
+                keyCode == 228 || keyCode == 247 ||
+                keyCode == 288 || keyCode == 289)
+        ) {
+            Log.d("KeySwallower", "onKeyUp swallowed key $keyCode in Kiosk mode")
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
     }
 
     /**
@@ -1034,13 +1251,9 @@ class MainActivity : ComponentActivity() {
                 return
             }
 
-            // ——— Physical TV fallback: loop-safe reclaim ONLY (no startLockTask here) ———
+            // ——— Physical TV: immediate reclaim (0ms); duplicates skipped in policy (50ms) ———
             if (KioskPolicy.needsPhysicalTvFallback(this)) {
-                if (handlingReclaimLifecycle || KioskPolicy.isInReclaimQuietPeriod()) {
-                    Log.d(TAG, "onWindowFocusChanged — skip reclaim (quiet/busy)")
-                    return
-                }
-                Log.i(TAG, "onWindowFocusChanged — physical TV fallback, safe bringToFront")
+                Log.i(TAG, "onWindowFocusChanged — physical TV IMMEDIATE reclaim")
                 try {
                     @Suppress("DEPRECATION")
                     sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
@@ -1049,11 +1262,7 @@ class MainActivity : ComponentActivity() {
                 }
                 isAppInForeground = false
                 KioskPolicy.setMainActivityForeground(this, false)
-                KioskPolicy.forceBringToFrontSafely(
-                    context = this,
-                    navigateToHome = true,
-                    preferImmediateOptions = true,
-                )
+                reclaimPhysicalTvImmediate("onWindowFocusChanged")
                 return
             }
 
@@ -1115,8 +1324,8 @@ class MainActivity : ComponentActivity() {
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
 
-        handlingReclaimLifecycle = true
-        KioskPolicy.setReclaimLifecycleBusy(true)
+        // ≤100ms busy pulse — never hold reclaimLifecycleBusy for seconds.
+        markReclaimLifecycleBusyBriefly()
         try {
             super.onResume()
             reclaimInFlight = false
@@ -1140,8 +1349,12 @@ class MainActivity : ComponentActivity() {
             }
 
             if (resolveKioskEnabled()) {
+                // Staff returned from Home picker after selecting this app as default.
+                if (KioskPolicy.isMyAppDefaultLauncher(this)) {
+                    KioskPolicy.clearReclaimSuppression("default_home_confirmed")
+                }
                 // Device Owner → true Lock Task; otherwise physical TV Screen Pinning + Overlay.
-                // startLockTaskSafely ONLY here (and focus-regained) while RESUMED.
+                // startLockTaskSafely skips when already locked/pinned.
                 ensureDeviceOwnerLockTask("onResume")
                 startLockTaskSafely("onResume")
                 // Safe here: Activity is foreground — Android 12+/16 allow FGS starts.
@@ -1154,8 +1367,6 @@ class MainActivity : ComponentActivity() {
                 ensureOverlayPermissionForBal()
                 // Physical TV: HOME key escapes to stock launcher without Accessibility.
                 ensureHomeKeyInterceptorEnabled()
-                // Attempt silent re-enable if WRITE_SECURE_SETTINGS was granted.
-                HomeKeyInterceptorService.tryReenableAccessibility(this)
                 if (KioskPolicy.needsPhysicalTvFallback(this)) {
                     // Full-screen overlay on any API when Device Owner is missing.
                     setupPhysicalTvFallbackOverlay()
@@ -1166,44 +1377,52 @@ class MainActivity : ComponentActivity() {
             } else {
                 removeKioskOverlayBarrier()
             }
-        } finally {
-            // Clear busy after this frame so nested onPause from pin doesn't loop.
-            window.decorView.post {
-                handlingReclaimLifecycle = false
-                KioskPolicy.setReclaimLifecycleBusy(false)
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "onResume error", e)
         }
     }
 
     override fun onPause() {
-        // If reclaim is in-flight (our own forceBringToFront → onNewIntent), do not
-        // fire another bringToFront — that is the infinite ~50ms lifecycle loop.
-        val skipReclaim = handlingReclaimLifecycle ||
-            KioskPolicy.isReclaimLifecycleBusy()
-
         isAppInForeground = false
         KioskPolicy.setMainActivityForeground(this, false)
         super.onPause()
 
         val kioskOn = KioskPolicy.isKioskModeEnabled(this)
         if (!kioskOn) return
-
-        // Intentional OTT (YouTube launched from Entertainment) — do not steal focus.
         if (KioskPolicy.isExternalAppActive(this)) return
 
-        if (skipReclaim) {
-            Log.d(TAG, "onPause — skip reclaim (handling onNewIntent/onResume)")
+        // Physical TV: NEVER reclaim from onPause — it fires mid-resume of our own
+        // reclaim Intent and creates onPause ↔ onNewIntent storms (ActivityManager
+        // throttle + stock launcher flash). Explicit leave → onUserLeaveHint only.
+        if (KioskPolicy.needsPhysicalTvFallback(this) || !KioskPolicy.isDeviceOwner(this)) {
+            Log.d(TAG, "onPause — skip reclaim (Physical TV; onUserLeaveHint only)")
             return
         }
 
-        // Hardware YouTube/Prime/Netflix/Apps shortcut: OS launches external app and
-        // pauses us without setting isExternalAppActive — reclaim immediately.
-        Log.i(TAG, "onPause — hardware interrupt / focus loss → forceBringToFront")
-        KioskPolicy.forceBringToFrontSafely(
-            context = this,
-            navigateToHome = true,
-            preferImmediateOptions = true,
-        )
+        // Device Owner paths: skip while our own reclaim lifecycle is in-flight.
+        val skipReclaim = handlingReclaimLifecycle ||
+            KioskPolicy.isReclaimLifecycleBusy() ||
+            KioskPolicy.isInReclaimQuietPeriod()
+        if (skipReclaim) {
+            Log.d(TAG, "onPause — skip reclaim (handling onNewIntent/onResume or quiet period)")
+            return
+        }
+
+        // API 29–30: ActivityOptions reclaim (loop-safe).
+        if (Build.VERSION.SDK_INT in 29..30) {
+            Log.d(TAG, "onPause — API 29/30 kiosk reclaim")
+            KioskPolicy.forceBringToFrontSafely(this)
+            return
+        }
+
+        // API < 29: debounced reclaim — prevents onPause↔forceBringToFront storm.
+        if (Build.VERSION.SDK_INT < 29) {
+            tryLegacyKioskReclaim("onPause")
+            return
+        }
+
+        // API 31+ Device Owner path.
+        bringAppToFront()
     }
 
     override fun onStart() {
@@ -1222,22 +1441,18 @@ class MainActivity : ComponentActivity() {
 
         if (!KioskPolicy.isKioskModeEnabled(this)) return
         if (KioskPolicy.isExternalAppActive(this)) return
+
+        // Physical TV: reclaim only from onUserLeaveHint (same reason as onPause).
+        if (KioskPolicy.needsPhysicalTvFallback(this)) {
+            Log.d(TAG, "onStop — skip reclaim (Physical TV; onUserLeaveHint only)")
+            return
+        }
+
         if (handlingReclaimLifecycle ||
             KioskPolicy.isReclaimLifecycleBusy() ||
             KioskPolicy.isInReclaimQuietPeriod()
         ) {
             Log.d(TAG, "onStop — skip reclaim (quiet/busy)")
-            return
-        }
-
-        // Physical TV: loop-safe reclaim — do not startLockTask here.
-        if (KioskPolicy.needsPhysicalTvFallback(this)) {
-            Log.d(TAG, "onStop — physical TV fallback, safe bringToFront")
-            KioskPolicy.forceBringToFrontSafely(
-                context = this,
-                navigateToHome = true,
-                preferImmediateOptions = true,
-            )
             return
         }
 
@@ -1272,8 +1487,8 @@ class MainActivity : ComponentActivity() {
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
 
-        handlingReclaimLifecycle = true
-        KioskPolicy.setReclaimLifecycleBusy(true)
+        // ≤100ms busy pulse — never finish/recreate; keep existing surface.
+        markReclaimLifecycleBusyBriefly()
         try {
             super.onNewIntent(intent)
             setIntent(intent)
@@ -1314,14 +1529,12 @@ class MainActivity : ComponentActivity() {
 
             Log.i(TAG, "onNewIntent → finishReturnFromExternalApp")
             finishReturnFromExternalApp()
-            if (isKioskActive) {
+            // Re-pin only if Lock Task is not already active (avoids API 28 freeze).
+            if (isKioskActive && !isLockTaskAlreadyActive()) {
                 ensureDeviceOwnerLockTask("onNewIntent")
             }
-        } finally {
-            window.decorView.post {
-                handlingReclaimLifecycle = false
-                KioskPolicy.setReclaimLifecycleBusy(false)
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "onNewIntent error", e)
         }
     }
 
@@ -1346,6 +1559,7 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Fallback Root Home switch (cold start / HOME when not already Home).
+     * Prefer [navigateToHomeView] when the Compose overlay navigator is registered.
      */
     fun navigateToRootHomeScreen(showCover: Boolean = true) {
         pendingReturnToHome = false
@@ -1355,9 +1569,15 @@ class MainActivity : ComponentActivity() {
         intent?.removeExtra(EXTRA_NAVIGATE_TO_HOME)
         intent?.removeExtra(EXTRA_SOFT_HOME_RESET)
 
-        if (KioskPolicy.isOnGuestHomeScreen(this)) {
+        if (KioskPolicy.isOnGuestHomeScreen(this) && !isSubViewActive()) {
             Log.i(TAG, "navigateToRootHomeScreen — already on guest Home, cleanup only")
             ottTransitionCover = false
+            return
+        }
+
+        // Instant Home-icon path when NavGraph overlay navigator is live.
+        if (homeViewNavigator != null && !showCover) {
+            navigateToHomeView()
             return
         }
 
@@ -1365,9 +1585,16 @@ class MainActivity : ComponentActivity() {
             ottTransitionCover = true
         }
 
-        navigateHomeSignal = System.currentTimeMillis()
-        KioskPolicy.setOnGuestHomeScreen(this, true)
-        Log.i(TAG, "navigateToRootHomeScreen → signal=$navigateHomeSignal")
+        // Prefer direct navigator; signal is fallback for race before composition.
+        val navigator = homeViewNavigator
+        if (navigator != null) {
+            Log.i(TAG, "navigateToRootHomeScreen — instant navigateToHomeView")
+            navigator.invoke()
+        } else {
+            navigateHomeSignal = System.currentTimeMillis()
+            KioskPolicy.setOnGuestHomeScreen(this, true)
+            Log.i(TAG, "navigateToRootHomeScreen → signal=$navigateHomeSignal")
+        }
 
         window.decorView.post {
             window.decorView.post {
@@ -1517,17 +1744,16 @@ class MainActivity : ComponentActivity() {
         isAppInForeground = false
         KioskPolicy.setMainActivityForeground(this, false)
 
-        // Physical TV fallback first — loop-safe reclaim, never pin here.
+        // Physical TV: sole lifecycle reclaim — fire PendingIntent instantly (no delay/post).
         if (KioskPolicy.needsPhysicalTvFallback(this)) {
-            if (handlingReclaimLifecycle || KioskPolicy.isInReclaimQuietPeriod()) {
-                Log.d(TAG, "KioskInterceptor — skip onUserLeaveHint reclaim (quiet/busy)")
+            if (isActivitySurfaceGone()) {
+                Log.d(TAG, "onUserLeaveHint — skip reclaim (finishing/destroyed)")
                 return
             }
-            Log.i(TAG, "KioskInterceptor — physical TV onUserLeaveHint, safe reclaim")
-            KioskPolicy.forceBringToFrontSafely(
+            Log.i(TAG, "onUserLeaveHint — PendingIntent reclaim IMMEDIATE")
+            KioskPolicy.forceBringToFrontPhysicalTvUrgent(
                 context = this,
                 navigateToHome = true,
-                preferImmediateOptions = true,
             )
             return
         }
@@ -1549,6 +1775,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        KioskPolicy.removeKioskModeChangedListener(kioskModeChangedListener)
+        mainHandler.removeCallbacks(physicalTvReclaimRetryRunnable)
+        mainHandler.removeCallbacks(clearHandlingReclaimRunnable)
         removeKioskOverlayBarrier()
         detachRoomSessionRealtimeListener()
         detachKioskConfigRealtimeListener()
@@ -1680,15 +1909,25 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Physical TV (non–Device Owner): without [HomeKeyInterceptorService], the OS
-     * delivers HOME to the stock launcher. Prompt Accessibility settings once.
+     * delivers HOME to the stock launcher. Try silent Secure Settings re-enable first
+     * (WRITE_SECURE_SETTINGS / Device Owner), then open Accessibility settings once.
      */
     private fun ensureHomeKeyInterceptorEnabled() {
         if (!resolveKioskEnabled()) return
         if (!KioskPolicy.needsPhysicalTvFallback(this)) return
+
         if (HomeKeyInterceptorService.isEnabled(this)) {
             Log.d(TAG, "HomeKeyInterceptor already enabled")
             return
         }
+
+        // Silent self-heal when WRITE_SECURE_SETTINGS was granted once via adb.
+        val healed = HomeKeyInterceptorService.tryReenableAccessibility(this)
+        if (healed || HomeKeyInterceptorService.isEnabled(this)) {
+            Log.i(TAG, "HomeKeyInterceptor re-enabled via Secure Settings")
+            return
+        }
+
         Log.w(
             TAG,
             "HomeKeyInterceptor NOT enabled — HOME will escape to stock launcher. " +

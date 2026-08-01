@@ -345,11 +345,14 @@ class SplashActivity : AppCompatActivity() {
         }
         hasNavigated = true
         clearCallbacks()
+        releaseSplashSurfaces()
         startActivity(
             Intent(this, PairingActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             },
         )
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
         finish()
     }
 
@@ -364,13 +367,30 @@ class SplashActivity : AppCompatActivity() {
         clearCallbacks()
         hotelListener?.remove()
         hotelListener = null
+        releaseSplashSurfaces()
         startActivity(
             Intent(this, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             },
         )
-        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+        // Avoid fade swap while Splash BufferQueue is being abandoned (EGL 12301).
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
         finish()
+    }
+
+    /**
+     * Detach Coil / ImageView before [finish] so the GPU is not still dequeuing
+     * into an abandoned BufferQueue (EGL error 12301 on physical TVs).
+     */
+    private fun releaseSplashSurfaces() {
+        try {
+            splashLogo.animate().cancel()
+            splashLogo.setImageDrawable(null)
+            window.decorView.clearAnimation()
+        } catch (e: Exception) {
+            Log.w(TAG, "releaseSplashSurfaces failed", e)
+        }
     }
 
     private fun clearCallbacks() {

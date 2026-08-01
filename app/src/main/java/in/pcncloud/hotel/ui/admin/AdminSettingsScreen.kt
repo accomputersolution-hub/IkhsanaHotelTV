@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.BuildConfig
+import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.admin.AdminSession
 import `in`.pcncloud.hotel.config.HotelConfig
@@ -218,7 +219,7 @@ fun AdminSettingsScreen(
                             val next = !kioskEnabled
                             val host = activity
                             if (!next && host != null) {
-                                // Android 9/11: stopLockTask + clear DPM packages or OTT stays blocked.
+                                // Instant OFF: stopLockTask + clear interceptors/OTT/Watchdog.
                                 KioskPolicy.disableKioskMode(
                                     activity = host,
                                     source = KioskPolicy.KioskSource.LOCAL_ADMIN,
@@ -231,6 +232,9 @@ fun AdminSettingsScreen(
                                     source = KioskPolicy.KioskSource.LOCAL_ADMIN,
                                 )
                             }
+                            // Sync MainActivity memory immediately (listener also fires).
+                            (host as? MainActivity)
+                                ?.applyKioskModeChangedLocally(next, "AdminSettings.toggle")
                             kioskEnabled = next
                             Toast.makeText(
                                 context,
@@ -255,7 +259,8 @@ fun AdminSettingsScreen(
                         },
                         onExitToAndroidTv = {
                             onRemoteActivity()
-                            // Leave guest lock; never start GTPL (black screen).
+                            // Leave guest lock; never start GTPL intents (black screen) —
+                            // moveTaskToBack lets default launcher gain focus naturally.
                             val host = activity
                             if (kioskEnabled) {
                                 if (host != null) {
@@ -271,6 +276,8 @@ fun AdminSettingsScreen(
                                         source = KioskPolicy.KioskSource.LOCAL_ADMIN,
                                     )
                                 }
+                                (host as? MainActivity)
+                                    ?.applyKioskModeChangedLocally(false, "AdminSettings.exitTv")
                                 kioskEnabled = false
                             }
                             AdminSession.clear()

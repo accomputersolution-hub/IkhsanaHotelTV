@@ -8,7 +8,10 @@ import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.UserManager
 import android.provider.Settings
 import android.util.Log
@@ -35,25 +38,57 @@ object KioskPolicy {
     private const val TAG = "KioskPolicy"
     private const val PREFS = "hotel_tv_kiosk"
     private const val FORCE_BRING_REQUEST_CODE = 2002
+    /** Distinct request code so Physical TV urgent PendingIntent is not coalesced away. */
+    private const val PHYSICAL_TV_URGENT_REQUEST_CODE = 2003
     /** Shared debounce for PendingIntent reclaim (breaks pause/resume storms). */
     private const val FORCE_BRING_DEBOUNCE_MS = 500L
     /**
-     * Hard loop guard for physical-TV / lifecycle reclaim.
-     * `onPause` → `forceBringToFront` → `onNewIntent` → `onPause` must not re-fire
-     * within this window (~50ms storms observed in logcat).
+     * Device Owner lifecycle loop guard.
+     * Physical TV uses the tighter [PHYSICAL_TV_LOOP_GUARD_MS] instead.
      */
-    private const val SAFE_BRING_LOOP_GUARD_MS = 800L
+    private const val SAFE_BRING_LOOP_GUARD_MS = 300L
+    /**
+     * Physical TV quiet / busy hold for setReclaimLifecycleBusy only.
+     */
+    private const val PHYSICAL_TV_LOOP_GUARD_MS = 250L
+    /**
+     * Minimum interval between consecutive forceBringToFront startActivity calls.
+     * Prevents ActivityManager throttle and onPause ↔ onNewIntent storms.
+     * Does **not** delay the primary Intent — only drops secondary calls inside the window.
+     */
+    private const val RECLAIM_PENDING_GUARD_MS = 250L
+
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile
     private var lastForceBringAtMs: Long = 0L
+
+    /** True while an immediate Physical TV reclaim Intent was just sent. */
+    @Volatile
+    private var isReclaimPending: Boolean = false
 
     /** True while MainActivity is inside onNewIntent / onResume reclaim handling. */
     @Volatile
     private var reclaimLifecycleBusy: Boolean = false
 
-    /** Wall-clock until which onPause/onStop must not fire another reclaim. */
+    /** Wall-clock until which Device Owner paths may skip another reclaim. */
     @Volatile
     private var reclaimQuietUntilMs: Long = 0L
+
+    /** Wall-clock until which reclaim Intents are suppressed (e.g. Home picker). */
+    @Volatile
+    private var reclaimSuppressedUntilMs: Long = 0L
+
+    private val clearReclaimBusyRunnable = Runnable {
+        if (reclaimLifecycleBusy) {
+            reclaimLifecycleBusy = false
+            Log.d(TAG, "reclaimLifecycleBusy auto-cleared (≤${PHYSICAL_TV_LOOP_GUARD_MS}ms hold)")
+        }
+    }
+
+    private val clearReclaimPendingRunnable = Runnable {
+        isReclaimPending = false
+    }
 
     /** Product / Remote Config key name — also stored in SharedPreferences. */
     const val KEY_KIOSK_ENABLED = "is_kiosk_mode_enabled"
@@ -184,6 +219,44 @@ object KioskPolicy {
      */
     fun needsPhysicalTvFallback(context: Context): Boolean =
         isKioskModeEnabled(context) && !isDeviceOwner(context)
+
+    /**
+     * True when this app is the resolved default activity for
+     * [Intent.ACTION_MAIN] + [Intent.CATEGORY_HOME].
+     */
+    fun isMyAppDefaultLauncher(context: Context): Boolean {
+        return try {
+            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+            }
+            val resolveInfo = context.packageManager.resolveActivity(
+                homeIntent,
+                PackageManager.MATCH_DEFAULT_ONLY,
+            )
+            val resolvedPackage = resolveInfo?.activityInfo?.packageName
+            resolvedPackage.equals(context.packageName, ignoreCase = true)
+        } catch (e: Exception) {
+            Log.w(TAG, "isMyAppDefaultLauncher check failed", e)
+            false
+        }
+    }
+
+    /**
+     * Temporarily skip Watchdog / Accessibility / lifecycle reclaim so the OS
+     * Home picker / Settings UI can stay in the foreground.
+     */
+    fun suppressReclaimFor(durationMs: Long, reason: String) {
+        reclaimSuppressedUntilMs = System.currentTimeMillis() + durationMs.coerceAtLeast(0L)
+        Log.i(TAG, "reclaim suppressed ${durationMs}ms ($reason)")
+    }
+
+    fun clearReclaimSuppression(reason: String = "cleared") {
+        reclaimSuppressedUntilMs = 0L
+        Log.d(TAG, "reclaim suppression cleared ($reason)")
+    }
+
+    fun isReclaimSuppressed(): Boolean =
+        System.currentTimeMillis() < reclaimSuppressedUntilMs
 
     /**
      * Persist Super Admin package whitelist for [hotelId] only.
@@ -318,6 +391,86 @@ object KioskPolicy {
         return ok
     }
 
+    /**
+     * Stock / OEM TV home launchers and setup wizards that may steal focus under
+     * kiosk (e.g. GTPL "Finish setting up your TV"). Reclaimed via Accessibility —
+     * never disabled with pm / ADB.
+     */
+    val STOCK_LAUNCHER_OR_SETUP_PACKAGES: Set<String> = setOf(
+        "com.gtpl.customgooglelauncher",
+        "com.google.android.apps.tv.launcherx",
+        "com.google.android.tvlauncher",
+        "com.google.android.leanbacklauncher",
+        "com.google.android.tungsten.setupwraith",
+        "com.google.android.tv.setup",
+        "com.android.tv.settings",
+    )
+
+    /**
+     * True for GTPL / stock launcher / setup packages that must be reclaimed
+     * under kiosk. Intentional Entertainment OTT sessions are excluded by callers
+     * via [isExternalAppActive].
+     */
+    fun isStockLauncherOrSetupPackage(packageName: String?): Boolean {
+        val pkg = packageName?.trim().orEmpty()
+        if (pkg.isEmpty()) return false
+        if (STOCK_LAUNCHER_OR_SETUP_PACKAGES.contains(pkg)) return true
+        val lower = pkg.lowercase()
+        return lower.contains("tvlauncher") ||
+            lower.contains("tvhome") ||
+            lower.contains("setupwraith") ||
+            (lower.contains("setup") && lower.contains("tv"))
+    }
+
+    /**
+     * Instantly tear down every app-level interceptor so the default launcher
+     * (e.g. GTPL) can gain focus with no background reclaim pulls.
+     * Does **not** disable or modify any system packages.
+     */
+    fun releaseAllKioskInterceptors(context: Context) {
+        mainHandler.removeCallbacks(clearReclaimBusyRunnable)
+        mainHandler.removeCallbacks(clearReclaimPendingRunnable)
+        isReclaimPending = false
+        reclaimLifecycleBusy = false
+        reclaimQuietUntilMs = 0L
+        lastForceBringAtMs = 0L
+
+        prefs(context).edit()
+            .putBoolean(KEY_EXTERNAL_APP_ACTIVE, false)
+            .remove(KEY_EXTERNAL_APP_UNTIL)
+            .remove(KEY_LAST_OTT_PACKAGE)
+            .remove(KEY_OTT_LAUNCH_SUPPRESS_UNTIL)
+            .putBoolean(KEY_MAIN_FOREGROUND, false)
+            .apply()
+
+        try {
+            KioskWatchdogService.stop(context.applicationContext)
+        } catch (e: Exception) {
+            Log.w(TAG, "releaseAllKioskInterceptors — Watchdog stop failed", e)
+        }
+
+        onKioskModeChangedListeners.forEach { listener ->
+            try {
+                listener(false)
+            } catch (e: Exception) {
+                Log.w(TAG, "onKioskModeChanged(false) listener failed", e)
+            }
+        }
+        Log.i(TAG, "releaseAllKioskInterceptors — OTT/busy/Watchdog cleared (no package disables)")
+    }
+
+    private val onKioskModeChangedListeners =
+        java.util.concurrent.CopyOnWriteArrayList<(Boolean) -> Unit>()
+
+    /** MainActivity registers to cancel pending reclaim retries on instant toggle. */
+    fun addKioskModeChangedListener(listener: (Boolean) -> Unit) {
+        onKioskModeChangedListeners.addIfAbsent(listener)
+    }
+
+    fun removeKioskModeChangedListener(listener: (Boolean) -> Unit) {
+        onKioskModeChangedListeners.remove(listener)
+    }
+
     fun setKioskModeEnabled(
         context: Context,
         enabled: Boolean,
@@ -333,13 +486,20 @@ object KioskPolicy {
         editor.apply()
         Log.i(TAG, "$KEY_KIOSK_ENABLED=$enabled source=$source")
 
-        // Keep watchdog aligned with the flag.
         if (enabled) {
+            clearUserMinimized(context)
             KioskWatchdogService.start(context.applicationContext)
+            onKioskModeChangedListeners.forEach { listener ->
+                try {
+                    listener(true)
+                } catch (e: Exception) {
+                    Log.w(TAG, "onKioskModeChanged(true) listener failed", e)
+                }
+            }
         } else {
-            KioskWatchdogService.stop(context.applicationContext)
-            // Drop DPM whitelist immediately so Android 9/11 cannot keep blocking OTT
-            // launches with "Unauthorized by Admin" after kiosk is turned off.
+            // Instant OFF: stop interceptors / Watchdog / OTT gates — allow GTPL focus.
+            releaseAllKioskInterceptors(context)
+            markUserMinimized(context)
             clearDeviceOwnerLockTaskPackages(context)
             resolveActivity(context)?.let { activity ->
                 try {
@@ -372,6 +532,10 @@ object KioskPolicy {
                 enabled = false,
                 source = source,
             )
+        } else {
+            // Flag already persisted (e.g. RTDB) — still tear down interceptors instantly.
+            releaseAllKioskInterceptors(activity)
+            markUserMinimized(activity)
         }
 
         try {
@@ -598,12 +762,18 @@ object KioskPolicy {
 
     /**
      * Mark that MainActivity is handling [android.app.Activity.onNewIntent] /
-     * [android.app.Activity.onResume] reclaim — blocks nested forceBringToFront.
+     * [android.app.Activity.onResume] reclaim.
+     *
+     * Busy is **always** auto-cleared within [PHYSICAL_TV_LOOP_GUARD_MS] (250ms)
+     * so Physical TV Home reclaim is never suppressed for seconds.
      */
     fun setReclaimLifecycleBusy(busy: Boolean) {
+        mainHandler.removeCallbacks(clearReclaimBusyRunnable)
         reclaimLifecycleBusy = busy
         if (busy) {
-            reclaimQuietUntilMs = System.currentTimeMillis() + SAFE_BRING_LOOP_GUARD_MS
+            val holdMs = PHYSICAL_TV_LOOP_GUARD_MS
+            reclaimQuietUntilMs = System.currentTimeMillis() + holdMs
+            mainHandler.postDelayed(clearReclaimBusyRunnable, holdMs)
         }
         Log.d(TAG, "reclaimLifecycleBusy=$busy quietUntil=$reclaimQuietUntilMs")
     }
@@ -614,22 +784,38 @@ object KioskPolicy {
     fun isInReclaimQuietPeriod(): Boolean =
         System.currentTimeMillis() < reclaimQuietUntilMs
 
+    /** Elapsed ms since the last [forceBringToFront] / safe / urgent launch request. */
+    fun millisSinceLastForceBring(): Long =
+        System.currentTimeMillis() - lastForceBringAtMs
+
+    /** Loop-guard window for [context] — 250ms on Physical TV, 300ms for Device Owner. */
+    fun loopGuardMs(context: Context): Long =
+        if (needsPhysicalTvFallback(context)) PHYSICAL_TV_LOOP_GUARD_MS else SAFE_BRING_LOOP_GUARD_MS
+
+    /** True when at least the context-appropriate loop guard has passed. */
+    fun canForceBringAgain(context: Context): Boolean =
+        millisSinceLastForceBring() >= loopGuardMs(context)
+
     /**
      * Loop-safe reclaim for lifecycle callbacks (onPause / onStop / focus-loss).
-     * Suppresses rapid-fire calls (&lt; 800ms) and skips when MainActivity is already
+     * Suppresses rapid-fire calls and skips when MainActivity is already
      * foreground or actively handling onNewIntent / onResume.
+     *
+     * Prefer [forceBringToFrontPhysicalTvUrgent] on non–Device Owner TVs so
+     * quiet/busy from a prior leave hint cannot stall Home reclaim for seconds.
      */
     fun forceBringToFrontSafely(
         context: Context,
         navigateToHome: Boolean = true,
         preferImmediateOptions: Boolean = false,
     ): Boolean {
+        val guardMs = loopGuardMs(context)
         val currentTime = System.currentTimeMillis()
-        if (currentTime - lastForceBringAtMs < SAFE_BRING_LOOP_GUARD_MS) {
+        if (currentTime - lastForceBringAtMs < guardMs) {
             Log.d(
                 TAG,
                 "forceBringToFrontSafely suppressed — loop guard " +
-                    "(${currentTime - lastForceBringAtMs}ms < ${SAFE_BRING_LOOP_GUARD_MS}ms)",
+                    "(${currentTime - lastForceBringAtMs}ms < ${guardMs}ms)",
             )
             return false
         }
@@ -648,13 +834,164 @@ object KioskPolicy {
         }
 
         lastForceBringAtMs = currentTime
-        reclaimQuietUntilMs = currentTime + SAFE_BRING_LOOP_GUARD_MS
+        reclaimQuietUntilMs = currentTime + guardMs
         return forceBringToFront(
             context = context,
             navigateToHome = navigateToHome,
             skipDebounce = preferImmediateOptions,
             applyLoopGuard = false, // already applied above
         )
+    }
+
+    /**
+     * True when an immediate Physical TV reclaim Intent was sent within [withinMs].
+     * Uses wall-clock only — never a sticky flag that can block after the window.
+     */
+    fun wasReclaimIssuedRecently(withinMs: Long = RECLAIM_PENDING_GUARD_MS): Boolean {
+        if (lastForceBringAtMs <= 0L) return false
+        return System.currentTimeMillis() - lastForceBringAtMs < withinMs
+    }
+
+    /**
+     * Physical TV (!Device Owner) urgent Home reclaim via high-priority PendingIntent.
+     *
+     * Never uses plain [Context.startActivity] — that path is throttled by ActivityManager
+     * on Android TV and stalls MainActivity in ON_STOP for ~5s while GTPL shows.
+     *
+     * Duplicate guard (wall-clock only):
+     * - elapsed &lt; 250ms → do NOT send another PendingIntent
+     * - elapsed ≥ 250ms → send PendingIntent immediately with [ActivityOptions.makeBasic]
+     */
+    fun forceBringToFrontPhysicalTvUrgent(
+        context: Context,
+        navigateToHome: Boolean = true,
+    ): Boolean {
+        if (!isKioskModeEnabled(context)) return false
+        if (isDeviceOwner(context)) {
+            return forceBringToFrontSafely(
+                context = context,
+                navigateToHome = navigateToHome,
+                preferImmediateOptions = true,
+            )
+        }
+        if (isExternalAppActive(context)) {
+            Log.d(TAG, "forceBringToFrontPhysicalTvUrgent skipped — OTT session")
+            return false
+        }
+        if (isReclaimSuppressed()) {
+            Log.d(TAG, "forceBringToFrontPhysicalTvUrgent skipped — reclaim suppressed (Home picker)")
+            return false
+        }
+
+        val now = System.currentTimeMillis()
+        val elapsedMs = if (lastForceBringAtMs <= 0L) {
+            Long.MAX_VALUE
+        } else {
+            now - lastForceBringAtMs
+        }
+
+        if (elapsedMs < RECLAIM_PENDING_GUARD_MS) {
+            Log.d(
+                TAG,
+                "forceBringToFrontPhysicalTvUrgent skip duplicate " +
+                    "(elapsed=${elapsedMs}ms < ${RECLAIM_PENDING_GUARD_MS}ms)",
+            )
+            return false
+        }
+
+        isReclaimPending = false
+        mainHandler.removeCallbacks(clearReclaimPendingRunnable)
+
+        if (reclaimLifecycleBusy) {
+            mainHandler.removeCallbacks(clearReclaimBusyRunnable)
+            reclaimLifecycleBusy = false
+        }
+        reclaimQuietUntilMs = 0L
+        isReclaimPending = true
+        lastForceBringAtMs = now
+        mainHandler.postDelayed(clearReclaimPendingRunnable, RECLAIM_PENDING_GUARD_MS)
+
+        Log.i(
+            TAG,
+            "forceBringToFrontPhysicalTvUrgent — PendingIntent send " +
+                "(elapsed was ${if (elapsedMs == Long.MAX_VALUE) "n/a" else "${elapsedMs}ms"})",
+        )
+        return sendPhysicalTvUrgentPendingIntent(context, navigateToHome)
+    }
+
+    /**
+     * High-priority PendingIntent reclaim for Physical TV.
+     * Prefer this over [Context.startActivity] to avoid ActivityManager throttle / ON_STOP stall.
+     */
+    private fun sendPhysicalTvUrgentPendingIntent(
+        context: Context,
+        navigateToHome: Boolean,
+    ): Boolean {
+        val appContext = context.applicationContext
+        val intent = Intent(appContext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP
+            if (navigateToHome) {
+                putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
+            }
+        }
+
+        val piFlags = PendingIntent.FLAG_UPDATE_CURRENT or
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_IMMUTABLE
+            } else {
+                0
+            }
+
+        return try {
+            val pendingIntent = PendingIntent.getActivity(
+                appContext,
+                PHYSICAL_TV_URGENT_REQUEST_CODE,
+                intent,
+                piFlags,
+            )
+            val options = ActivityOptions.makeBasic().apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    val mode = if (Build.VERSION.SDK_INT >= 36) {
+                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
+                    } else {
+                        @Suppress("DEPRECATION")
+                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                    }
+                    setPendingIntentBackgroundActivityStartMode(mode)
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                pendingIntent.send(
+                    appContext,
+                    0,
+                    null,
+                    null,
+                    null,
+                    null,
+                    options.toBundle(),
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                pendingIntent.send()
+            }
+            if (context is Activity) {
+                @Suppress("DEPRECATION")
+                context.overridePendingTransition(0, 0)
+            }
+            Log.i(
+                TAG,
+                "Physical TV reclaim via PendingIntent.send(ActivityOptions.makeBasic) " +
+                    "api=${Build.VERSION.SDK_INT}",
+            )
+            true
+        } catch (e: Exception) {
+            // Do not fall back to plain startActivity — that triggers the 5s throttle stall.
+            Log.e(TAG, "Physical TV PendingIntent reclaim failed (no startActivity fallback)", e)
+            false
+        }
     }
 
     /** Called from HotelNavGraph when the current route changes. */
@@ -853,9 +1190,15 @@ object KioskPolicy {
      * Prefer [forceBringToFrontSafely] from Activity lifecycle callbacks to avoid
      * onPause ↔ onNewIntent infinite loops on physical TVs.
      *
+     * Never finishes or recreates the Activity — only NEW_TASK | SINGLE_TOP so the
+     * existing top instance is reused instead of spawning rapid new instances.
+     *
      * @param skipDebounce when true, use [ActivityOptions.makeBasic] immediately
-     *   (physical TV) — still respects the 800ms loop guard unless [applyLoopGuard]
-     *   is false (caller already guarded via [forceBringToFrontSafely]).
+     *   (physical TV) — still respects the context loop guard unless [applyLoopGuard]
+     *   is false (caller already guarded via [forceBringToFrontSafely] /
+     *   [forceBringToFrontPhysicalTvUrgent]).
+     * @param ignoreLifecycleBusy when true (physical TV urgent), do not bail on
+     *   [reclaimLifecycleBusy] — only the short launch-request guard applies.
      */
     fun forceBringToFront(
         context: Context,
@@ -863,23 +1206,39 @@ object KioskPolicy {
         requestCode: Int = FORCE_BRING_REQUEST_CODE,
         skipDebounce: Boolean = false,
         applyLoopGuard: Boolean = true,
+        ignoreLifecycleBusy: Boolean = false,
     ): Boolean {
         if (!isKioskModeEnabled(context)) return false
         if (isExternalAppActive(context)) {
             Log.d(TAG, "forceBringToFront skipped — OTT/external session active")
             return false
         }
-        if (reclaimLifecycleBusy) {
+        if (isReclaimSuppressed()) {
+            Log.d(TAG, "forceBringToFront skipped — reclaim suppressed (Home picker)")
+            return false
+        }
+        if (reclaimLifecycleBusy && !ignoreLifecycleBusy) {
             Log.d(TAG, "forceBringToFront skipped — reclaim lifecycle busy")
             return false
         }
 
+        // Hard minimum interval for every reclaim path (including skipDebounce callers
+        // that already stamped lastForceBringAtMs — those pass applyLoopGuard=false).
+        if (applyLoopGuard) {
+            val now = System.currentTimeMillis()
+            if (lastForceBringAtMs > 0L && now - lastForceBringAtMs < RECLAIM_PENDING_GUARD_MS) {
+                Log.d(
+                    TAG,
+                    "forceBringToFront suppressed — min interval " +
+                        "(${now - lastForceBringAtMs}ms < ${RECLAIM_PENDING_GUARD_MS}ms)",
+                )
+                return false
+            }
+        }
+
         val appContext = context.applicationContext
         val intent = Intent(appContext, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
             if (navigateToHome) {
                 putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
             }
@@ -888,17 +1247,18 @@ object KioskPolicy {
         // Physical TV / fast path: ActivityOptions, but still break pause/resume storms.
         if (skipDebounce) {
             if (applyLoopGuard) {
+                val guardMs = maxOf(loopGuardMs(context), RECLAIM_PENDING_GUARD_MS)
                 val now = System.currentTimeMillis()
-                if (now - lastForceBringAtMs < SAFE_BRING_LOOP_GUARD_MS) {
+                if (now - lastForceBringAtMs < guardMs) {
                     Log.d(
                         TAG,
                         "forceBringToFront skipDebounce suppressed — loop guard " +
-                            "(${now - lastForceBringAtMs}ms)",
+                            "(${now - lastForceBringAtMs}ms < ${guardMs}ms)",
                     )
                     return false
                 }
                 lastForceBringAtMs = now
-                reclaimQuietUntilMs = now + SAFE_BRING_LOOP_GUARD_MS
+                reclaimQuietUntilMs = now + guardMs
             }
             Log.i(TAG, "forceBringToFront — ActivityOptions (physical TV / skipDebounce)")
             val started = startActivityImmediate(context, intent)
@@ -922,11 +1282,12 @@ object KioskPolicy {
         if (Build.VERSION.SDK_INT in 29..30) {
             if (applyLoopGuard) {
                 val now = System.currentTimeMillis()
-                if (now - lastForceBringAtMs < SAFE_BRING_LOOP_GUARD_MS) {
+                if (now - lastForceBringAtMs < loopGuardMs(context)) {
                     Log.d(TAG, "forceBringToFront API29/30 suppressed — loop guard")
                     return false
                 }
                 lastForceBringAtMs = now
+                reclaimQuietUntilMs = now + loopGuardMs(context)
             }
             return startActivityImmediate(context, intent)
         }

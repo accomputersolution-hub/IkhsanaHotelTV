@@ -11,17 +11,18 @@
     </style>
 
     <!--
-      Main app theme: forced dark navy windowBackground so HOME / onNewIntent
-      transitions never flash the default AppCompat DayNight blue / light surface.
+      Main app theme: dark home-matching window fill so Compose route swaps never
+      flash AppCompat / Material blue through a destroyed Home destination.
     -->
     <style name="Theme.IkhsanaHotelTV" parent="Theme.AppCompat.NoActionBar">
-        <item name="android:windowBackground">@color/navy_deep</item>
-        <item name="android:colorBackground">@color/navy_deep</item>
-        <item name="android:statusBarColor">@color/navy_deep</item>
-        <item name="android:navigationBarColor">@color/navy_deep</item>
-        <item name="colorPrimary">@color/navy_deep</item>
-        <item name="colorPrimaryDark">@color/navy_deep</item>
+        <item name="android:windowBackground">@color/dark_bg_or_transparent</item>
+        <item name="android:colorBackground">@color/dark_bg_or_transparent</item>
+        <item name="android:statusBarColor">@color/dark_bg_or_transparent</item>
+        <item name="android:navigationBarColor">@color/dark_bg_or_transparent</item>
+        <item name="colorPrimary">@color/dark_bg_or_transparent</item>
+        <item name="colorPrimaryDark">@color/dark_bg_or_transparent</item>
         <item name="colorAccent">@color/splash_gold</item>
+        <item name="android:windowIsTranslucent">false</item>
         <item name="android:windowAnimationStyle">@style/Theme.IkhsanaHotelTV.NoAnimation</item>
         <item name="android:windowDisablePreview">true</item>
         <!-- Disable platform square focus highlight on Android TV (API 26+) -->

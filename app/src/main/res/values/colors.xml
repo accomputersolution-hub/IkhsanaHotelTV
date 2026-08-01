@@ -2,6 +2,8 @@
 <resources>
     <color name="splash_background">#0B1325</color>
     <color name="navy_deep">#0B1325</color>
+    <!-- Window / activity fill during Compose route swaps — matches Home wallpaper base. -->
+    <color name="dark_bg_or_transparent">#0B1325</color>
     <color name="splash_gold">#D4AF37</color>
     <color name="splash_text_primary">#F8FAFC</color>
     <color name="splash_text_muted">#94A3B8</color>
