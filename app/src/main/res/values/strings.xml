@@ -147,6 +147,20 @@
     <string name="admin_idle_hint">Admin Mode closes automatically after 3 minutes of inactivity</string>
     <string name="admin_open_hint">Hold OK on Room badge for staff settings</string>
     <string name="device_admin_description">Hotel TV kiosk device admin for Lock Task Mode</string>
-    <string name="home_key_interceptor_description">Intercepts the TV remote HOME button and returns to the hotel guest app when the OEM drops Home intents under Lock Task.</string>
+    <string name="home_key_interceptor_description">Silently blocks the TV remote HOME button under hotel kiosk so the stock launcher does not flash. Screen Pinning remains the fallback.</string>
     <string name="home_key_interceptor_label">Hotel TV Home Key Interceptor</string>
+    <string name="admin_key_blocker_open">Key Blocker</string>
+    <string name="admin_key_blocker_title">Remote Key Blocker</string>
+    <string name="admin_key_blocker_subtitle">Blocked dedicated remote buttons. Learn a new key with the TV remote.</string>
+    <string name="admin_key_blocker_listening">Listening… Press the remote button to block</string>
+    <string name="admin_key_blocker_confirm">Block keyCode %1$d?</string>
+    <string name="admin_key_blocker_empty">No blocked keys</string>
+    <string name="admin_key_blocker_item">keyCode %1$d</string>
+    <string name="admin_key_blocker_remove">Remove</string>
+    <string name="admin_key_blocker_learn">Learn New Key</string>
+    <string name="admin_key_blocker_cancel_listen">Cancel Listen</string>
+    <string name="admin_key_blocker_save">Save / Block</string>
+    <string name="admin_key_blocker_back">Back</string>
+    <string name="admin_key_blocker_saved">Blocked keyCode %1$d</string>
+    <string name="admin_key_blocker_removed">Removed keyCode %1$d</string>
 </resources>

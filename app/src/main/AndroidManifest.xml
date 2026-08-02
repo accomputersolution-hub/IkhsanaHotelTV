@@ -18,15 +18,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!--
-      WRITE_SECURE_SETTINGS: silent re-enable of HomeKeyInterceptorService when OEM
-      HOME kills accessibility. Grant once on hotel TVs:
-      adb shell pm grant in.pcncloud.hotel android.permission.WRITE_SECURE_SETTINGS
-      (Also works when the app is Device Owner on many builds.)
-    -->
-    <uses-permission
-        android:name="android.permission.WRITE_SECURE_SETTINGS"
-        tools:ignore="ProtectedPermissions" />
 
     <uses-feature
         android:name="android.hardware.touchscreen"
@@ -186,24 +177,24 @@
         </service>
 
         <!--
-          Hardware HOME key interceptor (AccessibilityService).
-          OEM Lock Task often drops HOME intents — this service filters KEYCODE_HOME
-          and brings MainActivity to front. Enable via ADB:
-          adb shell settings put secure enabled_accessibility_services in.pcncloud.hotel/in.pcncloud.hotel.kiosk.HomeKeyInterceptorService
-          adb shell settings put secure accessibility_enabled 1
+          Ultra-lightweight Home key eater (Accessibility).
+          Swallows KEYCODE_HOME / OEM 228 only — no reclaim logic.
+          Screen Pinning + PendingIntent remain the safety net if this is disabled.
+          Staff must enable once: Settings → Accessibility → Hotel TV Home Key Interceptor
         -->
         <service
             android:name=".kiosk.HomeKeyInterceptorService"
-            android:label="@string/home_key_interceptor_label"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true"
-            android:enabled="true">
+            android:enabled="true"
+            android:directBootAware="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:label="@string/home_key_interceptor_label">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
             <meta-data
                 android:name="android.accessibilityservice"
-                android:resource="@xml/home_key_interceptor_service" />
+                android:resource="@xml/accessibility_service_config" />
         </service>
 
     </application>

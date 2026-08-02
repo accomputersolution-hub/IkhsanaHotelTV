@@ -5,7 +5,6 @@ import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
-import `in`.pcncloud.hotel.kiosk.HomeKeyInterceptorService
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
 
@@ -24,11 +23,6 @@ class HotelTvApplication : Application() {
             MyDeviceAdminReceiver.logProvisioningDiagnostics(this)
         } catch (e: Exception) {
             Log.w(TAG, "logProvisioningDiagnostics failed during Application.onCreate", e)
-        }
-        try {
-            HomeKeyInterceptorService.logStatus(this)
-        } catch (e: Exception) {
-            Log.w(TAG, "HomeKeyInterceptorService.logStatus failed during Application.onCreate", e)
         }
         try {
             KioskPolicy.onProcessStart(this)

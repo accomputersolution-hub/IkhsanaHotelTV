@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -32,7 +33,7 @@ import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.data.model.HotelBranding
 import `in`.pcncloud.hotel.data.repository.FirestoreRepository
-import `in`.pcncloud.hotel.kiosk.HomeKeyInterceptorService
+import `in`.pcncloud.hotel.kiosk.BlockedKeysManager
 import `in`.pcncloud.hotel.kiosk.HotelSessionManager
 import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
@@ -65,6 +66,13 @@ import kotlinx.coroutines.delay
  * overlay — never crashes on missing admin authorization.
  */
 class MainActivity : ComponentActivity() {
+
+    /**
+     * When non-null, Admin Key Blocker "Learn New Key" is active.
+     * Return true from the listener to consume the key (and stop learning).
+     */
+    @Volatile
+    var keyLearnListener: ((keyCode: Int) -> Boolean)? = null
 
     private lateinit var hotelConfig: HotelConfig
     private lateinit var repository: FirestoreRepository
@@ -186,9 +194,6 @@ class MainActivity : ComponentActivity() {
 
     /** Avoid repeatedly opening overlay settings when SYSTEM_ALERT_WINDOW is missing. */
     private var overlayPromptShown: Boolean = false
-
-    /** Avoid repeatedly opening Accessibility settings for HomeKeyInterceptor. */
-    private var accessibilityPromptShown: Boolean = false
 
     /** True while onNewIntent / onResume is handling a reclaim — blocks onPause loops. */
     private var handlingReclaimLifecycle: Boolean = false
@@ -427,12 +432,12 @@ class MainActivity : ComponentActivity() {
         mainHandler.postDelayed(physicalTvReclaimRetryRunnable, delayMs)
     }
 
-    /** Pulse local + policy busy for ≤100ms so nested pause cannot stall Home reclaim. */
+    /** Pulse local + policy busy for ≤50ms so nested pause cannot stall Home reclaim. */
     private fun markReclaimLifecycleBusyBriefly() {
         handlingReclaimLifecycle = true
         KioskPolicy.setReclaimLifecycleBusy(true)
         mainHandler.removeCallbacks(clearHandlingReclaimRunnable)
-        mainHandler.postDelayed(clearHandlingReclaimRunnable, 100L)
+        mainHandler.postDelayed(clearHandlingReclaimRunnable, 50L)
     }
 
     /**
@@ -518,7 +523,7 @@ class MainActivity : ComponentActivity() {
 
         installKioskBackSafetyNet()
 
-        // Cold start may already carry NAVIGATE_TO_HOME from HomeKeyInterceptor / launcher.
+        // Cold start may already carry NAVIGATE_TO_HOME from launcher / reclaim.
         handleNavigateToHomeExtra(intent)
 
         hotelConfig = HotelConfig(applicationContext)
@@ -679,25 +684,14 @@ class MainActivity : ComponentActivity() {
     /**
      * Diagnostic + prompt: logs Home launcher status and opens system Home settings
      * / chooser when kiosk is ON but this app is not the default Home activity.
-     * Also logs whether the hardware HOME Accessibility interceptor is enabled.
      */
     private fun verifyAndRequestDefaultHomeLauncher() {
         val isDefault = KioskPolicy.isMyAppDefaultLauncher(this)
         val kioskOn = resolveKioskEnabled() || KioskPolicy.isKioskModeEnabled(this)
-        val homeKeyServiceOn = HomeKeyInterceptorService.isEnabled(this)
         Log.i(
             TAG,
-            "Home launcher diagnostic → package=$packageName isDefault=$isDefault " +
-                "kiosk=$kioskOn homeKeyInterceptor=$homeKeyServiceOn",
+            "Home launcher diagnostic → package=$packageName isDefault=$isDefault kiosk=$kioskOn",
         )
-
-        if (!homeKeyServiceOn) {
-            Log.w(
-                TAG,
-                "HomeKeyInterceptor NOT enabled — OEM may drop HOME under Lock Task. " +
-                    HomeKeyInterceptorService.adbEnableCommands().joinToString(" && "),
-            )
-        }
 
         if (!kioskOn) {
             Log.d(TAG, "Skip Home launcher prompt — kiosk disabled")
@@ -1041,13 +1035,31 @@ class MainActivity : ComponentActivity() {
      * When Kiosk Mode is OFF → allow everything.
      * When Kiosk Mode is ON → only packages explicitly in this hotel's Admin whitelist
      * (no YouTube / OTT baseline bypass).
+     * Never throws into Compose / key dispatch.
      */
     fun canLaunchApp(targetPackageName: String): Boolean {
-        if (!isKioskModeEnabled) return true
+        return try {
+            if (!isKioskModeEnabled) return true
+            val allowedPackagesList = lastAppliedAllowedPackages
+                ?: KioskPolicy.getAllowedPackagesList(this, currentHotelIdOrNull())
+            allowedPackagesList.contains(targetPackageName.trim())
+        } catch (t: Throwable) {
+            Log.e(TAG, "canLaunchApp failed — denying under kiosk (safe)", t)
+            !isKioskModeEnabled
+        }
+    }
 
-        val allowedPackagesList = lastAppliedAllowedPackages
-            ?: KioskPolicy.getAllowedPackagesList(this, currentHotelIdOrNull())
-        return allowedPackagesList.contains(targetPackageName.trim())
+    /**
+     * Called when an Entertainment / Live TV launch is refused by whitelist.
+     * Silently keeps the guest on MainActivity — no crash, no input-channel break.
+     */
+    fun onExternalLaunchBlocked(blockedPackage: String) {
+        try {
+            Log.w(TAG, "onExternalLaunchBlocked → $blockedPackage (silent)")
+            KioskPolicy.denyExternalLaunchSilently(this, blockedPackage)
+        } catch (t: Throwable) {
+            Log.e(TAG, "onExternalLaunchBlocked failed (ignored)", t)
+        }
     }
 
     /**
@@ -1131,11 +1143,27 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Kiosk key gate:
-     * - HOME + OEM / OTT hotkeys: secured swallow (unchanged Home lock path).
-     * - BACK: sub-menu → Home; already Home → consume (never exit).
+     * Kiosk key gate — Home / Back / Recent first (unchanged), then vendor/unknown
+     * remote shortcuts are consumed so they never reach [super] (InputChannel safety).
+     * Safe navigation keys (D-pad / Enter / volume) still pass through.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // Admin Key Blocker "Learn New Key" — capture before kiosk swallow paths.
+        val learner = keyLearnListener
+        if (learner != null &&
+            event.action == KeyEvent.ACTION_DOWN &&
+            event.repeatCount == 0
+        ) {
+            try {
+                if (learner.invoke(event.keyCode)) {
+                    Log.i(TAG, "keyLearnListener captured keyCode=${event.keyCode}")
+                    return true
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "keyLearnListener failed", t)
+            }
+        }
+
         if (screensaverVisible) {
             if (event.action == KeyEvent.ACTION_DOWN) {
                 markUserActive(dismissScreensaver = true)
@@ -1146,31 +1174,49 @@ class MainActivity : ComponentActivity() {
 
         val kioskOn = isKioskModeEnabled || resolveKioskEnabled()
         if (kioskOn) {
-            // —— Home / OEM / OTT: keep fully secured (do not alter this path) ——
             when (event.keyCode) {
-                KeyEvent.KEYCODE_HOME,
-                228, // GTPL / OEM Home / Apps
-                247, // Netflix
-                288, // YouTube
-                289, // Prime Video
-                -> {
+                // —— Home only: dedicated reclaim path (do not alter) ——
+                KeyEvent.KEYCODE_HOME -> {
                     if (event.action == KeyEvent.ACTION_DOWN) {
-                        Log.d("KeySwallower", "Swallowed key ${event.keyCode} in Kiosk mode")
-                        when (event.keyCode) {
-                            KeyEvent.KEYCODE_HOME -> navigateToRootHome()
-                            else -> markUserActive(dismissScreensaver = true)
-                        }
+                        Log.d(TAG, "Swallowed HOME in Kiosk mode")
+                        navigateToRootHome()
                     }
                     return true
                 }
                 // —— Back only: sub-menu navigation / Home lock ——
                 KeyEvent.KEYCODE_BACK -> {
                     if (event.action == KeyEvent.ACTION_DOWN) {
-                        Log.d("KeySwallower", "Back in Kiosk mode — handleKioskBackPressed")
+                        Log.d(TAG, "Back in Kiosk mode — handleKioskBackPressed")
                         handleKioskBackPressed()
                     }
                     return true
                 }
+                // —— Recent / App switch: block under kiosk ——
+                KeyEvent.KEYCODE_APP_SWITCH -> {
+                    if (event.action == KeyEvent.ACTION_DOWN) {
+                        Log.d(TAG, "Swallowed Recent/App Switch in Kiosk mode")
+                        markUserActive(dismissScreensaver = true)
+                    }
+                    return true
+                }
+            }
+
+            // Vendor / unknown remote shortcuts (YouTube, Hotstar, etc.):
+            // consume DOWN+UP — never call super (protects InputDispatcher channel).
+            if (shouldConsumeVendorRemoteKey(event)) {
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    try {
+                        markUserActive(dismissScreensaver = true)
+                    } catch (_: Throwable) {
+                    }
+                    Log.d(
+                        TAG,
+                        "Consumed vendor/unknown key keyCode=${event.keyCode} " +
+                            "scanCode=${event.scanCode} " +
+                            "source=0x${Integer.toHexString(event.source)}",
+                    )
+                }
+                return true
             }
         } else if (event.keyCode == KeyEvent.KEYCODE_BACK &&
             event.action == KeyEvent.ACTION_DOWN &&
@@ -1180,7 +1226,86 @@ class MainActivity : ComponentActivity() {
             return true
         }
 
-        return super.dispatchKeyEvent(event)
+        return try {
+            super.dispatchKeyEvent(event)
+        } catch (t: Throwable) {
+            Log.e(TAG, "dispatchKeyEvent super failed keyCode=${event.keyCode}", t)
+            true
+        }
+    }
+
+    /**
+     * True for OEM YouTube / Hotstar / Netflix / Apps dedicated buttons and other
+     * unhandled vendor KeyEvents that must not reach [super.dispatchKeyEvent].
+     * Home / Back / Recent are handled separately and never evaluated here.
+     */
+    private fun shouldConsumeVendorRemoteKey(event: KeyEvent): Boolean {
+        val keyCode = event.keyCode
+        when (keyCode) {
+            KeyEvent.KEYCODE_HOME,
+            KeyEvent.KEYCODE_BACK,
+            KeyEvent.KEYCODE_APP_SWITCH,
+            -> return false
+        }
+
+        // Known OEM OTT / Apps shortcut keyCodes.
+        when (keyCode) {
+            KEYCODE_OEM_APPS,
+            KEYCODE_OEM_NETFLIX,
+            KEYCODE_OEM_YOUTUBE,
+            KEYCODE_OEM_PRIME_VIDEO,
+            -> return true
+        }
+
+        // Raw vendor scan with no standard Android keyCode mapping.
+        if (keyCode == KeyEvent.KEYCODE_UNKNOWN && event.scanCode != 0) return true
+
+        // Known vendor scan codes that some remotes report even when keyCode differs.
+        if (isKnownVendorOttScanCode(event.scanCode)) return true
+
+        // Safe TV navigation — allow through to Compose / system volume.
+        if (isSafeKioskPassthroughKey(keyCode)) return false
+
+        // Any other key from a remote-class device: consume (never super).
+        return isRemoteOrVendorSource(event)
+    }
+
+    private fun isKnownVendorOttScanCode(scanCode: Int): Boolean {
+        return when (scanCode) {
+            KEYCODE_OEM_APPS,
+            KEYCODE_OEM_NETFLIX,
+            KEYCODE_OEM_YOUTUBE,
+            KEYCODE_OEM_PRIME_VIDEO,
+            -> true
+            else -> false
+        }
+    }
+
+    private fun isSafeKioskPassthroughKey(keyCode: Int): Boolean {
+        return when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_VOLUME_UP,
+            KeyEvent.KEYCODE_VOLUME_DOWN,
+            KeyEvent.KEYCODE_VOLUME_MUTE,
+            -> true
+            else -> false
+        }
+    }
+
+    private fun isRemoteOrVendorSource(event: KeyEvent): Boolean {
+        val source = event.source
+        return (source and InputDevice.SOURCE_CLASS_BUTTON) != 0 ||
+            (source and InputDevice.SOURCE_DPAD) != 0 ||
+            (source and InputDevice.SOURCE_GAMEPAD) != 0 ||
+            (source and InputDevice.SOURCE_HDMI) != 0 ||
+            (source and InputDevice.SOURCE_JOYSTICK) != 0 ||
+            (source and InputDevice.SOURCE_KEYBOARD) != 0
     }
 
     /** In-app Root Home switch for Lock Task HOME key capture (Home button path only). */
@@ -1195,45 +1320,114 @@ class MainActivity : ComponentActivity() {
         subMenuVisible || !KioskPolicy.isOnGuestHomeScreen(this)
 
     /**
-     * Kiosk ON → swallow HOME/BACK so OEM never forwards them to GTPL.
-     * Kiosk OFF → HOME releases Lock Task and backgrounds this app.
+     * Secondary gate for Home / Back / Recent / vendor shortcuts.
+     * Behavior is owned by [dispatchKeyEvent] — consume here, do not re-navigate.
      */
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        val kioskOn = isKioskModeEnabled || resolveKioskEnabled()
-        if (kioskOn &&
-            (keyCode == KeyEvent.KEYCODE_HOME ||
-                keyCode == KeyEvent.KEYCODE_BACK ||
-                keyCode == 228 || keyCode == 247 ||
-                keyCode == 288 || keyCode == 289)
-        ) {
-            Log.d("KeySwallower", "onKeyDown swallowed key $keyCode in Kiosk mode")
-            return true
+        return try {
+            val kioskOn = isKioskModeEnabled || resolveKioskEnabled()
+            if (kioskOn) {
+                when (keyCode) {
+                    KeyEvent.KEYCODE_HOME,
+                    KeyEvent.KEYCODE_BACK,
+                    KeyEvent.KEYCODE_APP_SWITCH,
+                    -> {
+                        Log.d(TAG, "onKeyDown swallowed key $keyCode in Kiosk mode")
+                        return true
+                    }
+                }
+                if (event != null && shouldConsumeVendorRemoteKey(event)) {
+                    Log.d(TAG, "onKeyDown swallowed vendor key $keyCode")
+                    return true
+                }
+            }
+            if (keyCode == KeyEvent.KEYCODE_HOME && !kioskOn) {
+                Log.i(TAG, "onKeyDown HOME — kiosk OFF → disableKioskMode + moveTaskToBack")
+                KioskPolicy.disableKioskMode(
+                    activity = this,
+                    source = KioskPolicy.KioskSource.SYSTEM_DEFAULT,
+                    persistFlag = false,
+                )
+                KioskPolicy.launchSystemDefaultLauncher(this)
+                return true
+            }
+            try {
+                super.onKeyDown(keyCode, event)
+            } catch (t: Throwable) {
+                Log.e(TAG, "onKeyDown super failed keyCode=$keyCode", t)
+                true
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "onKeyDown failed keyCode=$keyCode — consuming", t)
+            true
         }
-        if (keyCode == KeyEvent.KEYCODE_HOME && !kioskOn) {
-            Log.i(TAG, "onKeyDown HOME — kiosk OFF → disableKioskMode + moveTaskToBack")
-            KioskPolicy.disableKioskMode(
-                activity = this,
-                source = KioskPolicy.KioskSource.SYSTEM_DEFAULT,
-                persistFlag = false,
-            )
-            KioskPolicy.launchSystemDefaultLauncher(this)
-            return true
-        }
-        return super.onKeyDown(keyCode, event)
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
-        val kioskOn = isKioskModeEnabled || resolveKioskEnabled()
-        if (kioskOn &&
-            (keyCode == KeyEvent.KEYCODE_HOME ||
-                keyCode == KeyEvent.KEYCODE_BACK ||
-                keyCode == 228 || keyCode == 247 ||
-                keyCode == 288 || keyCode == 289)
-        ) {
-            Log.d("KeySwallower", "onKeyUp swallowed key $keyCode in Kiosk mode")
-            return true
+        return try {
+            val kioskOn = isKioskModeEnabled || resolveKioskEnabled()
+            if (kioskOn) {
+                when (keyCode) {
+                    KeyEvent.KEYCODE_HOME,
+                    KeyEvent.KEYCODE_BACK,
+                    KeyEvent.KEYCODE_APP_SWITCH,
+                    -> {
+                        Log.d(TAG, "onKeyUp swallowed key $keyCode in Kiosk mode")
+                        return true
+                    }
+                }
+                if (event != null && shouldConsumeVendorRemoteKey(event)) {
+                    return true
+                }
+            }
+            try {
+                super.onKeyUp(keyCode, event)
+            } catch (t: Throwable) {
+                Log.e(TAG, "onKeyUp super failed keyCode=$keyCode", t)
+                true
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "onKeyUp failed keyCode=$keyCode — consuming", t)
+            true
         }
-        return super.onKeyUp(keyCode, event)
+    }
+
+    override fun onKeyMultiple(keyCode: Int, repeatCount: Int, event: KeyEvent?): Boolean {
+        return try {
+            val kioskOn = isKioskModeEnabled || resolveKioskEnabled()
+            if (kioskOn) {
+                when (keyCode) {
+                    KeyEvent.KEYCODE_HOME,
+                    KeyEvent.KEYCODE_BACK,
+                    KeyEvent.KEYCODE_APP_SWITCH,
+                    -> return true
+                }
+                if (event != null && shouldConsumeVendorRemoteKey(event)) {
+                    return true
+                }
+            }
+            try {
+                super.onKeyMultiple(keyCode, repeatCount, event)
+            } catch (t: Throwable) {
+                Log.e(TAG, "onKeyMultiple super failed keyCode=$keyCode", t)
+                true
+            }
+        } catch (t: Throwable) {
+            true
+        }
+    }
+
+    override fun dispatchKeyShortcutEvent(event: KeyEvent): Boolean {
+        return try {
+            val kioskOn = isKioskModeEnabled || resolveKioskEnabled()
+            if (kioskOn && shouldConsumeVendorRemoteKey(event)) {
+                return true
+            }
+            super.dispatchKeyShortcutEvent(event)
+        } catch (t: Throwable) {
+            Log.e(TAG, "dispatchKeyShortcutEvent super failed", t)
+            true
+        }
     }
 
     /**
@@ -1320,11 +1514,39 @@ class MainActivity : ComponentActivity() {
         applyLockTaskFromPersistedState("onWindowFocusChanged")
     }
 
+    /**
+     * First-frame kiosk snap: Screen Pinning + full-screen overlay on the main thread
+     * **before** Compose nav / Firebase / Watchdog work. Masks stock-launcher flash
+     * during surface reorder after PendingIntent reclaim.
+     */
+    private fun snapKioskSurfaceImmediate(reason: String) {
+        if (!resolveKioskEnabled() && !KioskPolicy.isKioskModeEnabled(this)) return
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
+        try {
+            window?.setWindowAnimations(0)
+        } catch (_: Throwable) {
+        }
+        // Device Owner whitelist + pin, or Physical TV Screen Pinning path.
+        ensureDeviceOwnerLockTask(reason)
+        startLockTaskSafely(reason)
+        if (KioskPolicy.needsPhysicalTvFallback(this)) {
+            setupPhysicalTvFallbackOverlay()
+        } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R &&
+            KioskPolicy.isDeviceOwner(this)
+        ) {
+            setupLegacyOverlayBarrier()
+        }
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
+        Log.i(TAG, "snapKioskSurfaceImmediate ($reason) — Lock Task + overlay armed")
+    }
+
     override fun onResume() {
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
 
-        // ≤100ms busy pulse — never hold reclaimLifecycleBusy for seconds.
+        // ≤50ms busy pulse — never hold reclaimLifecycleBusy for seconds.
         markReclaimLifecycleBusyBriefly()
         try {
             super.onResume()
@@ -1333,6 +1555,14 @@ class MainActivity : ComponentActivity() {
             KioskPolicy.setMainActivityForeground(this, true)
             if (!screensaverVisible) {
                 lastInteractionAt = System.currentTimeMillis()
+            }
+
+            val kioskOn = resolveKioskEnabled()
+            // —— Aggressive foreground snap FIRST (before nav / async) ——
+            if (kioskOn) {
+                snapKioskSurfaceImmediate("onResume")
+            } else {
+                removeKioskOverlayBarrier()
             }
 
             // UI should already be Root Home (switched before OTT launch). Cleanup only.
@@ -1348,16 +1578,12 @@ class MainActivity : ComponentActivity() {
                 KioskPolicy.clearOttLaunchState(this)
             }
 
-            if (resolveKioskEnabled()) {
+            if (kioskOn) {
                 // Staff returned from Home picker after selecting this app as default.
                 if (KioskPolicy.isMyAppDefaultLauncher(this)) {
                     KioskPolicy.clearReclaimSuppression("default_home_confirmed")
                 }
-                // Device Owner → true Lock Task; otherwise physical TV Screen Pinning + Overlay.
-                // startLockTaskSafely skips when already locked/pinned.
-                ensureDeviceOwnerLockTask("onResume")
-                startLockTaskSafely("onResume")
-                // Safe here: Activity is foreground — Android 12+/16 allow FGS starts.
+                // Secondary keep-alive — after pin/overlay already covering the frame.
                 try {
                     KioskWatchdogService.start(this)
                 } catch (e: Exception) {
@@ -1365,17 +1591,6 @@ class MainActivity : ComponentActivity() {
                 }
                 // Android 10 BAL exemption: overlay permission must be granted.
                 ensureOverlayPermissionForBal()
-                // Physical TV: HOME key escapes to stock launcher without Accessibility.
-                ensureHomeKeyInterceptorEnabled()
-                if (KioskPolicy.needsPhysicalTvFallback(this)) {
-                    // Full-screen overlay on any API when Device Owner is missing.
-                    setupPhysicalTvFallbackOverlay()
-                } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-                    // Device Owner + API 9/10: tiny privilege barrier only.
-                    setupLegacyOverlayBarrier()
-                }
-            } else {
-                removeKioskOverlayBarrier()
             }
         } catch (e: Exception) {
             Log.e(TAG, "onResume error", e)
@@ -1383,6 +1598,10 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        // Kill leave transition so stock launcher never paints a mid-frame flash.
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
+
         isAppInForeground = false
         KioskPolicy.setMainActivityForeground(this, false)
         super.onPause()
@@ -1479,15 +1698,16 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Receives reclaim intents from [onUserLeaveHint] (SINGLE_TOP / REORDER_TO_FRONT)
-     * and HOME-category launches. Kiosk OFF lets the system home path proceed;
-     * kiosk ON finishes any OTT return and re-applies Lock Task.
+     * Receives reclaim / Home-interceptor launches
+     * ([HomeKeyInterceptorService] uses NEW_TASK | CLEAR_TOP | SINGLE_TOP +
+     * [EXTRA_NAVIGATE_TO_HOME]). Instantly hides guest overlays and re-pins via
+     * [snapKioskSurfaceImmediate] so the kiosk channel restores after YouTube.
      */
     override fun onNewIntent(intent: Intent) {
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
 
-        // ≤100ms busy pulse — never finish/recreate; keep existing surface.
+        // ≤50ms busy pulse — never finish/recreate; keep existing surface.
         markReclaimLifecycleBusyBriefly()
         try {
             super.onNewIntent(intent)
@@ -1497,12 +1717,14 @@ class MainActivity : ComponentActivity() {
             isKioskModeEnabled = isKioskActive
             currentKioskState = isKioskActive
 
+            val fromHomeInterceptor =
+                intent.getBooleanExtra(EXTRA_NAVIGATE_TO_HOME, false)
             val isHomeIntent = intent.categories?.contains(Intent.CATEGORY_HOME) == true ||
                 (intent.action == Intent.ACTION_MAIN &&
                     intent.hasCategory(Intent.CATEGORY_HOME))
 
             // Kiosk OFF + HOME → unpin, clear DPM whitelist, and background.
-            if (!isKioskActive && isHomeIntent) {
+            if (!isKioskActive && isHomeIntent && !fromHomeInterceptor) {
                 Log.i(TAG, "onNewIntent HOME while kiosk OFF — disableKioskMode + moveTaskToBack")
                 KioskPolicy.disableKioskMode(
                     activity = this,
@@ -1513,26 +1735,34 @@ class MainActivity : ComponentActivity() {
                 return
             }
 
-            val wantsRootHome = intent.getBooleanExtra(EXTRA_NAVIGATE_TO_HOME, false) ||
+            val wantsRootHome = fromHomeInterceptor ||
                 isHomeIntent ||
                 (intent.action == Intent.ACTION_MAIN && pendingReturnToHome)
 
             if (!wantsRootHome && !pendingReturnToHome) return
 
-            if (!isKioskActive &&
-                intent.getBooleanExtra(EXTRA_NAVIGATE_TO_HOME, false) != true &&
-                !pendingReturnToHome
-            ) {
+            if (!isKioskActive && !fromHomeInterceptor && !pendingReturnToHome) {
                 Log.d(TAG, "onNewIntent ignored — kiosk disabled")
                 return
             }
 
-            Log.i(TAG, "onNewIntent → finishReturnFromExternalApp")
-            finishReturnFromExternalApp()
-            // Re-pin only if Lock Task is not already active (avoids API 28 freeze).
-            if (isKioskActive && !isLockTaskAlreadyActive()) {
-                ensureDeviceOwnerLockTask("onNewIntent")
+            // —— From YouTube / OTT Home intercept: pin + hide overlay immediately ——
+            if (isKioskActive || fromHomeInterceptor) {
+                Log.i(
+                    TAG,
+                    "onNewIntent — interceptor/Home reclaim → snap Lock Task + Root Home",
+                )
+                // Clear OTT session flags before nav (interceptor may have already).
+                KioskPolicy.clearExternalAppActive(this)
+                KioskPolicy.clearOttLaunchState(this)
+                snapKioskSurfaceImmediate("onNewIntent")
+                // Hide guest overlays / pop to Root Home (same as in-app Home).
+                finishReturnFromExternalApp()
+                // Re-assert pin after nav (safe if already RESUMED; onResume also snaps).
+                startLockTaskSafely("onNewIntent_post_nav")
             }
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
         } catch (e: Exception) {
             Log.e(TAG, "onNewIntent error", e)
         }
@@ -1605,14 +1835,13 @@ class MainActivity : ComponentActivity() {
 
     /**
      * On return from YouTube/HOME: zero animation.
-     * Clears isExternalAppActive so Watchdog resume reclaim; if Root Home was applied
-     * before launch, do not re-navigate (no flicker).
+     * Clears isExternalAppActive so Watchdog resumes reclaim, then always resets
+     * the overlay nav graph to root Home (never leaves stock launcher on top).
      */
     private fun finishReturnFromExternalApp() {
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
 
-        val alreadyHome = KioskPolicy.isOnGuestHomeScreen(this)
         pendingReturnToHome = false
         // Resume Watchdog — guest is back in hotel UI.
         KioskPolicy.clearExternalAppActive(this)
@@ -1623,13 +1852,9 @@ class MainActivity : ComponentActivity() {
         intent?.removeExtra(EXTRA_SOFT_HOME_RESET)
         ottTransitionCover = false
 
-        if (alreadyHome) {
-            Log.i(TAG, "Return from OTT — already on Root Home, no view switch")
-            return
-        }
-
-        Log.w(TAG, "Return from OTT — Root Home not ready, fallback switch")
-        navigateToRootHomeScreen(showCover = true)
+        // Always reset to root Home — dismiss overlays if any; no-op when already Home.
+        Log.i(TAG, "finishReturnFromExternalApp — reset navigation to root Home")
+        navigateToHomeView()
     }
 
     private fun handleNavigateToHomeExtra(intent: Intent?): Boolean {
@@ -1723,20 +1948,40 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Dynamic HOME interceptor — no system-launcher disable required.
-     * Physical TV (non–Device Owner): immediate reclaim with no debounce.
-     * Never call [startLockTask] here — task is leaving foreground.
+     * Dynamic HOME interceptor — Screen Pinning reclaim only (no Accessibility).
+     * Physical TV: queue zero-anim PendingIntent **before** [super.onUserLeaveHint]
+     * so the reclaim races ahead of the stock launcher paint — no debounce / post.
      */
     override fun onUserLeaveHint() {
+        // Suppress outgoing transition before the system can paint the stock launcher.
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
+
+        val kioskOn = KioskPolicy.isKioskModeEnabled(this)
+        val ottActive = KioskPolicy.isExternalAppActive(this)
+        val physicalTv = KioskPolicy.needsPhysicalTvFallback(this)
+
+        // Fire reclaim payload FIRST (before super) — zero debounce, main thread.
+        if (kioskOn && !ottActive && physicalTv && !isActivitySurfaceGone()) {
+            Log.i(TAG, "onUserLeaveHint — PendingIntent reclaim PRE-super (0ms, bypass guard)")
+            KioskPolicy.forceBringToFrontPhysicalTvUrgent(
+                context = this,
+                navigateToHome = true,
+                bypassDuplicateGuard = true,
+            )
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
+        }
+
         super.onUserLeaveHint()
 
-        if (!KioskPolicy.isKioskModeEnabled(this)) {
+        if (!kioskOn) {
             KioskPolicy.markUserMinimized(this)
             Log.d(TAG, "KioskInterceptor — kiosk OFF, allow default HOME")
             return
         }
 
-        if (KioskPolicy.isExternalAppActive(this)) {
+        if (ottActive) {
             Log.d(TAG, "KioskInterceptor — OTT/IPTV session, skip onUserLeaveHint reclaim")
             return
         }
@@ -1744,23 +1989,19 @@ class MainActivity : ComponentActivity() {
         isAppInForeground = false
         KioskPolicy.setMainActivityForeground(this, false)
 
-        // Physical TV: sole lifecycle reclaim — fire PendingIntent instantly (no delay/post).
-        if (KioskPolicy.needsPhysicalTvFallback(this)) {
-            if (isActivitySurfaceGone()) {
-                Log.d(TAG, "onUserLeaveHint — skip reclaim (finishing/destroyed)")
-                return
-            }
-            Log.i(TAG, "onUserLeaveHint — PendingIntent reclaim IMMEDIATE")
-            KioskPolicy.forceBringToFrontPhysicalTvUrgent(
-                context = this,
-                navigateToHome = true,
-            )
+        // Physical TV reclaim already sent pre-super — do not send twice.
+        if (physicalTv) {
             return
         }
 
         if (Build.VERSION.SDK_INT in 29..30) {
             Log.d(TAG, "KioskInterceptor — API 29/30 onUserLeaveHint reclaim")
-            KioskPolicy.forceBringToFrontSafely(this)
+            KioskPolicy.forceBringToFrontSafely(
+                context = this,
+                preferImmediateOptions = true,
+            )
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
             return
         }
 
@@ -1769,12 +2010,22 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        // API 31+ Device Owner
+        // API 31+ Device Owner — immediate reclaim (no deferred post).
         Log.d(TAG, "KioskInterceptor — onUserLeaveHint immediate reclaim")
-        KioskPolicy.forceBringToFrontSafely(this)
+        KioskPolicy.forceBringToFrontSafely(
+            context = this,
+            preferImmediateOptions = true,
+        )
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
     }
 
     override fun onDestroy() {
+        keyLearnListener = null
+        try {
+            BlockedKeysManager.setLearningMode(applicationContext, false)
+        } catch (_: Exception) {
+        }
         KioskPolicy.removeKioskModeChangedListener(kioskModeChangedListener)
         mainHandler.removeCallbacks(physicalTvReclaimRetryRunnable)
         mainHandler.removeCallbacks(clearHandlingReclaimRunnable)
@@ -1907,42 +2158,6 @@ class MainActivity : ComponentActivity() {
     /** @deprecated Use [removeKioskOverlayBarrier]. */
     private fun removeLegacyOverlayBarrier() = removeKioskOverlayBarrier()
 
-    /**
-     * Physical TV (non–Device Owner): without [HomeKeyInterceptorService], the OS
-     * delivers HOME to the stock launcher. Try silent Secure Settings re-enable first
-     * (WRITE_SECURE_SETTINGS / Device Owner), then open Accessibility settings once.
-     */
-    private fun ensureHomeKeyInterceptorEnabled() {
-        if (!resolveKioskEnabled()) return
-        if (!KioskPolicy.needsPhysicalTvFallback(this)) return
-
-        if (HomeKeyInterceptorService.isEnabled(this)) {
-            Log.d(TAG, "HomeKeyInterceptor already enabled")
-            return
-        }
-
-        // Silent self-heal when WRITE_SECURE_SETTINGS was granted once via adb.
-        val healed = HomeKeyInterceptorService.tryReenableAccessibility(this)
-        if (healed || HomeKeyInterceptorService.isEnabled(this)) {
-            Log.i(TAG, "HomeKeyInterceptor re-enabled via Secure Settings")
-            return
-        }
-
-        Log.w(
-            TAG,
-            "HomeKeyInterceptor NOT enabled — HOME will escape to stock launcher. " +
-                HomeKeyInterceptorService.adbEnableCommands().joinToString(" && "),
-        )
-        if (accessibilityPromptShown) return
-        accessibilityPromptShown = true
-        try {
-            HomeKeyInterceptorService.openAccessibilitySettings(this)
-            Log.i(TAG, "Opened Accessibility settings for HomeKeyInterceptor")
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not open Accessibility settings", e)
-        }
-    }
-
     private fun markUserActive(dismissScreensaver: Boolean) {
         lastInteractionAt = System.currentTimeMillis()
         if (dismissScreensaver && screensaverVisible) {
@@ -1956,7 +2171,7 @@ class MainActivity : ComponentActivity() {
         /** SharedPreferences key — matches Admin Panel / RTDB field name. */
         private const val PREF_KIOSK_ENABLED = "isKioskModeEnabled"
         /** API &lt; 30: min gap between reclaim attempts (breaks pause/resume storms). */
-        private const val RECLAIM_DEBOUNCE_MS = 500L
+        private const val RECLAIM_DEBOUNCE_MS = 50L
         /** Must match admin-panel RTDB region (google-services.json may still list us-central). */
         private const val RTDB_URL =
             "https://ikhsana-hotel-tv-default-rtdb.asia-southeast1.firebasedatabase.app"
@@ -1964,7 +2179,7 @@ class MainActivity : ComponentActivity() {
         private const val INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000L
 
         /**
-         * Extra from [HomeKeyInterceptorService] / Home reclaim intents.
+         * Extra from Home reclaim / launcher intents.
          * When true, Compose navigation resets to the primary guest Home screen.
          */
         const val EXTRA_NAVIGATE_TO_HOME = "NAVIGATE_TO_HOME"
@@ -1974,5 +2189,14 @@ class MainActivity : ComponentActivity() {
          * / Lock Task re-assert that causes a blue window flash.
          */
         const val EXTRA_SOFT_HOME_RESET = "SOFT_HOME_RESET"
+
+        /** OEM Apps / GTPL Home dedicated remote key. */
+        private const val KEYCODE_OEM_APPS = 228
+        /** OEM Netflix dedicated remote key. */
+        private const val KEYCODE_OEM_NETFLIX = 247
+        /** OEM YouTube dedicated remote key. */
+        private const val KEYCODE_OEM_YOUTUBE = 288
+        /** OEM Prime Video dedicated remote key. */
+        private const val KEYCODE_OEM_PRIME_VIDEO = 289
     }
 }

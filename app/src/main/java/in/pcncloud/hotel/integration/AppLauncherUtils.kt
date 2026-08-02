@@ -35,28 +35,35 @@ object AppLauncherUtils {
     }
 
     fun launchOrInstall(context: Context, packageName: String, appLabel: String = packageName) {
-        if (KioskPolicy.shouldSuppressOttLaunch(context)) {
-            Log.w(TAG, "OTT launch suppressed after HOME/BACK return → $packageName")
-            return
-        }
+        try {
+            if (KioskPolicy.shouldSuppressOttLaunch(context)) {
+                Log.w(TAG, "OTT launch suppressed after HOME/BACK return → $packageName")
+                KioskPolicy.denyExternalLaunchSilently(context, packageName)
+                return
+            }
 
-        if (!KioskPolicy.canLaunchApp(context, packageName)) {
-            Log.w(TAG, "Blocked by kiosk whitelist → $packageName")
-            Toast.makeText(
-                context,
-                context.getString(R.string.kiosk_app_not_allowed, appLabel),
-                Toast.LENGTH_LONG,
-            ).show()
-            return
-        }
+            if (!KioskPolicy.canLaunchApp(context, packageName)) {
+                Log.w(TAG, "Blocked by kiosk whitelist → $packageName (silent)")
+                KioskPolicy.denyExternalLaunchSilently(context, packageName)
+                context.findMainActivity()?.onExternalLaunchBlocked(packageName)
+                return
+            }
 
-        // 1) Synchronous Root Home switch BEFORE startActivity (no postDelayed).
-        context.findMainActivity()?.switchToRootHomeBeforeOttLaunch()
+            // 1) Synchronous Root Home switch BEFORE startActivity (no postDelayed).
+            context.findMainActivity()?.switchToRootHomeBeforeOttLaunch()
 
-        if (isAppInstalled(context, packageName)) {
-            launchInstalledApp(context, packageName, appLabel)
-        } else {
-            openPlayStore(context, packageName, appLabel)
+            if (isAppInstalled(context, packageName)) {
+                launchInstalledApp(context, packageName, appLabel)
+            } else {
+                openPlayStore(context, packageName, appLabel)
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "launchOrInstall failed for $packageName — staying on MainActivity", t)
+            try {
+                KioskPolicy.clearOttLaunchState(context)
+                KioskPolicy.denyExternalLaunchSilently(context, packageName)
+            } catch (_: Throwable) {
+            }
         }
     }
 

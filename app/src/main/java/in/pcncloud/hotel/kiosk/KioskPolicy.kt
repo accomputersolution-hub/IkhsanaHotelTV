@@ -18,6 +18,7 @@ import android.util.Log
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 import `in`.pcncloud.hotel.MainActivity
+import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.config.HotelConfig
 
 /**
@@ -40,23 +41,28 @@ object KioskPolicy {
     private const val FORCE_BRING_REQUEST_CODE = 2002
     /** Distinct request code so Physical TV urgent PendingIntent is not coalesced away. */
     private const val PHYSICAL_TV_URGENT_REQUEST_CODE = 2003
-    /** Shared debounce for PendingIntent reclaim (breaks pause/resume storms). */
-    private const val FORCE_BRING_DEBOUNCE_MS = 500L
+    /**
+     * Minimum safe gap between consecutive PendingIntent reclaim sends.
+     * Primary reclaim always fires immediately; this only drops duplicate
+     * secondary calls (prevents pause/resume storms) — never delays the first.
+     */
+    private const val FORCE_BRING_DEBOUNCE_MS = 50L
     /**
      * Device Owner lifecycle loop guard.
      * Physical TV uses the tighter [PHYSICAL_TV_LOOP_GUARD_MS] instead.
      */
-    private const val SAFE_BRING_LOOP_GUARD_MS = 300L
+    private const val SAFE_BRING_LOOP_GUARD_MS = 50L
     /**
      * Physical TV quiet / busy hold for setReclaimLifecycleBusy only.
+     * Kept tiny so Home reclaim is never stalled after onNewIntent/onResume.
      */
-    private const val PHYSICAL_TV_LOOP_GUARD_MS = 250L
+    private const val PHYSICAL_TV_LOOP_GUARD_MS = 50L
     /**
      * Minimum interval between consecutive forceBringToFront startActivity calls.
      * Prevents ActivityManager throttle and onPause ↔ onNewIntent storms.
      * Does **not** delay the primary Intent — only drops secondary calls inside the window.
      */
-    private const val RECLAIM_PENDING_GUARD_MS = 250L
+    private const val RECLAIM_PENDING_GUARD_MS = 50L
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -242,12 +248,12 @@ object KioskPolicy {
     }
 
     /**
-     * Temporarily skip Watchdog / Accessibility / lifecycle reclaim so the OS
-     * Home picker / Settings UI can stay in the foreground.
+     * Formerly suppressed Watchdog reclaim during the OS Home picker.
+     * **No-op:** Home-picker suppression was removed so reclaim is never delayed.
      */
     fun suppressReclaimFor(durationMs: Long, reason: String) {
-        reclaimSuppressedUntilMs = System.currentTimeMillis() + durationMs.coerceAtLeast(0L)
-        Log.i(TAG, "reclaim suppressed ${durationMs}ms ($reason)")
+        reclaimSuppressedUntilMs = 0L
+        Log.i(TAG, "suppressReclaimFor ignored ($reason, ${durationMs}ms) — Home-picker suppress removed")
     }
 
     fun clearReclaimSuppression(reason: String = "cleared") {
@@ -255,8 +261,8 @@ object KioskPolicy {
         Log.d(TAG, "reclaim suppression cleared ($reason)")
     }
 
-    fun isReclaimSuppressed(): Boolean =
-        System.currentTimeMillis() < reclaimSuppressedUntilMs
+    /** Always false — Home-picker reclaim suppression has been stripped out. */
+    fun isReclaimSuppressed(): Boolean = false
 
     /**
      * Persist Super Admin package whitelist for [hotelId] only.
@@ -376,50 +382,86 @@ object KioskPolicy {
      * When Kiosk Mode is OFF → allow everything.
      * When Kiosk Mode is ON → only packages explicitly in **this hotel's** Admin
      * `allowedPackages` (YouTube / Netflix / etc. have no hardcoded bypass).
+     * Never throws — a prefs / parse failure fails closed (deny) under kiosk.
      */
     fun canLaunchApp(context: Context, targetPackageName: String): Boolean {
-        if (!isKioskModeEnabled(context)) return true
-        val target = targetPackageName.trim()
-        val allowed = getAllowedPackagesList(context)
-        val ok = allowed.contains(target)
-        if (!ok) {
-            Log.w(
-                TAG,
-                "Blocked launch of $target — not in hotel allowedPackages ($allowed)",
-            )
+        return try {
+            if (!isKioskModeEnabled(context)) return true
+            val target = targetPackageName.trim()
+            if (target.isEmpty()) return false
+            val allowed = getAllowedPackagesList(context)
+            val ok = allowed.contains(target)
+            if (!ok) {
+                Log.w(
+                    TAG,
+                    "Blocked launch of $target — not in hotel allowedPackages ($allowed)",
+                )
+            }
+            ok
+        } catch (t: Throwable) {
+            Log.e(TAG, "canLaunchApp failed — denying under kiosk (safe)", t)
+            isKioskModeEnabled(context).not()
         }
-        return ok
     }
 
     /**
-     * Stock / OEM TV home launchers and setup wizards that may steal focus under
-     * kiosk (e.g. GTPL "Finish setting up your TV"). Reclaimed via Accessibility —
-     * never disabled with pm / ADB.
+     * Silent interception when an unauthorized package launch is refused.
+     * Never throws, never restarts the process — only reorders [MainActivity]
+     * to the front with [Intent.FLAG_ACTIVITY_REORDER_TO_FRONT].
      */
-    val STOCK_LAUNCHER_OR_SETUP_PACKAGES: Set<String> = setOf(
-        "com.gtpl.customgooglelauncher",
-        "com.google.android.apps.tv.launcherx",
-        "com.google.android.tvlauncher",
-        "com.google.android.leanbacklauncher",
-        "com.google.android.tungsten.setupwraith",
-        "com.google.android.tv.setup",
-        "com.android.tv.settings",
-    )
+    fun denyExternalLaunchSilently(
+        context: Context,
+        blockedPackage: String? = null,
+    ): Boolean {
+        return try {
+            if (!blockedPackage.isNullOrBlank()) {
+                Log.w(TAG, "Silently blocked external package → $blockedPackage")
+            }
+            bringMainActivityToFrontGracefully(context)
+        } catch (t: Throwable) {
+            Log.e(TAG, "denyExternalLaunchSilently failed (ignored — no crash)", t)
+            true
+        }
+    }
 
     /**
-     * True for GTPL / stock launcher / setup packages that must be reclaimed
-     * under kiosk. Intentional Entertainment OTT sessions are excluded by callers
-     * via [isExternalAppActive].
+     * Soft foreground restore after a blocked OTT / whitelist denial.
+     * Uses REORDER_TO_FRONT | SINGLE_TOP (no PendingIntent storm, no process restart).
      */
-    fun isStockLauncherOrSetupPackage(packageName: String?): Boolean {
-        val pkg = packageName?.trim().orEmpty()
-        if (pkg.isEmpty()) return false
-        if (STOCK_LAUNCHER_OR_SETUP_PACKAGES.contains(pkg)) return true
-        val lower = pkg.lowercase()
-        return lower.contains("tvlauncher") ||
-            lower.contains("tvhome") ||
-            lower.contains("setupwraith") ||
-            (lower.contains("setup") && lower.contains("tv"))
+    fun bringMainActivityToFrontGracefully(context: Context): Boolean {
+        return try {
+            val appContext = context.applicationContext
+            val intent = Intent(appContext, MainActivity::class.java).apply {
+                flags = reclaimIntentFlags()
+                putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
+            }
+            when (context) {
+                is Activity -> {
+                    val activityIntent = Intent(context, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                            Intent.FLAG_ACTIVITY_NO_ANIMATION
+                        putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
+                    }
+                    context.startActivity(
+                        activityIntent,
+                        buildReclaimActivityOptions(context).toBundle(),
+                    )
+                    suppressTransitionFlash(context)
+                }
+                else -> {
+                    appContext.startActivity(
+                        intent,
+                        buildReclaimActivityOptions(appContext).toBundle(),
+                    )
+                }
+            }
+            Log.i(TAG, "bringMainActivityToFrontGracefully — REORDER_TO_FRONT")
+            true
+        } catch (t: Throwable) {
+            Log.e(TAG, "bringMainActivityToFrontGracefully failed (ignored)", t)
+            false
+        }
     }
 
     /**
@@ -764,7 +806,7 @@ object KioskPolicy {
      * Mark that MainActivity is handling [android.app.Activity.onNewIntent] /
      * [android.app.Activity.onResume] reclaim.
      *
-     * Busy is **always** auto-cleared within [PHYSICAL_TV_LOOP_GUARD_MS] (250ms)
+     * Busy is **always** auto-cleared within [PHYSICAL_TV_LOOP_GUARD_MS] (50ms)
      * so Physical TV Home reclaim is never suppressed for seconds.
      */
     fun setReclaimLifecycleBusy(busy: Boolean) {
@@ -788,7 +830,7 @@ object KioskPolicy {
     fun millisSinceLastForceBring(): Long =
         System.currentTimeMillis() - lastForceBringAtMs
 
-    /** Loop-guard window for [context] — 250ms on Physical TV, 300ms for Device Owner. */
+    /** Loop-guard window for [context] — 50ms on Physical TV and Device Owner. */
     fun loopGuardMs(context: Context): Long =
         if (needsPhysicalTvFallback(context)) PHYSICAL_TV_LOOP_GUARD_MS else SAFE_BRING_LOOP_GUARD_MS
 
@@ -858,13 +900,13 @@ object KioskPolicy {
      * Never uses plain [Context.startActivity] — that path is throttled by ActivityManager
      * on Android TV and stalls MainActivity in ON_STOP for ~5s while GTPL shows.
      *
-     * Duplicate guard (wall-clock only):
-     * - elapsed &lt; 250ms → do NOT send another PendingIntent
-     * - elapsed ≥ 250ms → send PendingIntent immediately with [ActivityOptions.makeBasic]
+     * @param bypassDuplicateGuard when true (e.g. [android.app.Activity.onUserLeaveHint]),
+     *   always send the PendingIntent immediately — no 50ms storm window skip.
      */
     fun forceBringToFrontPhysicalTvUrgent(
         context: Context,
         navigateToHome: Boolean = true,
+        bypassDuplicateGuard: Boolean = false,
     ): Boolean {
         if (!isKioskModeEnabled(context)) return false
         if (isDeviceOwner(context)) {
@@ -878,10 +920,6 @@ object KioskPolicy {
             Log.d(TAG, "forceBringToFrontPhysicalTvUrgent skipped — OTT session")
             return false
         }
-        if (isReclaimSuppressed()) {
-            Log.d(TAG, "forceBringToFrontPhysicalTvUrgent skipped — reclaim suppressed (Home picker)")
-            return false
-        }
 
         val now = System.currentTimeMillis()
         val elapsedMs = if (lastForceBringAtMs <= 0L) {
@@ -890,7 +928,7 @@ object KioskPolicy {
             now - lastForceBringAtMs
         }
 
-        if (elapsedMs < RECLAIM_PENDING_GUARD_MS) {
+        if (!bypassDuplicateGuard && elapsedMs < RECLAIM_PENDING_GUARD_MS) {
             Log.d(
                 TAG,
                 "forceBringToFrontPhysicalTvUrgent skip duplicate " +
@@ -911,9 +949,13 @@ object KioskPolicy {
         lastForceBringAtMs = now
         mainHandler.postDelayed(clearReclaimPendingRunnable, RECLAIM_PENDING_GUARD_MS)
 
+        // Kill any outgoing leave animation before the PendingIntent races the launcher.
+        suppressTransitionFlash(context)
+
         Log.i(
             TAG,
-            "forceBringToFrontPhysicalTvUrgent — PendingIntent send " +
+            "forceBringToFrontPhysicalTvUrgent — PendingIntent IMMEDIATE " +
+                "bypassGuard=$bypassDuplicateGuard " +
                 "(elapsed was ${if (elapsedMs == Long.MAX_VALUE) "n/a" else "${elapsedMs}ms"})",
         )
         return sendPhysicalTvUrgentPendingIntent(context, navigateToHome)
@@ -929,10 +971,8 @@ object KioskPolicy {
     ): Boolean {
         val appContext = context.applicationContext
         val intent = Intent(appContext, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = reclaimIntentFlags()
+            // Never CLEAR_TOP — destroys MainActivity mid-key-dispatch and breaks InputChannel.
             if (navigateToHome) {
                 putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
             }
@@ -952,17 +992,7 @@ object KioskPolicy {
                 intent,
                 piFlags,
             )
-            val options = ActivityOptions.makeBasic().apply {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    val mode = if (Build.VERSION.SDK_INT >= 36) {
-                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
-                    } else {
-                        @Suppress("DEPRECATION")
-                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
-                    }
-                    setPendingIntentBackgroundActivityStartMode(mode)
-                }
-            }
+            val options = buildReclaimActivityOptions(appContext)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 pendingIntent.send(
                     appContext,
@@ -977,13 +1007,10 @@ object KioskPolicy {
                 @Suppress("DEPRECATION")
                 pendingIntent.send()
             }
-            if (context is Activity) {
-                @Suppress("DEPRECATION")
-                context.overridePendingTransition(0, 0)
-            }
+            suppressTransitionFlash(context)
             Log.i(
                 TAG,
-                "Physical TV reclaim via PendingIntent.send(ActivityOptions.makeBasic) " +
+                "Physical TV reclaim via PendingIntent.send(no-anim ActivityOptions) " +
                     "api=${Build.VERSION.SDK_INT}",
             )
             true
@@ -991,6 +1018,62 @@ object KioskPolicy {
             // Do not fall back to plain startActivity — that triggers the 5s throttle stall.
             Log.e(TAG, "Physical TV PendingIntent reclaim failed (no startActivity fallback)", e)
             false
+        }
+    }
+
+    /** Flags for every reclaim Intent — reorder existing task, never animate. */
+    private fun reclaimIntentFlags(): Int =
+        Intent.FLAG_ACTIVITY_NEW_TASK or
+            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+            Intent.FLAG_ACTIVITY_SINGLE_TOP or
+            Intent.FLAG_ACTIVITY_NO_ANIMATION
+
+    /**
+     * No-animation ActivityOptions for reclaim.
+     * Prefer [ActivityOptions.makeCustomAnimation] with resource ids **0, 0**
+     * (Android treats 0 as "no animation") so the OS never paints a slow
+     * fade/slide of the stock launcher while MainActivity reorders to front.
+     */
+    private fun buildReclaimActivityOptions(context: Context): ActivityOptions {
+        val options = try {
+            // Explicit 0,0 — documented "no animation" for custom transitions.
+            ActivityOptions.makeCustomAnimation(context, 0, 0)
+        } catch (t: Throwable) {
+            Log.w(TAG, "makeCustomAnimation(0,0) failed — try kiosk_no_anim", t)
+            try {
+                ActivityOptions.makeCustomAnimation(
+                    context,
+                    R.anim.kiosk_no_anim,
+                    R.anim.kiosk_no_anim,
+                )
+            } catch (t2: Throwable) {
+                Log.w(TAG, "makeCustomAnimation(kiosk_no_anim) failed — makeBasic()", t2)
+                ActivityOptions.makeBasic()
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            try {
+                val mode = if (Build.VERSION.SDK_INT >= 36) {
+                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
+                } else {
+                    @Suppress("DEPRECATION")
+                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                }
+                options.setPendingIntentBackgroundActivityStartMode(mode)
+            } catch (t: Throwable) {
+                Log.w(TAG, "setPendingIntentBackgroundActivityStartMode failed (ignored)", t)
+            }
+        }
+        return options
+    }
+
+    /** Zero out enter/exit window transitions on the calling Activity when possible. */
+    private fun suppressTransitionFlash(context: Context) {
+        if (context !is Activity) return
+        try {
+            @Suppress("DEPRECATION")
+            context.overridePendingTransition(0, 0)
+        } catch (_: Throwable) {
         }
     }
 
@@ -1213,10 +1296,6 @@ object KioskPolicy {
             Log.d(TAG, "forceBringToFront skipped — OTT/external session active")
             return false
         }
-        if (isReclaimSuppressed()) {
-            Log.d(TAG, "forceBringToFront skipped — reclaim suppressed (Home picker)")
-            return false
-        }
         if (reclaimLifecycleBusy && !ignoreLifecycleBusy) {
             Log.d(TAG, "forceBringToFront skipped — reclaim lifecycle busy")
             return false
@@ -1238,13 +1317,13 @@ object KioskPolicy {
 
         val appContext = context.applicationContext
         val intent = Intent(appContext, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            flags = reclaimIntentFlags()
             if (navigateToHome) {
                 putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
             }
         }
 
-        // Physical TV / fast path: ActivityOptions, but still break pause/resume storms.
+        // Physical TV / fast path: no-anim ActivityOptions, but still break pause/resume storms.
         if (skipDebounce) {
             if (applyLoopGuard) {
                 val guardMs = maxOf(loopGuardMs(context), RECLAIM_PENDING_GUARD_MS)
@@ -1260,7 +1339,7 @@ object KioskPolicy {
                 lastForceBringAtMs = now
                 reclaimQuietUntilMs = now + guardMs
             }
-            Log.i(TAG, "forceBringToFront — ActivityOptions (physical TV / skipDebounce)")
+            Log.i(TAG, "forceBringToFront — no-anim ActivityOptions (physical TV / skipDebounce)")
             val started = startActivityImmediate(context, intent)
             if (started) return true
             Log.w(TAG, "forceBringToFront skipDebounce ActivityOptions failed — PendingIntent")
@@ -1302,25 +1381,19 @@ object KioskPolicy {
         return sendForceBringPendingIntent(context, appContext, intent, requestCode)
     }
 
-    /** Immediate startActivity via [ActivityOptions.makeBasic] — no debounce. */
+    /** Immediate startActivity via no-animation ActivityOptions — no debounce. */
     private fun startActivityImmediate(context: Context, intent: Intent): Boolean {
         return try {
-            val options = ActivityOptions.makeBasic()
+            val options = buildReclaimActivityOptions(context)
             context.startActivity(intent, options.toBundle())
-            if (context is Activity) {
-                @Suppress("DEPRECATION")
-                context.overridePendingTransition(0, 0)
-            }
-            Log.i(TAG, "forceBringToFront via ActivityOptions.makeBasic() api=${Build.VERSION.SDK_INT}")
+            suppressTransitionFlash(context)
+            Log.i(TAG, "forceBringToFront via no-anim ActivityOptions api=${Build.VERSION.SDK_INT}")
             true
         } catch (e: Exception) {
-            Log.w(TAG, "ActivityOptions.makeBasic startActivity failed — plain startActivity", e)
+            Log.w(TAG, "no-anim ActivityOptions startActivity failed — plain startActivity", e)
             try {
                 context.startActivity(intent)
-                if (context is Activity) {
-                    @Suppress("DEPRECATION")
-                    context.overridePendingTransition(0, 0)
-                }
+                suppressTransitionFlash(context)
                 true
             } catch (e2: Exception) {
                 Log.e(TAG, "forceBringToFront startActivity failed", e2)
@@ -1350,16 +1423,8 @@ object KioskPolicy {
                 intent,
                 piFlags,
             )
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                val options = ActivityOptions.makeBasic().apply {
-                    val mode = if (Build.VERSION.SDK_INT >= 36) {
-                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
-                    } else {
-                        @Suppress("DEPRECATION")
-                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
-                    }
-                    setPendingIntentBackgroundActivityStartMode(mode)
-                }
+            val options = buildReclaimActivityOptions(appContext)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 pendingIntent.send(
                     appContext,
                     0,
@@ -1370,15 +1435,13 @@ object KioskPolicy {
                     options.toBundle(),
                 )
             } else {
+                @Suppress("DEPRECATION")
                 pendingIntent.send()
             }
-            if (context is Activity) {
-                @Suppress("DEPRECATION")
-                context.overridePendingTransition(0, 0)
-            }
+            suppressTransitionFlash(context)
             Log.i(
                 TAG,
-                "forceBringToFront via PendingIntent " +
+                "forceBringToFront via PendingIntent (no-anim) " +
                     "(overlay=${Settings.canDrawOverlays(appContext)} api=${Build.VERSION.SDK_INT})",
             )
             true
@@ -1386,10 +1449,7 @@ object KioskPolicy {
             Log.w(TAG, "forceBringToFront PendingIntent failed — fallback startActivity", e)
             try {
                 context.startActivity(intent)
-                if (context is Activity) {
-                    @Suppress("DEPRECATION")
-                    context.overridePendingTransition(0, 0)
-                }
+                suppressTransitionFlash(context)
                 true
             } catch (e2: Exception) {
                 Log.e(TAG, "forceBringToFront startActivity failed", e2)

@@ -51,6 +51,7 @@ import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.admin.AdminSession
 import `in`.pcncloud.hotel.config.HotelConfig
+import `in`.pcncloud.hotel.kiosk.BlockedKeysManager
 import `in`.pcncloud.hotel.kiosk.HotelSessionManager
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskRemoteConfig
@@ -87,6 +88,7 @@ fun AdminSettingsScreen(
     var pinDigits by remember { mutableStateOf("") }
     var pinError by remember { mutableStateOf(false) }
     var authenticated by remember { mutableStateOf(false) }
+    var showKeyBlocker by remember { mutableStateOf(false) }
     var kioskEnabled by remember {
         mutableStateOf(KioskPolicy.isKioskModeEnabled(context))
     }
@@ -99,6 +101,9 @@ fun AdminSettingsScreen(
 
     fun exitAdmin(reason: String) {
         Log.i(TAG, "Exiting Admin Mode — $reason")
+        showKeyBlocker = false
+        BlockedKeysManager.setLearningMode(context.applicationContext, false)
+        (activity as? MainActivity)?.keyLearnListener = null
         AdminSession.clear()
         authenticated = false
         pinDigits = ""
@@ -208,6 +213,14 @@ fun AdminSettingsScreen(
                         },
                         onCancel = { exitAdmin("cancel_pin") },
                     )
+                } else if (showKeyBlocker) {
+                    KeyBlockerScreen(
+                        onBack = {
+                            onRemoteActivity()
+                            showKeyBlocker = false
+                        },
+                        onRemoteActivity = { onRemoteActivity() },
+                    )
                 } else {
                     SettingsPanel(
                         hotelId = hotelConfig.getHotelId().orEmpty(),
@@ -299,6 +312,10 @@ fun AdminSettingsScreen(
                                 KioskPolicy.clearTenantKioskCache(context.applicationContext)
                                 HotelSessionManager.openPairingScreen(context)
                             }
+                        },
+                        onOpenKeyBlocker = {
+                            onRemoteActivity()
+                            showKeyBlocker = true
                         },
                         onClose = { exitAdmin("close") },
                     )
@@ -426,6 +443,7 @@ private fun SettingsPanel(
     onFollowRemote: () -> Unit,
     onExitToAndroidTv: () -> Unit,
     onUnpair: () -> Unit,
+    onOpenKeyBlocker: () -> Unit,
     onClose: () -> Unit,
 ) {
     val closeFocus = remember { FocusRequester() }
@@ -494,12 +512,19 @@ private fun SettingsPanel(
             )
         }
         Spacer(modifier = Modifier.height(12.dp))
-        AdminActionChip(
-            label = stringResource(R.string.admin_close),
-            wide = true,
-            modifier = Modifier.focusRequester(closeFocus),
-            onClick = onClose,
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            AdminActionChip(
+                label = stringResource(R.string.admin_key_blocker_open),
+                wide = true,
+                onClick = onOpenKeyBlocker,
+            )
+            AdminActionChip(
+                label = stringResource(R.string.admin_close),
+                wide = true,
+                modifier = Modifier.focusRequester(closeFocus),
+                onClick = onClose,
+            )
+        }
     }
 }
 

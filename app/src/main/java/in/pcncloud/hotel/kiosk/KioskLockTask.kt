@@ -68,7 +68,7 @@ object KioskLockTask {
             val allowedApps = buildLockTaskPackageArray(context, firebasePackages)
 
             dpm.setLockTaskPackages(adminName, allowedApps)
-            Log.i(TAG, "setLockTaskPackages (RTDB allowlist only) → ${allowedApps.toList()}")
+            Log.i(TAG, "setLockTaskPackages (RTDB allowlist only) 뿯↽ ${allowedApps.toList()}")
 
             // API 28+: hide status / nav / home affordances that can leak native TV UI.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -140,35 +140,46 @@ object KioskLockTask {
      * @return true if startActivity was attempted successfully
      */
     fun launchAllowlistedPackage(context: Context, targetPackage: String): Boolean {
-        if (!canLaunchApp(context, targetPackage)) {
-            Log.w(TAG, "Refusing launch — kiosk ON and $targetPackage not whitelisted")
-            return false
-        }
-
-        // Mark OTT session BEFORE leaving MainActivity so watchdog / onUserLeaveHint skip reclaim.
-        // Sets KioskPolicy.isExternalAppActive = true (durable until HOME/BACK return).
-        KioskPolicy.markOttLaunched(context, targetPackage)
-
-        // Ensure target (e.g. YouTube) is Lock-Task allowlisted before launch.
-        applyAllowlistForLaunch(context, targetPackage)
-
-        ensureLockTaskActive(context)
-
-        val intent = buildSafeLaunchIntent(context, targetPackage)
-
-        if (intent == null) {
-            Log.w(TAG, "No launch intent for $targetPackage")
-            KioskPolicy.clearOttLaunchState(context)
-            return false
-        }
-
         return try {
-            context.startActivity(intent)
-            Log.i(TAG, "Launched allowlisted package under Lock Task → $targetPackage")
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch $targetPackage", e)
-            KioskPolicy.clearOttLaunchState(context)
+            if (!canLaunchApp(context, targetPackage)) {
+                Log.w(TAG, "Refusing launch — kiosk ON and $targetPackage not whitelisted (silent)")
+                KioskPolicy.denyExternalLaunchSilently(context, targetPackage)
+                return false
+            }
+
+            // Mark OTT session BEFORE leaving MainActivity so watchdog / onUserLeaveHint skip reclaim.
+            KioskPolicy.markOttLaunched(context, targetPackage)
+
+            // Ensure target (e.g. YouTube) is Lock-Task allowlisted before launch.
+            applyAllowlistForLaunch(context, targetPackage)
+
+            ensureLockTaskActive(context)
+
+            val intent = buildSafeLaunchIntent(context, targetPackage)
+
+            if (intent == null) {
+                Log.w(TAG, "No launch intent for $targetPackage")
+                KioskPolicy.clearOttLaunchState(context)
+                return false
+            }
+
+            try {
+                context.startActivity(intent)
+                Log.i(TAG, "Launched allowlisted package under Lock Task 뿯↽ $targetPackage")
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to launch $targetPackage", e)
+                KioskPolicy.clearOttLaunchState(context)
+                KioskPolicy.denyExternalLaunchSilently(context, targetPackage)
+                false
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "launchAllowlistedPackage crashed for $targetPackage — recovering", t)
+            try {
+                KioskPolicy.clearOttLaunchState(context)
+                KioskPolicy.denyExternalLaunchSilently(context, targetPackage)
+            } catch (_: Throwable) {
+            }
             false
         }
     }
@@ -216,7 +227,7 @@ object KioskLockTask {
             val packages = buildLockTaskPackageArray(context, adminList)
             dpm.setLockTaskPackages(adminName, packages)
             MyDeviceAdminReceiver.applyStrictLockTaskFeatures(context)
-            Log.i(TAG, "Pre-launch setLockTaskPackages → ${packages.toList()}")
+            Log.i(TAG, "Pre-launch setLockTaskPackages 뿯↽ ${packages.toList()}")
         } catch (e: Exception) {
             Log.w(TAG, "applyAllowlistForLaunch failed for $targetPackage", e)
         }

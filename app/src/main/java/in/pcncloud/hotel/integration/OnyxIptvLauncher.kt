@@ -16,27 +16,33 @@ object OnyxIptvLauncher {
     const val PACKAGE_NAME = "com.onnet.systems.iptv.esto"
 
     fun launch(context: Context) {
-        if (!KioskPolicy.canLaunchApp(context, PACKAGE_NAME)) {
-            Log.w(TAG, "Blocked by kiosk whitelist → $PACKAGE_NAME")
+        try {
+            if (!KioskPolicy.canLaunchApp(context, PACKAGE_NAME)) {
+                Log.w(TAG, "Blocked by kiosk whitelist 뿯↽ $PACKAGE_NAME (silent)")
+                KioskPolicy.denyExternalLaunchSilently(context, PACKAGE_NAME)
+                context.findMainActivity()?.onExternalLaunchBlocked(PACKAGE_NAME)
+                return
+            }
+
+            // Synchronous Root Home BEFORE startActivity — no timers after launch.
+            context.findMainActivity()?.switchToRootHomeBeforeOttLaunch()
+
+            if (KioskLockTask.launchAllowlistedPackage(context, PACKAGE_NAME)) {
+                return
+            }
             Toast.makeText(
                 context,
-                context.getString(R.string.kiosk_app_not_allowed, "Live TV"),
+                context.getString(R.string.onyx_iptv_not_installed),
                 Toast.LENGTH_LONG,
             ).show()
-            return
+        } catch (t: Throwable) {
+            Log.e(TAG, "Live TV launch failed — staying on MainActivity", t)
+            try {
+                KioskPolicy.clearOttLaunchState(context)
+                KioskPolicy.denyExternalLaunchSilently(context, PACKAGE_NAME)
+            } catch (_: Throwable) {
+            }
         }
-
-        // Synchronous Root Home BEFORE startActivity — no timers after launch.
-        context.findMainActivity()?.switchToRootHomeBeforeOttLaunch()
-
-        if (KioskLockTask.launchAllowlistedPackage(context, PACKAGE_NAME)) {
-            return
-        }
-        Toast.makeText(
-            context,
-            context.getString(R.string.onyx_iptv_not_installed),
-            Toast.LENGTH_LONG,
-        ).show()
     }
 
     private fun Context.findMainActivity(): MainActivity? {
