@@ -1,7 +1,12 @@
 package `in`.pcncloud.hotel.ui.admin
 
-import android.view.KeyEvent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -42,9 +47,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
-import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.kiosk.BlockedKeysManager
 import `in`.pcncloud.hotel.ui.theme.GoldLight
@@ -55,10 +60,18 @@ import `in`.pcncloud.hotel.ui.theme.SansBody
 import `in`.pcncloud.hotel.ui.theme.SerifDisplay
 import `in`.pcncloud.hotel.ui.theme.TextMuted
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+
+private const val TAG = "KeyBlockerUI"
 
 /**
- * Admin Key Blocker — list / remove blocked remote keyCodes and learn new ones
- * via [MainActivity] [android.app.Activity.dispatchKeyEvent] while listening.
+ * Admin Key Blocker — nested under Staff Settings.
+ *
+ * OTT / dedicated remote keys are learned **only** via
+ * [HomeKeyInterceptorService] Learn Mode shield + [BlockedKeysManager.ACTION_KEY_LEARNED].
+ * Do not use Activity.dispatchKeyEvent for learning — the OS intercepts those keys first.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -67,45 +80,116 @@ fun KeyBlockerScreen(
     onRemoteActivity: () -> Unit = {},
 ) {
     val context = LocalContext.current
-    val activity = context as? MainActivity
     val appContext = context.applicationContext
 
-    var blockedKeys by remember {
-        mutableStateOf(BlockedKeysManager.getBlockedKeys(appContext).sorted())
-    }
+    // Default empty while loading — never null (avoids NPE during first frame).
+    var blockedKeys by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var keysLoaded by remember { mutableStateOf(false) }
     var listening by remember { mutableStateOf(false) }
     var pendingKeyCode by remember { mutableIntStateOf(-1) }
-    val backFocus = remember { FocusRequester() }
+    val learnFocus = remember { FocusRequester() }
 
     fun refreshList() {
-        blockedKeys = BlockedKeysManager.getBlockedKeys(appContext).sorted()
-    }
-
-    LaunchedEffect(Unit) {
-        runCatching { backFocus.requestFocus() }
-    }
-
-    // Wire MainActivity.dispatchKeyEvent capture + Accessibility learning passthrough.
-    DisposableEffect(listening) {
-        if (listening) {
-            BlockedKeysManager.setLearningMode(appContext, true)
-            activity?.keyLearnListener = { keyCode ->
-                onRemoteActivity()
-                if (isNavOrSystemKey(keyCode)) {
-                    false
-                } else {
-                    pendingKeyCode = keyCode
-                    listening = false
-                    true
-                }
-            }
-        } else {
-            BlockedKeysManager.setLearningMode(appContext, false)
-            activity?.keyLearnListener = null
+        try {
+            blockedKeys = BlockedKeysManager.getBlockedKeys(appContext).sorted()
+        } catch (e: Exception) {
+            Log.e(TAG, "refreshList failed", e)
+            blockedKeys = emptyList()
         }
+    }
+
+    fun stopLearnMode() {
+        listening = false
+        BlockedKeysManager.setLearnMode(appContext, false)
+    }
+
+    fun returnToStaffSettings() {
+        Log.i(TAG, "Back → Staff Settings (not Guest Home)")
+        stopLearnMode()
+        pendingKeyCode = -1
+        onRemoteActivity()
+        onBack()
+    }
+
+    // Physical / system Back → pop Key Blocker only (Staff Settings stays open).
+    BackHandler(enabled = true) {
+        returnToStaffSettings()
+    }
+
+    // Load prefs off the composition critical path.
+    LaunchedEffect(Unit) {
+        val loaded = withContext(Dispatchers.IO) {
+            try {
+                BlockedKeysManager.getBlockedKeys(appContext).sorted()
+            } catch (e: Exception) {
+                Log.e(TAG, "initial key load failed", e)
+                emptyList()
+            }
+        }
+        blockedKeys = loaded
+        keysLoaded = true
+    }
+
+    // Request focus only after layout is attached (prevents TV focus crashes).
+    LaunchedEffect(keysLoaded) {
+        if (!keysLoaded) return@LaunchedEffect
+        delay(50)
+        runCatching { learnFocus.requestFocus() }
+            .onFailure { Log.w(TAG, "learnFocus.requestFocus deferred/failed", it) }
+    }
+
+    DisposableEffect(Unit) {
         onDispose {
-            BlockedKeysManager.setLearningMode(appContext, false)
-            activity?.keyLearnListener = null
+            BlockedKeysManager.setLearnMode(appContext, false)
+        }
+    }
+
+    /**
+     * Learn Mode is driven ONLY by Accessibility [HomeKeyInterceptorService] +
+     * [BlockedKeysManager.ACTION_KEY_LEARNED] broadcast — never Activity.dispatchKeyEvent
+     * (OEM OTT keys never reach the Activity).
+     *
+     * Register the receiver FIRST, then enable the shield so no key is missed.
+     */
+    DisposableEffect(listening) {
+        if (!listening) {
+            BlockedKeysManager.setLearnMode(appContext, false)
+            return@DisposableEffect onDispose { }
+        }
+
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                if (intent?.action != BlockedKeysManager.ACTION_KEY_LEARNED) return
+                val code = intent.getIntExtra(BlockedKeysManager.EXTRA_KEY_CODE, -1)
+                if (code < 0) return
+                Log.i(TAG, "ACTION_KEY_LEARNED received keyCode=$code")
+                onRemoteActivity()
+                // Turn shield off immediately, then show Save/Cancel.
+                BlockedKeysManager.setLearnMode(appContext, false)
+                try {
+                    context.unregisterReceiver(this)
+                } catch (_: Exception) {
+                }
+                pendingKeyCode = code
+                listening = false
+            }
+        }
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            IntentFilter(BlockedKeysManager.ACTION_KEY_LEARNED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        // Enable global Accessibility shield only after receiver is live.
+        BlockedKeysManager.setLearnMode(appContext, true)
+        Log.i(TAG, "Learn Mode shield ON — waiting for Accessibility broadcast")
+
+        onDispose {
+            try {
+                context.unregisterReceiver(receiver)
+            } catch (_: Exception) {
+            }
+            BlockedKeysManager.setLearnMode(appContext, false)
         }
     }
 
@@ -147,16 +231,81 @@ fun KeyBlockerScreen(
                 fontSize = 14.sp,
             )
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
+            // —— Learn New Key ALWAYS above the key list (D-pad focusable) ——
+            if (pendingKeyCode >= 0) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    KeyBlockerChip(
+                        label = stringResource(R.string.admin_key_blocker_save),
+                        wide = true,
+                        modifier = Modifier.focusRequester(learnFocus),
+                        onClick = {
+                            onRemoteActivity()
+                            val code = pendingKeyCode
+                            BlockedKeysManager.addBlockedKey(appContext, code)
+                            pendingKeyCode = -1
+                            refreshList()
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.admin_key_blocker_saved, code),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        },
+                    )
+                    KeyBlockerChip(
+                        label = stringResource(R.string.admin_cancel),
+                        wide = true,
+                        onClick = {
+                            onRemoteActivity()
+                            pendingKeyCode = -1
+                        },
+                    )
+                }
+            } else {
+                KeyBlockerChip(
+                    label = if (listening) {
+                        stringResource(R.string.admin_key_blocker_cancel_listen)
+                    } else {
+                        stringResource(R.string.admin_key_blocker_learn)
+                    },
+                    wide = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(learnFocus),
+                    onClick = {
+                        onRemoteActivity()
+                        if (listening) {
+                            stopLearnMode()
+                        } else {
+                            pendingKeyCode = -1
+                            // Only flip UI state — DisposableEffect registers receiver
+                            // then calls setLearnMode(true) (Accessibility shield).
+                            listening = true
+                            Log.i(TAG, "Learn New Key pressed — enabling Accessibility shield")
+                        }
+                    },
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // —— Scrollable blocked key list ——
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(200.dp)
+                    .height(180.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (blockedKeys.isEmpty()) {
+                if (!keysLoaded) {
+                    Text(
+                        text = "Loading…",
+                        color = TextMuted,
+                        fontFamily = SansBody,
+                        fontSize = 14.sp,
+                    )
+                } else if (blockedKeys.isEmpty()) {
                     Text(
                         text = stringResource(R.string.admin_key_blocker_empty),
                         color = TextMuted,
@@ -198,70 +347,13 @@ fun KeyBlockerScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            when {
-                pendingKeyCode >= 0 -> {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        KeyBlockerChip(
-                            label = stringResource(R.string.admin_key_blocker_save),
-                            wide = true,
-                            onClick = {
-                                onRemoteActivity()
-                                val code = pendingKeyCode
-                                BlockedKeysManager.addBlockedKey(appContext, code)
-                                pendingKeyCode = -1
-                                refreshList()
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.admin_key_blocker_saved, code),
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            },
-                        )
-                        KeyBlockerChip(
-                            label = stringResource(R.string.admin_cancel),
-                            wide = true,
-                            onClick = {
-                                onRemoteActivity()
-                                pendingKeyCode = -1
-                            },
-                        )
-                    }
-                }
-                else -> {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        KeyBlockerChip(
-                            label = if (listening) {
-                                stringResource(R.string.admin_key_blocker_cancel_listen)
-                            } else {
-                                stringResource(R.string.admin_key_blocker_learn)
-                            },
-                            wide = true,
-                            onClick = {
-                                onRemoteActivity()
-                                if (listening) {
-                                    listening = false
-                                } else {
-                                    pendingKeyCode = -1
-                                    listening = true
-                                }
-                            },
-                        )
-                        KeyBlockerChip(
-                            label = stringResource(R.string.admin_key_blocker_back),
-                            wide = true,
-                            modifier = Modifier.focusRequester(backFocus),
-                            onClick = {
-                                onRemoteActivity()
-                                listening = false
-                                pendingKeyCode = -1
-                                onBack()
-                            },
-                        )
-                    }
-                }
-            }
+            KeyBlockerChip(
+                label = stringResource(R.string.admin_key_blocker_back),
+                wide = true,
+                onClick = { returnToStaffSettings() },
+            )
         }
     }
 }
@@ -277,8 +369,8 @@ private fun KeyBlockerChip(
     var focused by remember { mutableStateOf(false) }
     Box(
         modifier = modifier
-            .then(if (wide) Modifier.widthIn(min = 140.dp) else Modifier.widthIn(min = 96.dp))
-            .height(48.dp)
+            .then(if (wide) Modifier.widthIn(min = 160.dp) else Modifier.widthIn(min = 96.dp))
+            .height(52.dp)
             .background(
                 if (focused) GoldPrimary.copy(alpha = 0.22f)
                 else NavyDeep.copy(alpha = 0.85f),
@@ -309,30 +401,9 @@ private fun KeyBlockerChip(
             color = if (focused) GoldLight else TextPrimary,
             fontFamily = SansBody,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 14.sp,
+            fontSize = 15.sp,
             textAlign = TextAlign.Center,
             maxLines = 1,
         )
-    }
-}
-
-/** Keys that must keep working for D-pad navigation while learning. */
-private fun isNavOrSystemKey(keyCode: Int): Boolean {
-    return when (keyCode) {
-        KeyEvent.KEYCODE_DPAD_UP,
-        KeyEvent.KEYCODE_DPAD_DOWN,
-        KeyEvent.KEYCODE_DPAD_LEFT,
-        KeyEvent.KEYCODE_DPAD_RIGHT,
-        KeyEvent.KEYCODE_DPAD_CENTER,
-        KeyEvent.KEYCODE_ENTER,
-        KeyEvent.KEYCODE_NUMPAD_ENTER,
-        KeyEvent.KEYCODE_BACK,
-        KeyEvent.KEYCODE_HOME,
-        KeyEvent.KEYCODE_APP_SWITCH,
-        KeyEvent.KEYCODE_VOLUME_UP,
-        KeyEvent.KEYCODE_VOLUME_DOWN,
-        KeyEvent.KEYCODE_VOLUME_MUTE,
-        -> true
-        else -> false
     }
 }

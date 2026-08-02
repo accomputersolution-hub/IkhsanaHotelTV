@@ -3,77 +3,145 @@ package `in`.pcncloud.hotel.kiosk
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import java.util.HashSet
 
 /**
  * Persists admin-managed remote keyCodes that [HomeKeyInterceptorService] silently drops.
- * Defaults seed OEM OTT dedicated buttons so fresh installs stay safe out of the box.
+ * Also hosts the Learn Mode shield flag so OTT keys can be discovered safely.
+ *
+ * SharedPreferences [getStringSet] returns a live set that must never be mutated in place —
+ * always copy via [HashSet] before read/modify/write.
  */
 object BlockedKeysManager {
 
     private const val TAG = "BlockedKeysManager"
     private const val PREFS = "hotel_tv_blocked_keys"
     private const val KEY_BLOCKED = "blocked_keycodes"
-    private const val KEY_LEARNING = "learning_mode"
+    /** SharedPreferences boolean — Learn Mode shield (default false). */
+    private const val KEY_LEARN_MODE_ACTIVE = "isLearnModeActive"
     private const val KEY_SEEDED = "defaults_seeded"
 
     /** Factory-default OTT dedicated buttons (YouTube / Netflix / etc. OEM codes). */
     val DEFAULT_BLOCKED_KEYS: Set<Int> = setOf(5118, 5119, 5121, 5122)
 
+    /** Broadcast when Learn Mode captures a non-navigation remote key. */
+    const val ACTION_KEY_LEARNED = "in.pcncloud.hotel.ACTION_KEY_LEARNED"
+    const val EXTRA_KEY_CODE = "keyCode"
+
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    /** Always return a defensive copy — never the live SharedPreferences set. */
+    private fun readStringSetCopy(context: Context): HashSet<String> {
+        val live = prefs(context).getStringSet(KEY_BLOCKED, emptySet()) ?: emptySet()
+        return HashSet(live)
+    }
+
     private fun ensureDefaultsSeeded(context: Context) {
-        val p = prefs(context)
-        if (p.getBoolean(KEY_SEEDED, false)) return
-        val existing = p.getStringSet(KEY_BLOCKED, null)
-        if (existing.isNullOrEmpty()) {
-            p.edit()
-                .putStringSet(KEY_BLOCKED, DEFAULT_BLOCKED_KEYS.map { it.toString() }.toSet())
-                .putBoolean(KEY_SEEDED, true)
-                .apply()
-            Log.i(TAG, "Seeded default blocked keys: $DEFAULT_BLOCKED_KEYS")
-        } else {
-            p.edit().putBoolean(KEY_SEEDED, true).apply()
+        try {
+            val p = prefs(context)
+            if (p.getBoolean(KEY_SEEDED, false)) return
+            val existing = readStringSetCopy(context)
+            if (existing.isEmpty()) {
+                val seed = HashSet(DEFAULT_BLOCKED_KEYS.map { it.toString() })
+                p.edit()
+                    .putStringSet(KEY_BLOCKED, seed)
+                    .putBoolean(KEY_SEEDED, true)
+                    .apply()
+                Log.i(TAG, "Seeded default blocked keys: $DEFAULT_BLOCKED_KEYS")
+            } else {
+                p.edit().putBoolean(KEY_SEEDED, true).apply()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "ensureDefaultsSeeded failed (ignored)", e)
         }
     }
 
     fun getBlockedKeys(context: Context): Set<Int> {
-        ensureDefaultsSeeded(context)
-        val raw = prefs(context).getStringSet(KEY_BLOCKED, emptySet()) ?: emptySet()
-        return raw.mapNotNull { it.toIntOrNull() }.toSet()
+        return try {
+            ensureDefaultsSeeded(context)
+            val copy = readStringSetCopy(context)
+            copy.mapNotNull { it.toIntOrNull() }.toCollection(HashSet())
+        } catch (e: Exception) {
+            Log.e(TAG, "getBlockedKeys failed — returning empty", e)
+            emptySet()
+        }
     }
 
     fun addBlockedKey(context: Context, keyCode: Int) {
-        ensureDefaultsSeeded(context)
-        val next = getBlockedKeys(context).toMutableSet().apply { add(keyCode) }
-        persist(context, next)
-        Log.i(TAG, "addBlockedKey $keyCode → $next")
+        try {
+            ensureDefaultsSeeded(context)
+            val next = HashSet(getBlockedKeys(context)).apply { add(keyCode) }
+            persist(context, next)
+            Log.i(TAG, "addBlockedKey $keyCode → $next")
+        } catch (e: Exception) {
+            Log.e(TAG, "addBlockedKey failed keyCode=$keyCode", e)
+        }
     }
 
     fun removeBlockedKey(context: Context, keyCode: Int) {
-        ensureDefaultsSeeded(context)
-        val next = getBlockedKeys(context).toMutableSet().apply { remove(keyCode) }
-        persist(context, next)
-        Log.i(TAG, "removeBlockedKey $keyCode → $next")
+        try {
+            ensureDefaultsSeeded(context)
+            val next = HashSet(getBlockedKeys(context)).apply { remove(keyCode) }
+            persist(context, next)
+            Log.i(TAG, "removeBlockedKey $keyCode → $next")
+        } catch (e: Exception) {
+            Log.e(TAG, "removeBlockedKey failed keyCode=$keyCode", e)
+        }
     }
 
     private fun persist(context: Context, keys: Set<Int>) {
+        // Fresh HashSet for putStringSet — never reuse a previous prefs instance.
+        val toStore = HashSet(keys.map { it.toString() })
         prefs(context).edit()
-            .putStringSet(KEY_BLOCKED, keys.map { it.toString() }.toSet())
+            .putStringSet(KEY_BLOCKED, toStore)
             .apply()
     }
 
+    /** Pref key for Learn Mode — Accessibility may observe changes. */
+    const val PREF_KEY_LEARN_MODE: String = KEY_LEARN_MODE_ACTIVE
+
     /**
-     * When true, [HomeKeyInterceptorService] must NOT swallow blocked OTT keys so the
-     * Admin "Learn New Key" UI can observe them via [android.app.Activity.dispatchKeyEvent].
+     * In-process Learn Mode flag — updated **synchronously** so Accessibility
+     * [HomeKeyInterceptorService.onKeyEvent] sees it on the very next key press
+     * (SharedPreferences.apply() alone is too late for OEM OTT buttons).
      */
-    fun setLearningMode(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(KEY_LEARNING, enabled).apply()
-        Log.i(TAG, "learningMode=$enabled")
+    @Volatile
+    private var learnModeActiveMemory: Boolean = false
+
+    /**
+     * Learn Mode shield — when active, Accessibility swallows non-nav keys and
+     * broadcasts [ACTION_KEY_LEARNED] instead of letting the OS launch OTT apps.
+     */
+    fun setLearnMode(context: Context, isActive: Boolean) {
+        // Memory first — same-process Accessibility must see this immediately.
+        learnModeActiveMemory = isActive
+        try {
+            // commit() so disk matches memory before the next physical key.
+            prefs(context).edit().putBoolean(KEY_LEARN_MODE_ACTIVE, isActive).commit()
+            Log.i(TAG, "isLearnModeActive=$isActive (memory+prefs committed)")
+        } catch (e: Exception) {
+            Log.e(TAG, "setLearnMode prefs failed (memory still $isActive)", e)
+        }
     }
 
-    fun isLearningMode(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_LEARNING, false)
+    fun isLearnMode(context: Context): Boolean {
+        if (learnModeActiveMemory) return true
+        return try {
+            prefs(context).getBoolean(KEY_LEARN_MODE_ACTIVE, false).also { disk ->
+                if (disk) learnModeActiveMemory = true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "isLearnMode failed", e)
+            false
+        }
+    }
+
+    /** @deprecated Use [setLearnMode]. */
+    fun setLearningMode(context: Context, enabled: Boolean) = setLearnMode(context, enabled)
+
+    /** @deprecated Use [isLearnMode]. */
+    fun isLearningMode(context: Context): Boolean = isLearnMode(context)
 
     fun registerChangeListener(
         context: Context,

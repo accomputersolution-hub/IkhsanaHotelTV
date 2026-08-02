@@ -68,11 +68,12 @@ import kotlinx.coroutines.delay
 class MainActivity : ComponentActivity() {
 
     /**
-     * When non-null, Admin Key Blocker "Learn New Key" is active.
-     * Return true from the listener to consume the key (and stop learning).
+     * When set, physical Back is handled by a nested Admin sub-screen
+     * (e.g. Key Blocker → Staff Settings) instead of forcing Guest Home.
+     * Return true if the nested handler consumed Back.
      */
     @Volatile
-    var keyLearnListener: ((keyCode: Int) -> Boolean)? = null
+    var nestedAdminBackHandler: (() -> Boolean)? = null
 
     private lateinit var hotelConfig: HotelConfig
     private lateinit var repository: FirestoreRepository
@@ -155,10 +156,23 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Remote / system Back while kiosk is active:
+     * - Nested Admin sub-screen (Key Blocker) → pop to Staff Settings only.
      * - Sub-menu open → return to Home (hide overlay).
      * - Already on Home → consume; never exit / minimize.
      */
     private fun handleKioskBackPressed() {
+        val nested = nestedAdminBackHandler
+        if (nested != null) {
+            try {
+                if (nested.invoke()) {
+                    Log.i(TAG, "Back — nested admin handler consumed (stay in Staff Settings)")
+                    markUserActive(dismissScreensaver = true)
+                    return
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "nestedAdminBackHandler failed", t)
+            }
+        }
         if (isSubViewActive()) {
             Log.i(TAG, "Back — sub-menu open → navigateToHomeView")
             navigateToHomeView()
@@ -1148,22 +1162,6 @@ class MainActivity : ComponentActivity() {
      * Safe navigation keys (D-pad / Enter / volume) still pass through.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        // Admin Key Blocker "Learn New Key" — capture before kiosk swallow paths.
-        val learner = keyLearnListener
-        if (learner != null &&
-            event.action == KeyEvent.ACTION_DOWN &&
-            event.repeatCount == 0
-        ) {
-            try {
-                if (learner.invoke(event.keyCode)) {
-                    Log.i(TAG, "keyLearnListener captured keyCode=${event.keyCode}")
-                    return true
-                }
-            } catch (t: Throwable) {
-                Log.e(TAG, "keyLearnListener failed", t)
-            }
-        }
-
         if (screensaverVisible) {
             if (event.action == KeyEvent.ACTION_DOWN) {
                 markUserActive(dismissScreensaver = true)
@@ -2021,9 +2019,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        keyLearnListener = null
+        nestedAdminBackHandler = null
         try {
-            BlockedKeysManager.setLearningMode(applicationContext, false)
+            BlockedKeysManager.setLearnMode(applicationContext, false)
         } catch (_: Exception) {
         }
         KioskPolicy.removeKioskModeChangedListener(kioskModeChangedListener)

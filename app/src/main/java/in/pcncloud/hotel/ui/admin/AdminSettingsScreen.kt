@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -102,8 +103,8 @@ fun AdminSettingsScreen(
     fun exitAdmin(reason: String) {
         Log.i(TAG, "Exiting Admin Mode — $reason")
         showKeyBlocker = false
-        BlockedKeysManager.setLearningMode(context.applicationContext, false)
-        (activity as? MainActivity)?.keyLearnListener = null
+        BlockedKeysManager.setLearnMode(context.applicationContext, false)
+        (activity as? MainActivity)?.nestedAdminBackHandler = null
         AdminSession.clear()
         authenticated = false
         pinDigits = ""
@@ -117,6 +118,24 @@ fun AdminSettingsScreen(
 
     fun onRemoteActivity() {
         lastInteractionAt = System.currentTimeMillis()
+    }
+
+    // Key Blocker Back → Staff Settings only (never Guest Home / kiosk reclaim).
+    DisposableEffect(showKeyBlocker, authenticated) {
+        val main = activity as? MainActivity
+        if (showKeyBlocker && authenticated) {
+            main?.nestedAdminBackHandler = {
+                onRemoteActivity()
+                BlockedKeysManager.setLearnMode(context.applicationContext, false)
+                showKeyBlocker = false
+                true
+            }
+        } else {
+            main?.nestedAdminBackHandler = null
+        }
+        onDispose {
+            main?.nestedAdminBackHandler = null
+        }
     }
 
     fun submitPin() {

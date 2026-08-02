@@ -6,8 +6,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +51,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import android.util.Log
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -465,7 +469,13 @@ private fun isLegacyUnsafeImageUrl(url: String): Boolean {
         lower.contains("data:image/svg")
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
+/**
+ * Top-right header Room badge (next to Wi‑Fi / clock) — NOT the center decorative badge.
+ * Long-press opens Admin PIN:
+ * - Mouse / touch → [combinedClickable] onLongClick
+ * - TV remote OK / Enter → first key-repeat or 2s hold fallback
+ */
+@OptIn(ExperimentalTvMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun RoomBadge(
     roomNumber: String,
@@ -473,6 +483,24 @@ private fun RoomBadge(
 ) {
     var focused by remember { mutableStateOf(false) }
     var pressStartedAt by remember { mutableLongStateOf(0L) }
+    var selectKeyDown by remember { mutableStateOf(false) }
+    var adminOpenedForThisPress by remember { mutableStateOf(false) }
+    var downCount by remember { mutableIntStateOf(0) }
+
+    fun openAdmin(source: String) {
+        Log.e("AdminUI", ">>> Room Badge LONG PRESSED via $source! <<<")
+        onOpenAdmin()
+    }
+
+    // TV remotes that keep delivering KeyDown while held (no nativeKeyEvent.repeatCount).
+    LaunchedEffect(selectKeyDown, downCount) {
+        if (!selectKeyDown || adminOpenedForThisPress) return@LaunchedEffect
+        delay(2_000L)
+        if (selectKeyDown && !adminOpenedForThisPress) {
+            adminOpenedForThisPress = true
+            openAdmin("TV Remote")
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -487,20 +515,50 @@ private fun RoomBadge(
             )
             .onFocusChanged { focused = it.isFocused }
             .focusable()
+            // Mouse / touch long-press (emulator & touch panels).
+            .combinedClickable(
+                onClick = {
+                    Log.d("AdminUI", "Room Badge short click (ignored) — hold for Admin")
+                },
+                onLongClick = {
+                    openAdmin("Mouse/Touch")
+                },
+            )
+            // Physical TV remote: D-Pad Center / Enter long-press.
             .onKeyEvent { event ->
                 val isSelect = event.key == Key.Enter || event.key == Key.DirectionCenter
-                when {
-                    isSelect && event.type == KeyEventType.KeyDown -> {
-                        pressStartedAt = System.currentTimeMillis()
-                        false
+                if (!isSelect) return@onKeyEvent false
+
+                when (event.type) {
+                    KeyEventType.KeyDown -> {
+                        if (!selectKeyDown) {
+                            selectKeyDown = true
+                            pressStartedAt = System.currentTimeMillis()
+                            adminOpenedForThisPress = false
+                            downCount += 1
+                            Log.d("AdminUI", "Room Badge OK/Enter DOWN (start long-press timer)")
+                        } else if (!adminOpenedForThisPress) {
+                            // Some remotes emit repeated KeyDown without UP — treat 2nd+ as hold.
+                            val held = System.currentTimeMillis() - pressStartedAt
+                            if (held >= 500L) {
+                                adminOpenedForThisPress = true
+                                openAdmin("TV Remote")
+                                return@onKeyEvent true
+                            }
+                        }
+                        // Consume after Admin opened so the hold does not navigate elsewhere.
+                        adminOpenedForThisPress
                     }
-                    isSelect && event.type == KeyEventType.KeyUp -> {
+                    KeyEventType.KeyUp -> {
                         val held = System.currentTimeMillis() - pressStartedAt
-                        if (held >= 2_000L) {
-                            onOpenAdmin()
+                        val opened = adminOpenedForThisPress
+                        selectKeyDown = false
+                        adminOpenedForThisPress = false
+                        if (!opened && pressStartedAt > 0L && held >= 2_000L) {
+                            openAdmin("TV Remote (hold)")
                             true
                         } else {
-                            false
+                            opened
                         }
                     }
                     else -> false
