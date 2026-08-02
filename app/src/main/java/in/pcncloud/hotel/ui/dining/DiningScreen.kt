@@ -70,7 +70,6 @@ import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.LuxuryGlassPanel
 import `in`.pcncloud.hotel.ui.components.LuxuryScreenBackground
 import `in`.pcncloud.hotel.ui.components.LuxuryScreenHeader
-import `in`.pcncloud.hotel.ui.components.luxuryBackHandler
 import `in`.pcncloud.hotel.ui.theme.GoldGlassBorder
 import `in`.pcncloud.hotel.ui.theme.GoldGlassFill
 import `in`.pcncloud.hotel.ui.theme.GoldLight
@@ -99,7 +98,7 @@ fun DiningScreen(
     val categoryFocus = remember { FocusRequester() }
     val orderFocus = remember { FocusRequester() }
 
-    // Local QR placeholder dialog — no intents / navigation routes.
+    // Local QR placeholder only — never navigates Home / finishReturnFromExternalApp.
     var showQrDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -109,7 +108,19 @@ fun DiningScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .luxuryBackHandler(onBack),
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Back) {
+                    if (showQrDialog) {
+                        showQrDialog = false
+                        true
+                    } else {
+                        onBack()
+                        true
+                    }
+                } else {
+                    false
+                }
+            },
     ) {
         LuxuryScreenBackground(modifier = Modifier.fillMaxSize())
 
@@ -125,7 +136,6 @@ fun DiningScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // ── Top category bar (horizontal) ─────────────────────────────
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -150,7 +160,6 @@ fun DiningScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // ── Content: full-width menu list + order panel ───────────────
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -194,19 +203,17 @@ fun DiningScreen(
                     isPlacingOrder = uiState.isPlacingOrder,
                     roomOccupied = uiState.roomOccupied,
                     selectedPayment = uiState.selectedPayment,
-                    onSelectPayment = { method ->
-                        viewModel.selectPayment(method)
-                        if (method == PaymentMethod.PAID_ONLINE) {
-                            showQrDialog = true
-                        }
+                    onSelectPayment = viewModel::selectPayment,
+                    onPayNow = {
+                        // ONLY open QR placeholder — no Home navigation, no intents.
+                        viewModel.selectPayment(PaymentMethod.PAID_ONLINE)
+                        showQrDialog = true
                     },
                     orderFocus = orderFocus,
                     onPlaceOrder = {
-                        if (uiState.selectedPayment == PaymentMethod.PAID_ONLINE) {
-                            // Pay Now CTA → show QR placeholder only (no external intents).
-                            showQrDialog = true
-                        } else {
-                            viewModel.requestPlaceOrder()
+                        when (uiState.selectedPayment) {
+                            PaymentMethod.PAID_ONLINE -> showQrDialog = true
+                            PaymentMethod.PAY_AT_CHECKOUT -> viewModel.requestPlaceOrder()
                         }
                     },
                     modifier = Modifier
@@ -216,9 +223,8 @@ fun DiningScreen(
             }
         }
 
-        // ── Overlays (outside content row so focus/layout stay clean) ────
         if (showQrDialog) {
-            QrPlaceholderDialog(
+            QrPlaceholderOverlay(
                 onDismiss = { showQrDialog = false },
             )
         }
@@ -548,6 +554,7 @@ private fun OrderSummaryPanel(
     roomOccupied: Boolean,
     selectedPayment: PaymentMethod,
     onSelectPayment: (PaymentMethod) -> Unit,
+    onPayNow: () -> Unit,
     orderFocus: FocusRequester,
     onPlaceOrder: () -> Unit,
     modifier: Modifier = Modifier,
@@ -631,7 +638,8 @@ private fun OrderSummaryPanel(
             // ── Payment method toggle ─────────────────────────────────
             PaymentToggle(
                 selected = selectedPayment,
-                onSelect = onSelectPayment,
+                onSelectCheckout = { onSelectPayment(PaymentMethod.PAY_AT_CHECKOUT) },
+                onPayNow = onPayNow,
             )
 
             if (orderMessage == "success") {
@@ -918,7 +926,8 @@ private fun VacantRoomDialog(onDismiss: () -> Unit) {
 @Composable
 private fun PaymentToggle(
     selected: PaymentMethod,
-    onSelect: (PaymentMethod) -> Unit,
+    onSelectCheckout: () -> Unit,
+    onPayNow: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -939,7 +948,7 @@ private fun PaymentToggle(
                 subtitle = stringResource(R.string.pay_at_checkout_sub),
                 isSelected = selected == PaymentMethod.PAY_AT_CHECKOUT,
                 modifier = Modifier.weight(1f),
-                onClick = { onSelect(PaymentMethod.PAY_AT_CHECKOUT) },
+                onClick = onSelectCheckout,
             )
             PaymentCard(
                 icon = "📲",
@@ -947,8 +956,8 @@ private fun PaymentToggle(
                 subtitle = stringResource(R.string.pay_now_sub),
                 isSelected = selected == PaymentMethod.PAID_ONLINE,
                 modifier = Modifier.weight(1f),
-                // Shows the QR placeholder dialog via parent state — no intents.
-                onClick = { onSelect(PaymentMethod.PAID_ONLINE) },
+                // ONLY showQrDialog via parent — never navigate Home.
+                onClick = onPayNow,
             )
         }
     }
@@ -1028,12 +1037,12 @@ private fun PaymentCard(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// QR Placeholder Dialog (future Razorpay QR container)
+// QR Placeholder Overlay (in-composition — no Dialog window / no Home reclaim)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun QrPlaceholderDialog(
+private fun QrPlaceholderOverlay(
     onDismiss: () -> Unit,
 ) {
     val closeFocus = remember { FocusRequester() }
@@ -1041,7 +1050,22 @@ private fun QrPlaceholderDialog(
         runCatching { closeFocus.requestFocus() }
     }
 
-    Dialog(onDismissRequest = onDismiss) {
+    // Full-screen overlay inside DiningScreen — does NOT use Compose Dialog
+    // (Dialog windows can fire onUserLeaveHint → Physical TV Home reclaim).
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.72f))
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Back) {
+                    onDismiss()
+                    true
+                } else {
+                    false
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
         Box(
             modifier = Modifier
                 .background(NavySurface, RoundedCornerShape(24.dp))
