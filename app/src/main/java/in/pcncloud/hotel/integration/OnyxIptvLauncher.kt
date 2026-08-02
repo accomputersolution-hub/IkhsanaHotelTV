@@ -1,15 +1,17 @@
 package `in`.pcncloud.hotel.integration
 
-import android.app.Activity
 import android.content.Context
-import android.content.ContextWrapper
+import android.content.Intent
 import android.util.Log
 import android.widget.Toast
-import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
-import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 
+/**
+ * Launches the hotel Live TV / IPTV app (Onyx ESTO).
+ * Marks [KioskPolicy.isExternalAppActive] **before** startActivity so Watchdog
+ * and onUserLeaveHint do not reclaim MainActivity mid-viewing.
+ */
 object OnyxIptvLauncher {
 
     private const val TAG = "OnyxIptvLauncher"
@@ -17,41 +19,37 @@ object OnyxIptvLauncher {
 
     fun launch(context: Context) {
         try {
-            if (!KioskPolicy.canLaunchApp(context, PACKAGE_NAME)) {
-                Log.w(TAG, "Blocked by kiosk whitelist 뿯↽ $PACKAGE_NAME (silent)")
-                KioskPolicy.denyExternalLaunchSilently(context, PACKAGE_NAME)
-                context.findMainActivity()?.onExternalLaunchBlocked(PACKAGE_NAME)
+            val pm = context.packageManager
+            val intent = pm.getLaunchIntentForPackage(PACKAGE_NAME)
+                ?: pm.getLeanbackLaunchIntentForPackage(PACKAGE_NAME)
+
+            if (intent == null) {
+                Toast.makeText(
+                    context.applicationContext,
+                    context.getString(R.string.onyx_iptv_not_installed),
+                    Toast.LENGTH_LONG,
+                ).show()
+                Log.w(TAG, "No launch intent for $PACKAGE_NAME")
                 return
             }
 
-            // Synchronous Root Home BEFORE startActivity — no timers after launch.
-            context.findMainActivity()?.switchToRootHomeBeforeOttLaunch()
+            // CRITICAL: set before startActivity so Watchdog / leave-hint skip reclaim.
+            KioskPolicy.markOttLaunched(context, PACKAGE_NAME)
 
-            if (KioskLockTask.launchAllowlistedPackage(context, PACKAGE_NAME)) {
-                return
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            Log.i(TAG, "Launched Live TV → $PACKAGE_NAME (isExternalAppActive=true)")
+        } catch (t: Throwable) {
+            Log.e(TAG, "Live TV launch failed", t)
+            try {
+                KioskPolicy.clearOttLaunchState(context)
+            } catch (_: Throwable) {
             }
             Toast.makeText(
-                context,
+                context.applicationContext,
                 context.getString(R.string.onyx_iptv_not_installed),
                 Toast.LENGTH_LONG,
             ).show()
-        } catch (t: Throwable) {
-            Log.e(TAG, "Live TV launch failed — staying on MainActivity", t)
-            try {
-                KioskPolicy.clearOttLaunchState(context)
-                KioskPolicy.denyExternalLaunchSilently(context, PACKAGE_NAME)
-            } catch (_: Throwable) {
-            }
         }
-    }
-
-    private fun Context.findMainActivity(): MainActivity? {
-        var ctx: Context? = this
-        while (ctx is ContextWrapper) {
-            if (ctx is MainActivity) return ctx
-            if (ctx is Activity && ctx !is MainActivity) return null
-            ctx = ctx.baseContext
-        }
-        return null
     }
 }

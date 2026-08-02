@@ -1,9 +1,13 @@
 package `in`.pcncloud.hotel.ui.entertainment
 
+import android.content.ActivityNotFoundException
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.util.Log
+import android.widget.Toast
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -31,10 +35,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -63,11 +67,8 @@ import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.ui.components.LuxuryScreenBackground
 import `in`.pcncloud.hotel.ui.components.LuxuryScreenHeader
 import `in`.pcncloud.hotel.ui.components.luxuryBackHandler
-import `in`.pcncloud.hotel.ui.theme.GoldLight
-import `in`.pcncloud.hotel.ui.theme.GoldPrimary
-import `in`.pcncloud.hotel.ui.theme.NavySurface
+import `in`.pcncloud.hotel.ui.theme.GoldLuxury
 import `in`.pcncloud.hotel.ui.theme.SansBody
-import `in`.pcncloud.hotel.ui.theme.TextMuted
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
 import kotlinx.coroutines.delay
 
@@ -195,11 +196,42 @@ fun EntertainmentHubScreen(
                                 )
                                 return@EntertainmentAppTile
                             }
-                            AppLauncherUtils.launchOrInstall(
-                                context = context,
-                                packageName = app.packageName,
-                                appLabel = context.getString(app.labelRes),
-                            )
+                            val packageName = app.packageName
+                            try {
+                                // Standard launch-intent check — do not leave this screen if missing.
+                                val launchIntent =
+                                    context.packageManager.getLaunchIntentForPackage(packageName)
+                                        ?: AppLauncherUtils.buildSafeLaunchIntent(
+                                            context,
+                                            packageName,
+                                        )
+                                if (launchIntent != null) {
+                                    AppLauncherUtils.launchOrInstall(
+                                        context = context,
+                                        packageName = packageName,
+                                        appLabel = context.getString(app.labelRes),
+                                    )
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.entertainment_app_unavailable),
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
+                            } catch (_: ActivityNotFoundException) {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.entertainment_app_unavailable),
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            } catch (e: Exception) {
+                                Log.e("EntertainmentHub", "Launch failed → $packageName", e)
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.entertainment_app_unavailable),
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
                         },
                     )
                 }
@@ -217,9 +249,17 @@ private fun EntertainmentAppTile(
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale = if (focused) 1.06f else 1f
-    val shape = RoundedCornerShape(16.dp)
-    val iconSize = 88.dp
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.05f else 1f,
+        animationSpec = tween(durationMillis = 160),
+        label = "ottCardScale",
+    )
+    val shape = RoundedCornerShape(18.dp)
+    val glassFill = Color(0x33000000)
+    val idleBorder = Color.White.copy(alpha = 0.15f)
+    val focusBorder = GoldLuxury // #D4AF37
+    val installedGreen = Color(0xFF22C55E)
+    val secondaryText = Color.White.copy(alpha = 0.60f)
 
     Column(
         modifier = modifier
@@ -227,19 +267,24 @@ private fun EntertainmentAppTile(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(shape)
-            .background(
-                brush = Brush.verticalGradient(
-                    listOf(
-                        NavySurface.copy(alpha = 0.95f),
-                        Color(0xFF152238),
-                    ),
-                ),
-                shape = shape,
+            .then(
+                if (focused) {
+                    Modifier.shadow(
+                        elevation = 20.dp,
+                        shape = shape,
+                        ambientColor = Color.Black.copy(alpha = 0.65f),
+                        spotColor = Color.Black.copy(alpha = 0.80f),
+                        clip = false,
+                    )
+                } else {
+                    Modifier
+                },
             )
+            .clip(shape)
+            .background(glassFill, shape)
             .border(
-                width = if (focused) 3.dp else 1.dp,
-                color = if (focused) GoldPrimary else Color.White.copy(alpha = 0.18f),
+                width = if (focused) 2.5.dp else 1.dp,
+                color = if (focused) focusBorder else idleBorder,
                 shape = shape,
             )
             .onFocusChanged { focused = it.isFocused }
@@ -256,34 +301,25 @@ private fun EntertainmentAppTile(
                         (event.key == Key.Enter || event.key == Key.DirectionCenter)
                 }
             }
-            .padding(vertical = 18.dp, horizontal = 12.dp),
+            .padding(vertical = 20.dp, horizontal = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(
-            modifier = Modifier
-                .size(iconSize)
-                .clip(RoundedCornerShape(18.dp))
-                .background(Color.White.copy(alpha = 0.06f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            EntertainmentAppIcon(
-                packageName = app.packageName,
-                installed = installed,
-                fallbackIconRes = app.fallbackIconRes,
-                contentDescription = stringResource(app.labelRes),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(10.dp),
-            )
-        }
+        // Pure transparent logo on the frosted glass — no plate, clip, or fill behind it.
+        EntertainmentAppIcon(
+            packageName = app.packageName,
+            installed = installed,
+            fallbackIconRes = app.fallbackIconRes,
+            contentDescription = stringResource(app.labelRes),
+            modifier = Modifier.size(64.dp),
+        )
 
         Spacer(modifier = Modifier.height(14.dp))
 
         Text(
             text = stringResource(app.labelRes),
-            color = if (focused) GoldLight else TextPrimary,
+            color = TextPrimary,
             fontFamily = SansBody,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
             fontSize = 15.sp,
             textAlign = TextAlign.Center,
             maxLines = 2,
@@ -298,8 +334,9 @@ private fun EntertainmentAppTile(
                 if (installed) R.string.entertainment_installed
                 else R.string.entertainment_get_app,
             ),
-            color = if (installed) Color(0xFF86EFAC) else TextMuted,
+            color = if (installed) installedGreen else secondaryText,
             fontFamily = SansBody,
+            fontWeight = if (installed) FontWeight.SemiBold else FontWeight.Normal,
             fontSize = 12.sp,
             textAlign = TextAlign.Center,
         )
@@ -309,7 +346,7 @@ private fun EntertainmentAppTile(
 /**
  * Installed → official system app icon via [android.content.pm.PackageManager.getApplicationIcon].
  * Not installed → static high-res PNG in `res/drawable/`.
- * Always [ContentScale.Fit] (fitCenter) so logos stay undistorted inside the rounded card.
+ * No background, no clip — only [Modifier] size + [ContentScale.Fit].
  */
 @Composable
 private fun EntertainmentAppIcon(

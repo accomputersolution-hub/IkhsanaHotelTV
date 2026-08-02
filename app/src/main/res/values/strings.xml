@@ -23,6 +23,7 @@
     <string name="entertainment_installed">Installed</string>
     <string name="entertainment_get_app">Get on Play Store</string>
     <string name="entertainment_not_installed">%1$s is not installed — opening Play Store</string>
+    <string name="entertainment_app_unavailable">App is not installed or disabled by Admin.</string>
     <string name="entertainment_launch_failed">Could not open %1$s</string>
     <string name="entertainment_store_failed">Could not open Play Store for %1$s</string>
     <string name="kiosk_app_not_allowed">%1$s is unauthorized / disabled by Admin for this hotel</string>
@@ -86,6 +87,8 @@
     <string name="pay_at_checkout_sub">Add to Room Bill</string>
     <string name="pay_now">Pay Now</string>
     <string name="pay_now_sub">Scan QR on TV</string>
+    <string name="payment_apps_unavailable">Payment apps are not available on this TV.</string>
+    <string name="qr_generation_pending">QR Code generation pending.</string>
     <string name="qr_dialog_title">Scan to Pay</string>
     <string name="qr_dialog_amount">Amount: ₹%1$.0f</string>
     <string name="qr_dialog_hint">Open your UPI app and scan the QR code below.</string>

@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.util.Log
 import android.widget.Toast
 import `in`.pcncloud.hotel.MainActivity
@@ -43,22 +42,30 @@ object AppLauncherUtils {
             }
 
             if (!KioskPolicy.canLaunchApp(context, packageName)) {
-                Log.w(TAG, "Blocked by kiosk whitelist → $packageName (silent)")
+                Log.w(TAG, "Blocked by kiosk whitelist → $packageName")
                 KioskPolicy.denyExternalLaunchSilently(context, packageName)
+                showAppUnavailableToast(context)
                 context.findMainActivity()?.onExternalLaunchBlocked(packageName)
+                return
+            }
+
+            // Resolve launch intent BEFORE leaving the Entertainment screen.
+            val launchIntent = resolveLaunchIntent(context, packageName)
+            if (launchIntent == null) {
+                Log.w(TAG, "No launch intent — app missing/disabled → $packageName")
+                showAppUnavailableToast(context)
                 return
             }
 
             // 1) Synchronous Root Home switch BEFORE startActivity (no postDelayed).
             context.findMainActivity()?.switchToRootHomeBeforeOttLaunch()
-
-            if (isAppInstalled(context, packageName)) {
-                launchInstalledApp(context, packageName, appLabel)
-            } else {
-                openPlayStore(context, packageName, appLabel)
-            }
+            launchInstalledApp(context, packageName, appLabel, launchIntent)
+        } catch (e: ActivityNotFoundException) {
+            Log.e(TAG, "ActivityNotFoundException for $packageName", e)
+            showAppUnavailableToast(context)
         } catch (t: Throwable) {
             Log.e(TAG, "launchOrInstall failed for $packageName — staying on MainActivity", t)
+            showAppUnavailableToast(context)
             try {
                 KioskPolicy.clearOttLaunchState(context)
                 KioskPolicy.denyExternalLaunchSilently(context, packageName)
@@ -67,89 +74,60 @@ object AppLauncherUtils {
         }
     }
 
-    private fun launchInstalledApp(context: Context, packageName: String, appLabel: String) {
+    /** Prefer [PackageManager.getLaunchIntentForPackage], then TV leanback-safe fallback. */
+    fun resolveLaunchIntent(context: Context, packageName: String): Intent? {
+        return try {
+            context.packageManager.getLaunchIntentForPackage(packageName)
+                ?: buildSafeLaunchIntent(context, packageName)
+        } catch (_: Exception) {
+            buildSafeLaunchIntent(context, packageName)
+        }
+    }
+
+    private fun showAppUnavailableToast(context: Context) {
+        Toast.makeText(
+            context.applicationContext,
+            context.getString(R.string.entertainment_app_unavailable),
+            Toast.LENGTH_LONG,
+        ).show()
+    }
+
+    private fun launchInstalledApp(
+        context: Context,
+        packageName: String,
+        appLabel: String,
+        preResolvedIntent: Intent? = null,
+    ) {
         if (KioskLockTask.launchAllowlistedPackage(context, packageName)) {
             // Intentionally no code after successful startActivity.
             return
         }
 
         try {
-            val intent = buildSafeLaunchIntent(context, packageName)
+            val intent = preResolvedIntent ?: resolveLaunchIntent(context, packageName)
             if (intent == null) {
                 Log.w(TAG, "No launch intent → $packageName")
-                Toast.makeText(
-                    context,
-                    context.getString(R.string.entertainment_launch_failed, appLabel),
-                    Toast.LENGTH_LONG,
-                ).show()
+                showAppUnavailableToast(context)
                 return
             }
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             KioskPolicy.markOttLaunched(context, packageName)
             context.startActivity(intent)
             Log.i(TAG, "Launched $packageName (fallback)")
             // Intentionally no code after startActivity.
+        } catch (e: ActivityNotFoundException) {
+            Log.e(TAG, "ActivityNotFoundException launching $packageName", e)
+            KioskPolicy.clearOttLaunchState(context)
+            showAppUnavailableToast(context)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch $packageName", e)
             KioskPolicy.clearOttLaunchState(context)
-            Toast.makeText(
-                context,
-                context.getString(R.string.entertainment_launch_failed, appLabel),
-                Toast.LENGTH_LONG,
-            ).show()
+            showAppUnavailableToast(context)
         }
     }
 
     fun buildSafeLaunchIntent(context: Context, packageName: String): Intent? =
         KioskLockTask.buildSafeLaunchIntent(context, packageName)
-
-    private fun openPlayStore(context: Context, packageName: String, appLabel: String) {
-        Log.i(TAG, "Not installed — opening Play Store for $packageName")
-        Toast.makeText(
-            context,
-            context.getString(R.string.entertainment_not_installed, appLabel),
-            Toast.LENGTH_SHORT,
-        ).show()
-
-        if (KioskPolicy.isKioskModeEnabled(context)) {
-            Toast.makeText(
-                context,
-                context.getString(R.string.entertainment_launch_failed, appLabel),
-                Toast.LENGTH_LONG,
-            ).show()
-            Log.w(TAG, "Skip Play Store while kiosk Lock Task is ON → $packageName")
-            return
-        }
-
-        val marketIntent = Intent(
-            Intent.ACTION_VIEW,
-            Uri.parse("market://details?id=$packageName"),
-        ).addFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
-        )
-
-        try {
-            KioskPolicy.markExternalAppSession(context)
-            context.startActivity(marketIntent)
-        } catch (_: ActivityNotFoundException) {
-            val webIntent = Intent(
-                Intent.ACTION_VIEW,
-                Uri.parse("https://play.google.com/store/apps/details?id=$packageName"),
-            ).addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
-            )
-            try {
-                KioskPolicy.markExternalAppSession(context)
-                context.startActivity(webIntent)
-            } catch (e: Exception) {
-                Log.e(TAG, "Could not open Play Store for $packageName", e)
-                Toast.makeText(
-                    context,
-                    context.getString(R.string.entertainment_store_failed, appLabel),
-                    Toast.LENGTH_LONG,
-                ).show()
-            }
-        }
-    }
 
     private fun Context.findMainActivity(): MainActivity? {
         var ctx: Context? = this

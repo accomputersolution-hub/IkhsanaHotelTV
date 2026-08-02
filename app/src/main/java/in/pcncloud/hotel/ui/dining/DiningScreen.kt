@@ -99,6 +99,9 @@ fun DiningScreen(
     val categoryFocus = remember { FocusRequester() }
     val orderFocus = remember { FocusRequester() }
 
+    // Local QR placeholder dialog — no intents / navigation routes.
+    var showQrDialog by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
         categoryFocus.requestFocus()
     }
@@ -191,9 +194,21 @@ fun DiningScreen(
                     isPlacingOrder = uiState.isPlacingOrder,
                     roomOccupied = uiState.roomOccupied,
                     selectedPayment = uiState.selectedPayment,
-                    onSelectPayment = viewModel::selectPayment,
+                    onSelectPayment = { method ->
+                        viewModel.selectPayment(method)
+                        if (method == PaymentMethod.PAID_ONLINE) {
+                            showQrDialog = true
+                        }
+                    },
                     orderFocus = orderFocus,
-                    onPlaceOrder = viewModel::requestPlaceOrder,
+                    onPlaceOrder = {
+                        if (uiState.selectedPayment == PaymentMethod.PAID_ONLINE) {
+                            // Pay Now CTA → show QR placeholder only (no external intents).
+                            showQrDialog = true
+                        } else {
+                            viewModel.requestPlaceOrder()
+                        }
+                    },
                     modifier = Modifier
                         .width(300.dp)
                         .fillMaxHeight(),
@@ -202,11 +217,9 @@ fun DiningScreen(
         }
 
         // ── Overlays (outside content row so focus/layout stay clean) ────
-        uiState.pendingQrTotal?.let { total ->
-            QrPaymentDialog(
-                total = total,
-                onConfirm = viewModel::confirmQrPayment,
-                onDismiss = viewModel::dismissQrDialog,
+        if (showQrDialog) {
+            QrPlaceholderDialog(
+                onDismiss = { showQrDialog = false },
             )
         }
         if (uiState.showVacantRoomDialog) {
@@ -934,6 +947,7 @@ private fun PaymentToggle(
                 subtitle = stringResource(R.string.pay_now_sub),
                 isSelected = selected == PaymentMethod.PAID_ONLINE,
                 modifier = Modifier.weight(1f),
+                // Shows the QR placeholder dialog via parent state — no intents.
                 onClick = { onSelect(PaymentMethod.PAID_ONLINE) },
             )
         }
@@ -1014,18 +1028,18 @@ private fun PaymentCard(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// QR Payment Dialog
+// QR Placeholder Dialog (future Razorpay QR container)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun QrPaymentDialog(
-    total: Double,
-    onConfirm: () -> Unit,
+private fun QrPlaceholderDialog(
     onDismiss: () -> Unit,
 ) {
-    val confirmFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { confirmFocus.requestFocus() }
+    val closeFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        runCatching { closeFocus.requestFocus() }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Box(
@@ -1046,16 +1060,10 @@ private fun QrPaymentDialog(
                     fontFamily = SerifDisplay,
                     color = GoldLight,
                 )
-                Text(
-                    text = stringResource(R.string.qr_dialog_amount, total),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = GoldLuxury,
-                )
-                // QR code placeholder — replace with a real QR library if needed
+                // Blank placeholder box — future Razorpay QR code container.
                 Box(
                     modifier = Modifier
-                        .size(160.dp)
+                        .size(180.dp)
                         .background(Color.White, RoundedCornerShape(12.dp))
                         .border(2.dp, GoldLuxury.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center,
@@ -1064,7 +1072,7 @@ private fun QrPaymentDialog(
                         text = "QR",
                         fontSize = 28.sp,
                         fontWeight = FontWeight.Black,
-                        color = NavyDeep,
+                        color = NavyDeep.copy(alpha = 0.35f),
                     )
                 }
                 Text(
@@ -1074,21 +1082,12 @@ private fun QrPaymentDialog(
                     color = TextMuted,
                     textAlign = TextAlign.Center,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // Cancel
-                    QrDialogButton(
-                        text = stringResource(R.string.qr_dialog_cancel),
-                        highlighted = false,
-                        onClick = onDismiss,
-                    )
-                    // Confirm
-                    QrDialogButton(
-                        text = stringResource(R.string.qr_dialog_confirm),
-                        highlighted = true,
-                        modifier = Modifier.focusRequester(confirmFocus),
-                        onClick = onConfirm,
-                    )
-                }
+                QrDialogButton(
+                    text = stringResource(R.string.qr_dialog_cancel),
+                    highlighted = true,
+                    modifier = Modifier.focusRequester(closeFocus),
+                    onClick = onDismiss,
+                )
             }
         }
     }

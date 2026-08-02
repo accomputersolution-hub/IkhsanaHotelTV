@@ -14,8 +14,8 @@ import android.util.Log
  * Device-owner Lock Task helpers for hotel kiosk.
  *
  * Keeps Home/Back from escaping to the stock Android TV launcher while kiosk is ON.
- * OTT apps (YouTube, Netflix, …) are allowlisted **only** via RTDB `allowedPackages`
- * for the current hotel — never via a hardcoded baseline.
+ * Streaming OTT apps (YouTube, Netflix, …) are allowlisted via RTDB `allowedPackages`
+ * for the current hotel. Live TV (Onyx IPTV) is always in the Lock Task baseline.
  */
 object KioskLockTask {
 
@@ -24,18 +24,23 @@ object KioskLockTask {
     /** YouTube TV package id — used only for leanback URI fallback when launching. */
     const val YOUTUBE_TV_PACKAGE = "com.google.android.youtube.tv"
 
+    /** In-room Live TV / IPTV app — must stay Lock-Task allowlisted under kiosk. */
+    const val LIVE_TV_PACKAGE = "com.onnet.systems.iptv.esto"
+
     /**
-     * Essential Lock Task packages only (hotel launcher is always merged separately).
-     * Must NOT include YouTube or any OTT — those come solely from Admin `allowedPackages`.
+     * Essential Lock Task packages always merged with the hotel launcher.
+     * Live TV is included so Lock Task Mode does not silently block IPTV.
+     * Other OTT apps still come from Admin `allowedPackages` only.
      */
-    val BASELINE_LOCK_TASK_PACKAGES: List<String> = emptyList()
+    val BASELINE_LOCK_TASK_PACKAGES: List<String> = listOf(
+        LIVE_TV_PACKAGE,
+    )
 
     fun adminComponent(context: Context): ComponentName =
         MyDeviceAdminReceiver.getComponentName(context)
 
     /**
-     * Lock Task package set = hotel app + [extraPackages] (RTDB allowlist).
-     * No hardcoded OTT packages.
+     * Lock Task package set = hotel app + [extraPackages] (RTDB allowlist) + baseline.
      */
     fun buildLockTaskPackageArray(context: Context, extraPackages: List<String> = emptyList()): Array<String> =
         (listOf(context.packageName) + extraPackages + BASELINE_LOCK_TASK_PACKAGES)
@@ -45,8 +50,8 @@ object KioskLockTask {
             .toTypedArray()
 
     /**
-     * Registers Lock Task packages from the hotel's RTDB `allowedPackages` only,
-     * plus this hotel launcher package.
+     * Registers Lock Task packages from the hotel's RTDB `allowedPackages`,
+     * this hotel launcher package, and [BASELINE_LOCK_TASK_PACKAGES] (Live TV).
      */
     fun applyAllowlist(context: Context, firebasePackages: List<String>) {
         // Never re-pin a DPM whitelist while kiosk is OFF (Android 9/11 OTT block).
@@ -209,9 +214,8 @@ object KioskLockTask {
     }
 
     /**
-     * Immediately sets Lock Task packages from the hotel Admin allowlist only.
-     * [targetPackage] is included only if it is already in that allowlist
-     * (launch is gated by [canLaunchApp] first).
+     * Immediately sets Lock Task packages from the hotel Admin allowlist + baseline.
+     * [targetPackage] must be in Admin allowlist **or** [BASELINE_LOCK_TASK_PACKAGES].
      */
     private fun applyAllowlistForLaunch(context: Context, targetPackage: String) {
         try {
@@ -219,15 +223,16 @@ object KioskLockTask {
             val adminName = adminComponent(context)
             if (!dpm.isDeviceOwnerApp(context.packageName)) return
 
+            val target = targetPackage.trim()
             val adminList = KioskPolicy.getAllowedPackagesList(context)
-            if (!adminList.contains(targetPackage.trim())) {
-                Log.w(TAG, "applyAllowlistForLaunch skipped — $targetPackage not in allowedPackages")
+            if (!adminList.contains(target) && target !in BASELINE_LOCK_TASK_PACKAGES) {
+                Log.w(TAG, "applyAllowlistForLaunch skipped — $targetPackage not allowlisted")
                 return
             }
             val packages = buildLockTaskPackageArray(context, adminList)
             dpm.setLockTaskPackages(adminName, packages)
             MyDeviceAdminReceiver.applyStrictLockTaskFeatures(context)
-            Log.i(TAG, "Pre-launch setLockTaskPackages 뿯↽ ${packages.toList()}")
+            Log.i(TAG, "Pre-launch setLockTaskPackages → ${packages.toList()}")
         } catch (e: Exception) {
             Log.w(TAG, "applyAllowlistForLaunch failed for $targetPackage", e)
         }

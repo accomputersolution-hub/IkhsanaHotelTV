@@ -114,6 +114,8 @@ object KioskPolicy {
      * Cleared only on HOME/BACK return ([clearExternalAppActive] / [clearOttLaunchState]).
      */
     private const val KEY_EXTERNAL_APP_ACTIVE = "is_external_app_active"
+    /** Wall-clock when [markOttLaunched] last ran — blocks premature onResume clear. */
+    private const val KEY_OTT_LAUNCHED_AT_MS = "ott_launched_at_ms"
     /** Block accidental OTT re-launch after returning from YouTube / Home. */
     private const val KEY_OTT_LAUNCH_SUPPRESS_UNTIL = "ott_launch_suppress_until_ms"
     /** True while MainActivity is resumed in the foreground. */
@@ -380,8 +382,8 @@ object KioskPolicy {
     /**
      * Validates whether an external app may be launched.
      * When Kiosk Mode is OFF → allow everything.
-     * When Kiosk Mode is ON → only packages explicitly in **this hotel's** Admin
-     * `allowedPackages` (YouTube / Netflix / etc. have no hardcoded bypass).
+     * When Kiosk Mode is ON → hotel Admin `allowedPackages` **or** Lock Task baseline
+     * (Live TV / Onyx IPTV).
      * Never throws — a prefs / parse failure fails closed (deny) under kiosk.
      */
     fun canLaunchApp(context: Context, targetPackageName: String): Boolean {
@@ -389,6 +391,7 @@ object KioskPolicy {
             if (!isKioskModeEnabled(context)) return true
             val target = targetPackageName.trim()
             if (target.isEmpty()) return false
+            if (target in KioskLockTask.BASELINE_LOCK_TASK_PACKAGES) return true
             val allowed = getAllowedPackagesList(context)
             val ok = allowed.contains(target)
             if (!ok) {
@@ -753,6 +756,7 @@ object KioskPolicy {
         prefs(context).edit()
             .putBoolean(KEY_EXTERNAL_APP_ACTIVE, false)
             .remove(KEY_EXTERNAL_APP_UNTIL)
+            .remove(KEY_OTT_LAUNCHED_AT_MS)
             .apply()
         Log.i(TAG, "isExternalAppActive=false — Watchdog reclaim re-enabled")
     }
@@ -761,13 +765,25 @@ object KioskPolicy {
     fun markOttLaunched(context: Context, packageName: String) {
         // Do NOT clear KEY_ON_GUEST_HOME — MainActivity may already have switched
         // to Root Home synchronously before startActivity (anti-flicker).
+        // commit() so Watchdog / onUserLeaveHint see the flag on the same leave cycle.
         prefs(context).edit()
             .putString(KEY_LAST_OTT_PACKAGE, packageName)
             .putBoolean(KEY_MAIN_FOREGROUND, false)
             .putBoolean(KEY_EXTERNAL_APP_ACTIVE, true)
-            .apply()
+            .putLong(KEY_OTT_LAUNCHED_AT_MS, System.currentTimeMillis())
+            .commit()
         markExternalAppSession(context)
         Log.i(TAG, "OTT launched → $packageName (isExternalAppActive=true)")
+    }
+
+    /**
+     * True for a short window after [markOttLaunched] — MainActivity may briefly
+     * resume during the handoff; do not clear [isExternalAppActive] yet.
+     */
+    fun isOttLaunchGracePeriod(context: Context, graceMs: Long = 5_000L): Boolean {
+        val at = prefs(context).getLong(KEY_OTT_LAUNCHED_AT_MS, 0L)
+        if (at <= 0L) return false
+        return System.currentTimeMillis() - at < graceMs
     }
 
     fun getLastOttPackage(context: Context): String? =
@@ -784,6 +800,7 @@ object KioskPolicy {
             .putBoolean(KEY_EXTERNAL_APP_ACTIVE, false)
             .remove(KEY_EXTERNAL_APP_UNTIL)
             .remove(KEY_LAST_OTT_PACKAGE)
+            .remove(KEY_OTT_LAUNCHED_AT_MS)
             .putLong(KEY_OTT_LAUNCH_SUPPRESS_UNTIL, until)
             .apply()
         Log.i(TAG, "OTT launch state cleared — isExternalAppActive=false, suppress until=$until")

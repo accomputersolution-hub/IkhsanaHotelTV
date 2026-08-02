@@ -1570,10 +1570,16 @@ class MainActivity : ComponentActivity() {
             ) {
                 finishReturnFromExternalApp()
             } else if (KioskPolicy.isExternalAppActive(this)) {
-                // Back from YouTube / OTT without HOME extra — resume Watchdog.
-                Log.i(TAG, "onResume — clearing isExternalAppActive (returned from OTT)")
-                KioskPolicy.clearExternalAppActive(this)
-                KioskPolicy.clearOttLaunchState(this)
+                if (KioskPolicy.isOttLaunchGracePeriod(this)) {
+                    // Brief resume during Live TV / YouTube handoff — keep flag so Watchdog
+                    // does not reclaim mid-launch.
+                    Log.d(TAG, "onResume — OTT launch grace; keep isExternalAppActive")
+                } else {
+                    // Back from YouTube / OTT / Live TV without HOME extra — resume Watchdog.
+                    Log.i(TAG, "onResume — clearing isExternalAppActive (returned from OTT)")
+                    KioskPolicy.clearExternalAppActive(this)
+                    KioskPolicy.clearOttLaunchState(this)
+                }
             }
 
             if (kioskOn) {

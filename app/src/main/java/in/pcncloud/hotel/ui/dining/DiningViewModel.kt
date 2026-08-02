@@ -138,18 +138,24 @@ class DiningViewModel(
      * – PAID_ONLINE     → shows QR dialog first; call [confirmQrPayment] after user scans.
      */
     fun requestPlaceOrder() {
-        val state = _uiState.value
-        if (state.cart.isEmpty() || state.isPlacingOrder) return
+        try {
+            val state = _uiState.value
+            if (state.cart.isEmpty() || state.isPlacingOrder) return
 
-        if (!state.roomOccupied) {
-            _uiState.update { it.copy(showVacantRoomDialog = true) }
-            return
-        }
+            if (!state.roomOccupied) {
+                _uiState.update { it.copy(showVacantRoomDialog = true) }
+                return
+            }
 
-        if (state.selectedPayment == PaymentMethod.PAID_ONLINE) {
-            _uiState.update { it.copy(pendingQrTotal = state.cartTotal, orderMessage = null) }
-        } else {
-            submitOrder(state)
+            if (state.selectedPayment == PaymentMethod.PAID_ONLINE) {
+                _uiState.update { it.copy(pendingQrTotal = state.cartTotal, orderMessage = null) }
+            } else {
+                submitOrder(state)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("DiningVM", "requestPlaceOrder failed", e)
+            e.printStackTrace()
+            _uiState.update { it.copy(pendingQrTotal = null, isPlacingOrder = false) }
         }
     }
 
