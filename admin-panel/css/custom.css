@@ -2207,6 +2207,27 @@ body.modal-open { overflow: hidden; }
 .status-pill-active { background: rgba(52, 211, 153, 0.15); color: #34d399; }
 .status-pill-inactive { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
 
+.property-type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.property-type-badge-hotel {
+  background: rgba(201, 169, 98, 0.16);
+  color: #e8d5a3;
+  border: 1px solid rgba(201, 169, 98, 0.35);
+}
+.property-type-badge-corporate {
+  background: rgba(0, 102, 179, 0.18);
+  color: #7dd3fc;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
 .quick-btn-edit {
   background: rgba(56, 189, 248, 0.1);
   color: #7dd3fc;

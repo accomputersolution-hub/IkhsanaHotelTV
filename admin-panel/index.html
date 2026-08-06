@@ -168,6 +168,7 @@
               <tr>
                 <th>Hotel Name</th>
                 <th>ID / Slug</th>
+                <th>Type</th>
                 <th>Admin Email</th>
                 <th>Active TV Screens</th>
                 <th>Status</th>
@@ -175,7 +176,7 @@
               </tr>
             </thead>
             <tbody id="hotels-table-body">
-              <tr><td colspan="6" class="empty-state">Loading hotels…</td></tr>
+              <tr><td colspan="7" class="empty-state">Loading hotels…</td></tr>
             </tbody>
           </table>
         </div>
@@ -200,6 +201,14 @@
             <label for="hotel-slug" class="block text-sm font-medium mb-1">Unique Hotel ID / Slug</label>
             <input id="hotel-slug" type="text" required placeholder="e.g. ikhsana_001" class="w-full px-4 py-2.5 rounded-xl outline-none" />
           </div>
+        </div>
+        <div>
+          <label for="hotel-property-type" class="block text-sm font-medium mb-1">Property Type</label>
+          <select id="hotel-property-type" class="sa-field w-full outline-none" required>
+            <option value="hotel" selected>Hotel</option>
+            <option value="corporate">Corporate / Enterprise</option>
+          </select>
+          <p class="text-xs mt-1" style="color:var(--text-dim)">Controls TV &amp; KDS wording (rooms vs conference / pantry).</p>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
@@ -268,6 +277,14 @@
               class="sa-field w-full outline-none"
             />
           </div>
+        </div>
+        <div>
+          <label for="edit-hotel-property-type" class="block text-sm font-medium mb-1">Property Type</label>
+          <select id="edit-hotel-property-type" class="sa-field w-full outline-none" required>
+            <option value="hotel">Hotel</option>
+            <option value="corporate">Corporate / Enterprise</option>
+          </select>
+          <p class="text-xs mt-1" style="color:var(--text-dim)">Saved as <code>property_type</code> on the hotel document.</p>
         </div>
         <div>
           <label for="edit-hotel-tagline" class="block text-sm font-medium mb-1">Tagline</label>

@@ -128,12 +128,22 @@ function brandingOf(hotel) {
   };
 }
 
+function normalizePropertyType(value) {
+  return String(value || 'hotel').trim().toLowerCase() === 'corporate'
+    ? 'corporate'
+    : 'hotel';
+}
+
+function propertyTypeLabel(value) {
+  return normalizePropertyType(value) === 'corporate' ? 'Corporate' : 'Hotel';
+}
+
 function renderHotelsTable(hotels) {
   const tbody = document.getElementById('hotels-table-body');
   if (!tbody) return;
 
   if (!hotels.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No hotels onboarded yet. Click “Add New Hotel”.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">No hotels onboarded yet. Click “Add New Hotel”.</td></tr>`;
     return;
   }
 
@@ -143,8 +153,11 @@ function renderHotelsTable(hotels) {
       const statusClass = isActive ? 'status-pill-active' : 'status-pill-inactive';
       const statusLabel = isActive ? 'Active' : 'Inactive';
       const brand = brandingOf(h);
+      const propertyType = normalizePropertyType(h.property_type || h.propertyType);
+      const typeClass =
+        propertyType === 'corporate' ? 'property-type-badge-corporate' : 'property-type-badge-hotel';
       return `
-      <tr data-searchable data-hotel-id="${escapeHtml(h.id)}" data-search-text="${escapeHtml(`${h.name} ${h.id} ${h.adminEmail}`)}">
+      <tr data-searchable data-hotel-id="${escapeHtml(h.id)}" data-search-text="${escapeHtml(`${h.name} ${h.id} ${h.adminEmail} ${propertyType}`)}">
         <td>
           <div class="sa-hotel-name-cell">
             ${
@@ -156,6 +169,7 @@ function renderHotelsTable(hotels) {
           </div>
         </td>
         <td><code class="hotel-id-code">${escapeHtml(h.id)}</code></td>
+        <td><span class="property-type-badge ${typeClass}">${escapeHtml(propertyTypeLabel(propertyType))}</span></td>
         <td>${escapeHtml(h.adminEmail || '—')}</td>
         <td class="text-center"><span class="sa-screen-count">${h.activeTvScreens ?? 0}</span></td>
         <td>
@@ -292,6 +306,9 @@ function setupAddHotelModal() {
     const logoUrl = document.getElementById('hotel-logo-url')?.value?.trim() || '';
     const themeColor = document.getElementById('hotel-theme-color')?.value?.trim() || '#C9A962';
     const bgWallpaper = document.getElementById('hotel-bg-wallpaper')?.value?.trim() || '';
+    const propertyType = normalizePropertyType(
+      document.getElementById('hotel-property-type')?.value,
+    );
 
     if (!name || !hotelId || !adminEmail || password.length < 6) {
       toast('Fill all required fields (password min 6 chars)', 'error');
@@ -327,6 +344,7 @@ function setupAddHotelModal() {
         hotelId,
         adminEmail,
         adminUid,
+        property_type: propertyType,
         status: 'active',
         activeTvScreens: 0,
         isKioskModeEnabled: true,
@@ -430,6 +448,9 @@ function setupEditHotelModal() {
     const bgWallpaper =
       document.getElementById('edit-hotel-wallpaper-url')?.value?.trim() || '';
     const isActive = Boolean(document.getElementById('edit-hotel-active')?.checked);
+    const propertyType = normalizePropertyType(
+      document.getElementById('edit-hotel-property-type')?.value,
+    );
     const existing = hotelsCache.find((h) => h.id === hotelId);
     const brand = brandingOf(existing || {});
 
@@ -452,6 +473,7 @@ function setupEditHotelModal() {
         adminEmail,
         tagline,
         welcome_message: welcomeMessage,
+        property_type: propertyType,
         status: isActive ? 'active' : 'inactive',
         branding: {
           logoUrl,
@@ -492,6 +514,7 @@ function openEditHotelModal(hotel) {
 
   const nameEl = document.getElementById('edit-hotel-name');
   const emailEl = document.getElementById('edit-hotel-admin-email');
+  const propertyTypeEl = document.getElementById('edit-hotel-property-type');
   const taglineEl = document.getElementById('edit-hotel-tagline');
   const welcomeEl = document.getElementById('edit-hotel-welcome-message');
   const logoEl = document.getElementById('edit-hotel-logo-url');
@@ -500,6 +523,9 @@ function openEditHotelModal(hotel) {
 
   if (nameEl) nameEl.value = hotel.name || '';
   if (emailEl) emailEl.value = hotel.adminEmail || '';
+  if (propertyTypeEl) {
+    propertyTypeEl.value = normalizePropertyType(hotel.property_type || hotel.propertyType);
+  }
   if (taglineEl) taglineEl.value = brand.tagline || '';
   if (welcomeEl) welcomeEl.value = brand.welcomeMessage || '';
   if (logoEl) logoEl.value = brand.logoUrl || '';
