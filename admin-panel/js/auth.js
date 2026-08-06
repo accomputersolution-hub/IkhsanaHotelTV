@@ -142,12 +142,20 @@ function withTimeout(promise, ms, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-/** Authenticated-only session bind (profile + hotel). Never runs for null user. */
+/** Authenticated session bind. Super Admin skips all property binding. */
 async function loadAuthenticatedSession(user) {
   await loadUserProfile(user);
+
+  // Super Admin is not tied to a single property — never bind hotel / property_type.
+  if (currentProfile?.role === 'super_admin') {
+    return currentProfile;
+  }
+
+  // Property admins only: bind their assigned hotel (property_type comes later from Hotels/{id}).
   if (currentProfile?.role === 'hotel_admin' && currentProfile?.hotelId) {
     setAssignedHotel(currentProfile.hotelId, { name: currentProfile.hotelId });
   }
+  return currentProfile;
 }
 
 /**
@@ -213,7 +221,10 @@ export function initAuth(onReady) {
       return;
     }
 
-    // ── 2) Signed in: fetch profile (never block the boot gate forever) ───
+    // User exists — cancel signed-out failsafe before any profile await
+    clearTimeout(failsafeTimer);
+
+    // ── 2) Signed in: load role first; Super Admin skips property binding ─
     try {
       await withTimeout(
         loadAuthenticatedSession(user),
@@ -232,7 +243,6 @@ export function initAuth(onReady) {
       }
     } finally {
       firstEventDone = true;
-      clearTimeout(failsafeTimer);
       resolveAuthGate(user, currentProfile, { initial: wasInitialLoad }, onReady);
     }
   });
@@ -258,6 +268,17 @@ export async function loginWithEmail(email, password) {
       };
     }
   }
+
+  // Super Admin login: drop any stale property context so routing never
+  // waits on Hotels/{id}.property_type before showing the Master Dashboard.
+  if (currentProfile?.role === 'super_admin') {
+    try {
+      clearHotelContext();
+    } catch (err) {
+      console.error('[auth] clearHotelContext for super_admin failed', err);
+    }
+  }
+
   authLoading = false;
   notifyAuth();
   return { user: cred.user, profile: currentProfile };

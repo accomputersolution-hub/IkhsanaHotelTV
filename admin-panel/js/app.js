@@ -27,6 +27,7 @@ import {
   isImpersonating,
   updateHotelMeta,
   onHotelChange,
+  clearHotelContext,
 } from './tenant-context.js';
 import { initSuperAdmin, startSuperAdminListeners, stopSuperAdminListeners } from './super-admin.js';
 import { initRouter, onRouteChange, navigateTo, getRoute, getModuleFromRoute } from './router.js';
@@ -172,6 +173,19 @@ function handleInactiveForCurrentUser(status) {
   return false;
 }
 
+/** Super Admin Master Dashboard — no Hotels/{id} / property_type fetch. */
+function enterSuperAdminDashboard() {
+  stopHotelStatusWatch();
+  showDeactivatedGate(false);
+  startSuperAdminListeners();
+  // Avoid navigateTo when already on this hash — it re-fires route listeners (loop).
+  if (getRoute() !== '/super-admin') {
+    navigateTo('/super-admin');
+  }
+  showShell('super-admin');
+  setHotelChromeVisible(false);
+}
+
 async function applyRoute(route) {
   // Route guard: wait for Firebase Auth initial restore before any redirect/shell
   if (isAuthLoading()) {
@@ -189,25 +203,37 @@ async function applyRoute(route) {
       return;
     }
 
+    // ── Super Admin: Master Dashboard first; property checks only when impersonating ──
     if (profile.role === 'super_admin') {
-      // Keep hotels registry live so both Super Admin + PMS navbar dropdowns stay filled
       startSuperAdminListeners();
 
-      if (route === '/super-admin' || route === '/login') {
+      const onMasterRoute = route === '/super-admin' || route === '/login';
+      const wantsPropertyPms = route === '/pms' || String(route || '').startsWith('/pms');
+      const canOpenProperty =
+        wantsPropertyPms && hasHotelContext() && isImpersonating();
+
+      // Default / login / no active impersonation → Master Dashboard (no property_type)
+      if (onMasterRoute || !canOpenProperty) {
         stopHotelStatusWatch();
         showDeactivatedGate(false);
+        if (!onMasterRoute && wantsPropertyPms && !canOpenProperty) {
+          // Stale hotelId in localStorage without impersonation — don't block on property fetch
+          try {
+            clearHotelContext();
+          } catch (_) {
+            /* ignore */
+          }
+          toast('Select a hotel to open its PMS', 'error');
+        }
+        if (getRoute() !== '/super-admin') {
+          navigateTo('/super-admin');
+        }
         showShell('super-admin');
         setHotelChromeVisible(false);
         return;
       }
 
-      if (!hasHotelContext()) {
-        toast('Select a hotel to open its PMS', 'error');
-        navigateTo('/super-admin');
-        showShell('super-admin');
-        return;
-      }
-
+      // Explicit impersonation into a property PMS — status/property_type allowed here
       const hotelId = getHotelId();
       const status = await fetchHotelStatus(hotelId);
       cachedHotelStatus = status;
@@ -231,6 +257,7 @@ async function applyRoute(route) {
       return;
     }
 
+    // ── Property / hotel admin: bind hotel + property_type via Hotels/{id} ──
     if (profile.role === 'hotel_admin') {
       stopSuperAdminListeners();
       if (!hasHotelContext() && profile?.hotelId) {
@@ -251,7 +278,6 @@ async function applyRoute(route) {
           handleInactiveForCurrentUser(nextStatus);
         } else {
           showDeactivatedGate(false);
-          // If they were locked and hotel is reactivated while still on PMS hash, restore UI
           if (getRoute() !== '/login') {
             showShell('pms');
             setHotelChromeVisible(true);
@@ -282,7 +308,7 @@ async function applyRoute(route) {
     try {
       const profile = getCurrentProfile();
       if (!profile) showShell('login');
-      else if (profile.role === 'super_admin') showShell('super-admin');
+      else if (profile.role === 'super_admin') enterSuperAdminDashboard();
       else showShell('pms');
     } catch (shellErr) {
       console.error('[app] fallback shell failed', shellErr);
@@ -351,16 +377,29 @@ function setupLoginForm() {
     }
     try {
       const { profile } = await loginWithEmail(email, password);
+      forceAuthReady();
+      setAuthBootUi(false);
+
       if (profile?.role === 'super_admin') {
-        navigateTo('/super-admin');
-      } else if (profile?.role === 'hotel_admin') {
-        navigateTo('/pms');
-      } else if (profile?.role === 'unknown') {
-        toast('No users/{uid} profile yet — use Bootstrap Super Admin below.', 'error');
-      } else {
-        toast('Unknown role', 'error');
+        // Role-first: Master Dashboard only — no property_type / Hotels/{id} gate
+        enterSuperAdminDashboard();
+        return;
       }
-      await applyRoute(getRoute());
+
+      if (profile?.role === 'hotel_admin') {
+        navigateTo('/pms');
+        await applyRoute(getRoute());
+        return;
+      }
+
+      if (profile?.role === 'unknown') {
+        toast('No users/{uid} profile yet — use Bootstrap Super Admin below.', 'error');
+        showShell('login');
+        return;
+      }
+
+      toast('Unknown role', 'error');
+      showShell('login');
     } catch (err) {
       console.error(err);
       toast(err.message || 'Login failed', 'error');
@@ -488,10 +527,29 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // Preserve deep-link hash on refresh; only redirect away from empty/#/login
+      // Super Admin session restore → Master Dashboard (skip property_type entirely)
+      if (profile?.role === 'super_admin') {
+        const route = getRoute();
+        const onPms = route === '/pms' || String(location.hash || '').includes('/pms');
+        if (!onPms || !isImpersonating()) {
+          try {
+            if (!isImpersonating()) clearHotelContext();
+          } catch (_) {
+            /* ignore */
+          }
+          enterSuperAdminDashboard();
+          return;
+        }
+        applyRoute(route).catch((err) => {
+          console.error('[app] super_admin PMS route failed', err);
+          enterSuperAdminDashboard();
+        });
+        return;
+      }
+
+      // Property admin (or other): preserve deep-link; default away from login
       if (!location.hash || location.hash === '#/login') {
-        if (profile?.role === 'super_admin') navigateTo('/super-admin');
-        else navigateTo('/pms');
+        navigateTo('/pms');
       }
       applyRoute(getRoute()).catch((err) => {
         console.error('[app] initial route failed', err);
@@ -501,9 +559,13 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('[app] auth ready handler failed', err);
       forceAuthReady();
       setAuthBootUi(false);
-      navigateTo('/login');
-      showShell('login');
-      toast(err?.message || 'Failed to restore session', 'error');
+      if (profile?.role === 'super_admin') {
+        enterSuperAdminDashboard();
+      } else {
+        navigateTo('/login');
+        showShell('login');
+        toast(err?.message || 'Failed to restore session', 'error');
+      }
     } finally {
       forceAuthReady();
       clearAuthBootUi();
