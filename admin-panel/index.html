@@ -242,8 +242,8 @@
 
   <!-- Edit Hotel Modal -->
   <div id="edit-hotel-modal" class="modal-overlay hidden">
-    <div class="modal-panel modal-panel-wide">
-      <div class="flex items-center justify-between mb-5">
+    <div class="modal-panel edit-property-modal max-w-4xl w-full md:w-[800px]">
+      <div class="edit-property-modal-header">
         <div>
           <h3 class="text-lg font-bold">Edit Hotel</h3>
           <p class="text-xs mt-0.5" style="color:var(--text-muted)">
@@ -252,105 +252,114 @@
         </div>
         <button id="edit-hotel-close" type="button" class="modal-close-btn">&times;</button>
       </div>
-      <form id="edit-hotel-form" class="space-y-4">
+      <form id="edit-hotel-form" class="edit-property-form">
         <input type="hidden" id="edit-hotel-id" />
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label for="edit-hotel-name" class="block text-sm font-medium mb-1">Hotel Name</label>
-            <input
-              id="edit-hotel-name"
-              type="text"
-              required
-              spellcheck="false"
-              autocomplete="off"
-              class="sa-field w-full outline-none"
-            />
+        <div class="edit-property-modal-body">
+          <div class="edit-property-grid grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Left: text data -->
+            <div class="edit-property-col space-y-4">
+              <div>
+                <label for="edit-hotel-name" class="block text-sm font-medium mb-1">Hotel Name</label>
+                <input
+                  id="edit-hotel-name"
+                  type="text"
+                  required
+                  spellcheck="false"
+                  autocomplete="off"
+                  class="sa-field w-full outline-none"
+                />
+              </div>
+              <div>
+                <label for="edit-hotel-admin-email" class="block text-sm font-medium mb-1">Admin Email</label>
+                <input
+                  id="edit-hotel-admin-email"
+                  type="email"
+                  required
+                  spellcheck="false"
+                  autocomplete="off"
+                  class="sa-field w-full outline-none"
+                />
+              </div>
+              <div>
+                <label for="edit-hotel-property-type" class="block text-sm font-medium mb-1">Property Type</label>
+                <select id="edit-hotel-property-type" class="sa-field w-full outline-none" required>
+                  <option value="hotel">Hotel</option>
+                  <option value="corporate">Corporate / Enterprise</option>
+                </select>
+                <p class="text-xs mt-1" style="color:var(--text-dim)">Saved as <code>property_type</code> on the hotel document.</p>
+              </div>
+              <div>
+                <label for="edit-hotel-tagline" class="block text-sm font-medium mb-1">Tagline</label>
+                <input
+                  id="edit-hotel-tagline"
+                  type="text"
+                  spellcheck="true"
+                  autocomplete="off"
+                  placeholder="e.g. Relax · Rejuvenate · Reconnect"
+                  class="sa-field w-full outline-none"
+                />
+                <p class="text-xs mt-1" style="color:var(--text-dim)">Shown under the hotel name on guest TVs.</p>
+              </div>
+              <div>
+                <label for="edit-hotel-welcome-message" class="block text-sm font-medium mb-1">Welcome Message</label>
+                <textarea
+                  id="edit-hotel-welcome-message"
+                  rows="4"
+                  spellcheck="true"
+                  placeholder="We are delighted to have you with us…"
+                  class="sa-field w-full outline-none resize-none"
+                ></textarea>
+                <p class="text-xs mt-1" style="color:var(--text-dim)">Welcome subtitle on the TV home screen · field <code>welcome_message</code>.</p>
+              </div>
+            </div>
+
+            <!-- Right: media & settings -->
+            <div class="edit-property-col space-y-4">
+              <div>
+                <label for="edit-hotel-logo-url" class="block text-sm font-medium mb-1">Logo URL</label>
+                <input
+                  id="edit-hotel-logo-url"
+                  type="url"
+                  spellcheck="false"
+                  autocomplete="off"
+                  placeholder="https://…"
+                  class="sa-field w-full outline-none"
+                />
+                <div class="sa-media-preview mt-2 max-h-32">
+                  <img id="edit-hotel-logo-preview" alt="Logo preview" class="sa-preview-img sa-preview-logo max-h-32 object-contain hidden" />
+                  <span id="edit-hotel-logo-placeholder" class="sa-preview-placeholder">Logo preview</span>
+                </div>
+              </div>
+              <div>
+                <label for="edit-hotel-wallpaper-url" class="block text-sm font-medium mb-1">Wallpaper / Background Image URL</label>
+                <input
+                  id="edit-hotel-wallpaper-url"
+                  type="url"
+                  spellcheck="false"
+                  autocomplete="off"
+                  placeholder="https://…"
+                  class="sa-field w-full outline-none"
+                />
+                <div class="sa-media-preview sa-media-preview-wide mt-2 max-h-32">
+                  <img id="edit-hotel-wallpaper-preview" alt="Wallpaper preview" class="sa-preview-img sa-preview-wallpaper max-h-32 object-contain hidden" />
+                  <span id="edit-hotel-wallpaper-placeholder" class="sa-preview-placeholder">Wallpaper preview</span>
+                </div>
+              </div>
+              <div class="sa-status-toggle-row">
+                <div>
+                  <p class="text-sm font-medium">Active Status</p>
+                  <p class="text-xs" style="color:var(--text-dim)">Inactive hotels stay in the registry but are marked offline for ops.</p>
+                </div>
+                <label class="sa-toggle">
+                  <input id="edit-hotel-active" type="checkbox" checked />
+                  <span class="sa-toggle-track"></span>
+                  <span id="edit-hotel-active-label" class="sa-toggle-label">Active</span>
+                </label>
+              </div>
+            </div>
           </div>
-          <div>
-            <label for="edit-hotel-admin-email" class="block text-sm font-medium mb-1">Admin Email</label>
-            <input
-              id="edit-hotel-admin-email"
-              type="email"
-              required
-              spellcheck="false"
-              autocomplete="off"
-              class="sa-field w-full outline-none"
-            />
-          </div>
         </div>
-        <div>
-          <label for="edit-hotel-property-type" class="block text-sm font-medium mb-1">Property Type</label>
-          <select id="edit-hotel-property-type" class="sa-field w-full outline-none" required>
-            <option value="hotel">Hotel</option>
-            <option value="corporate">Corporate / Enterprise</option>
-          </select>
-          <p class="text-xs mt-1" style="color:var(--text-dim)">Saved as <code>property_type</code> on the hotel document.</p>
-        </div>
-        <div>
-          <label for="edit-hotel-tagline" class="block text-sm font-medium mb-1">Tagline</label>
-          <input
-            id="edit-hotel-tagline"
-            type="text"
-            spellcheck="true"
-            autocomplete="off"
-            placeholder="e.g. Relax · Rejuvenate · Reconnect"
-            class="sa-field w-full outline-none"
-          />
-          <p class="text-xs mt-1" style="color:var(--text-dim)">Shown under the hotel name on guest TVs.</p>
-        </div>
-        <div>
-          <label for="edit-hotel-welcome-message" class="block text-sm font-medium mb-1">Welcome Message</label>
-          <textarea
-            id="edit-hotel-welcome-message"
-            rows="2"
-            spellcheck="true"
-            placeholder="We are delighted to have you with us…"
-            class="sa-field w-full outline-none resize-none"
-          ></textarea>
-          <p class="text-xs mt-1" style="color:var(--text-dim)">Welcome subtitle on the TV home screen · field <code>welcome_message</code>.</p>
-        </div>
-        <div>
-          <label for="edit-hotel-logo-url" class="block text-sm font-medium mb-1">Logo URL</label>
-          <input
-            id="edit-hotel-logo-url"
-            type="url"
-            spellcheck="false"
-            autocomplete="off"
-            placeholder="https://…"
-            class="sa-field w-full outline-none"
-          />
-          <div class="sa-media-preview mt-2">
-            <img id="edit-hotel-logo-preview" alt="Logo preview" class="sa-preview-img sa-preview-logo hidden" />
-            <span id="edit-hotel-logo-placeholder" class="sa-preview-placeholder">Logo preview</span>
-          </div>
-        </div>
-        <div>
-          <label for="edit-hotel-wallpaper-url" class="block text-sm font-medium mb-1">Wallpaper / Background Image URL</label>
-          <input
-            id="edit-hotel-wallpaper-url"
-            type="url"
-            spellcheck="false"
-            autocomplete="off"
-            placeholder="https://…"
-            class="sa-field w-full outline-none"
-          />
-          <div class="sa-media-preview sa-media-preview-wide mt-2">
-            <img id="edit-hotel-wallpaper-preview" alt="Wallpaper preview" class="sa-preview-img sa-preview-wallpaper hidden" />
-            <span id="edit-hotel-wallpaper-placeholder" class="sa-preview-placeholder">Wallpaper preview</span>
-          </div>
-        </div>
-        <div class="sa-status-toggle-row">
-          <div>
-            <p class="text-sm font-medium">Active Status</p>
-            <p class="text-xs" style="color:var(--text-dim)">Inactive hotels stay in the registry but are marked offline for ops.</p>
-          </div>
-          <label class="sa-toggle">
-            <input id="edit-hotel-active" type="checkbox" checked />
-            <span class="sa-toggle-track"></span>
-            <span id="edit-hotel-active-label" class="sa-toggle-label">Active</span>
-          </label>
-        </div>
-        <div class="hotel-row-actions" style="justify-content:flex-end">
+        <div class="edit-property-modal-footer">
           <button id="edit-hotel-cancel" type="button" class="quick-btn">Cancel</button>
           <button type="submit" class="btn-gold px-5 py-2.5 rounded-xl font-semibold">Save Changes</button>
         </div>

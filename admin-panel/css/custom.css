@@ -1170,6 +1170,84 @@ body {
   max-width: 32rem;
 }
 
+/* Edit Property — wide two-column dialog with sticky chrome */
+.edit-property-modal {
+  width: min(800px, 96vw);
+  max-width: 56rem; /* ~max-w-4xl */
+  max-height: min(90vh, 920px);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.edit-property-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.edit-property-modal-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem 1rem;
+  border-bottom: 1px solid var(--glass-border);
+  background: rgba(20, 30, 54, 0.98);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.edit-property-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem;
+  -webkit-overflow-scrolling: touch;
+}
+.edit-property-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2rem;
+}
+@media (min-width: 768px) {
+  .edit-property-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+.edit-property-col {
+  min-width: 0;
+}
+.edit-property-modal-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  padding: 1rem 1.5rem 1.25rem;
+  border-top: 1px solid var(--glass-border);
+  background: rgba(20, 30, 54, 0.98);
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+}
+.edit-property-modal .sa-media-preview {
+  max-height: 8rem; /* max-h-32 */
+}
+.edit-property-modal .sa-media-preview-wide {
+  min-height: 4.5rem;
+  max-height: 8rem;
+}
+.edit-property-modal .sa-preview-img,
+.edit-property-modal .sa-preview-logo,
+.edit-property-modal .sa-preview-wallpaper {
+  max-height: 8rem;
+  width: auto;
+  object-fit: contain;
+}
+
 .check-in-modal-panel.modal-panel-wide {
   max-width: 36rem;
 }
