@@ -6,6 +6,7 @@ import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.repository.FirestoreRepository
 import `in`.pcncloud.hotel.ui.dining.DiningViewModel
 import `in`.pcncloud.hotel.ui.home.HomeViewModel
+import `in`.pcncloud.hotel.ui.services.CorporateServicesViewModel
 import `in`.pcncloud.hotel.ui.services.ServicesViewModel
 
 class HotelViewModelFactory(
@@ -21,6 +22,8 @@ class HotelViewModelFactory(
             DiningViewModel(repository, config) as T
         modelClass.isAssignableFrom(ServicesViewModel::class.java) ->
             ServicesViewModel(repository) as T
+        modelClass.isAssignableFrom(CorporateServicesViewModel::class.java) ->
+            CorporateServicesViewModel(repository) as T
         else -> throw IllegalArgumentException("Unknown ViewModel: ${modelClass.name}")
     }
 }

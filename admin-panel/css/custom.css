@@ -2306,6 +2306,45 @@ body.modal-open { overflow: hidden; }
   border: 1px solid rgba(56, 189, 248, 0.4);
 }
 
+.helpdesk-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+.helpdesk-contacts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.helpdesk-contact-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+  border-radius: 0.9rem;
+  border: 1px solid var(--glass-border);
+  background: rgba(11, 19, 37, 0.55);
+}
+.helpdesk-contact-title {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 0.2rem;
+}
+.helpdesk-contact-ext {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #7dd3fc;
+}
+.helpdesk-contact-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
 .quick-btn-edit {
   background: rgba(56, 189, 248, 0.1);
   color: #7dd3fc;

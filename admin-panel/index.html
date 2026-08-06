@@ -713,8 +713,8 @@
           <span class="nav-label">TV Mass Messaging</span>
         </button>
         <button class="nav-item" data-module="housekeeping">
-          <span class="nav-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M4 20h16M6 20V9l6-4 6 4v11" stroke="currentColor" stroke-width="1.7"/><path d="M9 13h6M9 16h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
-          <span class="nav-label">Housekeeping Queue</span>
+          <span class="nav-icon" id="nav-hk-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M4 20h16M6 20V9l6-4 6 4v11" stroke="currentColor" stroke-width="1.7"/><path d="M9 13h6M9 16h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+          <span class="nav-label" id="nav-hk-label">Housekeeping Queue</span>
           <span id="nav-hk-badge" class="nav-pending-badge hidden">0</span>
         </button>
         <button class="nav-item" data-module="concierge">
@@ -976,9 +976,10 @@
           </div>
         </div>
 
-        <!-- Housekeeping Queue -->
+        <!-- Housekeeping Queue / Corporate Helpdesk Config -->
         <div data-module-view="housekeeping" class="module-view hidden">
-          <div class="module-card">
+          <!-- Hotel: standard housekeeping queue -->
+          <div id="hk-hotel-panel" class="module-card">
             <div class="module-card-header">
               <div>
                 <h2 class="text-base font-bold">Housekeeping Queue</h2>
@@ -1035,6 +1036,57 @@
                 <div id="hk-room-cleaning-list" class="service-card-grid flex-1 overflow-y-auto">
                   <p class="empty-state col-span-full">Loading rooms…</p>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Corporate: Emergency Contacts CRUD -->
+          <div id="hk-corporate-panel" class="module-card hidden">
+            <div class="module-card-header">
+              <div>
+                <h2 class="text-base font-bold">Helpdesk Config</h2>
+                <p class="text-xs mt-0.5">
+                  Manage emergency contacts shown on TV ·
+                  <code>Hotels/{id}.emergency_contacts</code>
+                </p>
+              </div>
+              <span id="helpdesk-contact-count" class="count-badge">0</span>
+            </div>
+            <div class="module-card-body flex flex-col gap-5 min-h-0">
+              <form id="helpdesk-contact-form" class="helpdesk-form grid grid-cols-1 md:grid-cols-2 gap-3">
+                <input type="hidden" id="helpdesk-contact-id" value="" />
+                <div>
+                  <label for="helpdesk-contact-title" class="block text-sm font-medium mb-1">Title</label>
+                  <input
+                    id="helpdesk-contact-title"
+                    type="text"
+                    required
+                    maxlength="80"
+                    placeholder="e.g. IT Support"
+                    class="sa-field w-full outline-none"
+                  />
+                </div>
+                <div>
+                  <label for="helpdesk-contact-extension" class="block text-sm font-medium mb-1">Extension</label>
+                  <input
+                    id="helpdesk-contact-extension"
+                    type="text"
+                    required
+                    maxlength="80"
+                    placeholder="e.g. Ext: 101"
+                    class="sa-field w-full outline-none"
+                  />
+                </div>
+                <div class="helpdesk-form-actions md:col-span-2">
+                  <button type="submit" id="helpdesk-save-btn" class="btn-gold px-5 py-2.5 rounded-xl font-semibold">
+                    Add Contact
+                  </button>
+                  <button type="button" id="helpdesk-cancel-edit-btn" class="quick-btn hidden">Cancel Edit</button>
+                </div>
+              </form>
+
+              <div id="helpdesk-contacts-list" class="helpdesk-contacts-list flex-1 overflow-y-auto">
+                <p class="empty-state">No emergency contacts yet. Add one above.</p>
               </div>
             </div>
           </div>

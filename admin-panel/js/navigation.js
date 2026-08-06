@@ -6,6 +6,7 @@ import { toast } from './utils.js';
 import { navigateTo } from './router.js';
 import { isSuperAdmin } from './auth.js';
 import { isCorporateProperty, onHotelMetaChange } from './tenant-context.js';
+import { applyHelpdeskChrome } from './emergency-contacts.js';
 
 const MODULES = {
   pms: { label: 'Room & Guest PMS', title: 'Room & Guest PMS' },
@@ -19,6 +20,7 @@ const MODULES = {
 
 function moduleTitle(id) {
   if (id === 'kds' && isCorporateProperty()) return 'Pantry Requests';
+  if (id === 'housekeeping' && isCorporateProperty()) return 'Helpdesk Config';
   return MODULES[id]?.title || '';
 }
 
@@ -33,12 +35,14 @@ export function initNavigation() {
   setupClock();
   setupQuickActions();
   setupGlobalSearch();
+  applyHelpdeskChrome();
   showModule(activeModule);
 
   onHotelMetaChange(() => {
-    if (activeModule === 'kds') {
+    applyHelpdeskChrome();
+    if (activeModule === 'kds' || activeModule === 'housekeeping') {
       const titleEl = document.getElementById('module-title');
-      if (titleEl) titleEl.textContent = moduleTitle('kds');
+      if (titleEl) titleEl.textContent = moduleTitle(activeModule);
     }
   });
 }

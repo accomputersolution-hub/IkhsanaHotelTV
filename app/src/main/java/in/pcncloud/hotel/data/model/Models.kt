@@ -29,6 +29,15 @@ data class HotelBranding(
     val tagline: String = "",
     val welcomeMessage: String = "",
     val status: String = "active",
+    /** Corporate helpdesk contacts from Hotels/{id}.emergency_contacts. */
+    val emergencyContacts: List<EmergencyContact> = emptyList(),
+)
+
+/** One entry from Hotels/{hotelId}.emergency_contacts (admin Helpdesk Config). */
+data class EmergencyContact(
+    val id: String = "",
+    val title: String = "",
+    val extension: String = "",
 )
 
 /** Live room / guest status from Hotels/{hotelId}/Rooms/{roomNumber}. */

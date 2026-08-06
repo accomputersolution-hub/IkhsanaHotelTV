@@ -49,16 +49,19 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
+import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.data.model.ServiceRequest
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
@@ -66,6 +69,8 @@ import `in`.pcncloud.hotel.ui.components.LuxuryScreenBackground
 import `in`.pcncloud.hotel.ui.components.LuxuryScreenHeader
 import `in`.pcncloud.hotel.ui.components.ServiceToast
 import `in`.pcncloud.hotel.ui.components.luxuryBackHandler
+import `in`.pcncloud.hotel.ui.theme.CorporateBlue
+import `in`.pcncloud.hotel.ui.theme.CorporateGlass
 import `in`.pcncloud.hotel.ui.theme.FocusCyan
 import `in`.pcncloud.hotel.ui.theme.FocusTeal
 import `in`.pcncloud.hotel.ui.theme.GoldGlassBorder
@@ -83,9 +88,236 @@ import `in`.pcncloud.hotel.ui.theme.TextPrimary
 private val VacantRed = Color(0xFFEF4444)
 private val GlassCardFill = Color(0xCC0B1325)
 
+private val CORPORATE_CONTACT_ICONS = listOf("💻", "☕", "📞", "🛠", "📋", "🆘")
+
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun ServicesScreen(
+    viewModelFactory: HotelViewModelFactory,
+    onBack: () -> Unit,
+) {
+    if (BuildConfig.IS_CORPORATE) {
+        CorporateServicesScreen(
+            viewModelFactory = viewModelFactory,
+            onBack = onBack,
+        )
+    } else {
+        HotelServicesScreen(
+            viewModelFactory = viewModelFactory,
+            onBack = onBack,
+        )
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun CorporateServicesScreen(
+    viewModelFactory: HotelViewModelFactory,
+    onBack: () -> Unit,
+) {
+    val viewModel: CorporateServicesViewModel = viewModel(factory = viewModelFactory)
+    val uiState by viewModel.uiState.collectAsState()
+    val firstItemFocus = remember { FocusRequester() }
+
+    LaunchedEffect(uiState.isLoading, uiState.contacts.size) {
+        if (!uiState.isLoading && uiState.contacts.isNotEmpty()) {
+            runCatching { firstItemFocus.requestFocus() }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .luxuryBackHandler(onBack),
+    ) {
+        LuxuryScreenBackground(modifier = Modifier.fillMaxSize())
+
+        when {
+            uiState.isLoading -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 36.dp, vertical = 28.dp),
+                ) {
+                    LuxuryScreenHeader(
+                        title = "Emergency Contacts & Helpdesk",
+                        subtitle = "Loading contacts…",
+                    )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            AndroidView(
+                                factory = { context ->
+                                    android.widget.ProgressBar(context).apply {
+                                        isIndeterminate = true
+                                    }
+                                },
+                                modifier = Modifier.size(48.dp),
+                            )
+                            Text(
+                                text = "Loading emergency contacts…",
+                                fontSize = 18.sp,
+                                fontFamily = FontFamily.SansSerif,
+                                color = TextMuted,
+                            )
+                        }
+                    }
+                }
+            }
+
+            uiState.contacts.isEmpty() -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 36.dp, vertical = 28.dp),
+                ) {
+                    LuxuryScreenHeader(
+                        title = "Emergency Contacts & Helpdesk",
+                        subtitle = "Internal extensions for IT, pantry, and front desk",
+                    )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "No emergency contacts configured",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = FontFamily.SansSerif,
+                            color = TextMuted,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
+
+            else -> {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 36.dp, vertical = 28.dp),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                    contentPadding = PaddingValues(bottom = 24.dp),
+                ) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Column {
+                            LuxuryScreenHeader(
+                                title = "Emergency Contacts & Helpdesk",
+                                subtitle = "Internal extensions for IT, pantry, and front desk",
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                        }
+                    }
+
+                    itemsIndexed(
+                        items = uiState.contacts,
+                        key = { _, contact -> contact.id.ifBlank { contact.title } },
+                    ) { index, contact ->
+                        CorporateSupportCard(
+                            title = contact.title,
+                            extension = contact.extension,
+                            icon = CORPORATE_CONTACT_ICONS[index % CORPORATE_CONTACT_ICONS.size],
+                            modifier = if (index == 0) {
+                                Modifier.focusRequester(firstItemFocus)
+                            } else {
+                                Modifier
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun CorporateSupportCard(
+    title: String,
+    extension: String,
+    icon: String,
+    modifier: Modifier = Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.04f else 1f,
+        animationSpec = tween(150),
+        label = "corporateContactScale",
+    )
+    val shape = RoundedCornerShape(16.dp)
+    val borderColor = if (focused) CorporateBlue else Color.White.copy(alpha = 0.16f)
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 168.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .background(CorporateGlass, shape)
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = borderColor,
+                shape = shape,
+            )
+            .padding(horizontal = 22.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        // Clean icon — no gold circular badge.
+        Box(
+            modifier = Modifier.size(56.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = icon,
+                fontSize = 32.sp,
+            )
+        }
+
+        Text(
+            text = title,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.SansSerif,
+            color = if (focused) Color.White else TextPrimary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            lineHeight = 24.sp,
+        )
+
+        // Extension numbers — large, bold, high-contrast; single line for 10-foot UI.
+        Text(
+            text = extension,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.SansSerif,
+            color = Color.White,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            lineHeight = 26.sp,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun HotelServicesScreen(
     viewModelFactory: HotelViewModelFactory,
     onBack: () -> Unit,
 ) {

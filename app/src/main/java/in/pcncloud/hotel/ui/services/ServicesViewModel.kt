@@ -349,7 +349,7 @@ class ServicesViewModel(
 
     private suspend fun showToast(message: String, type: ServiceToastType) {
         _uiState.update { it.copy(toastMessage = message, toastType = type) }
-        delay(4000)
+            delay(5000)
         _uiState.update { state ->
             if (state.toastMessage == message) state.copy(toastMessage = null) else state
         }

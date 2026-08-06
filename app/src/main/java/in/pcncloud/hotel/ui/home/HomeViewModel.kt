@@ -136,7 +136,7 @@ class HomeViewModel(
     private fun showServiceToast(message: String, type: ServiceToastType) {
         viewModelScope.launch {
             _uiState.update { it.copy(serviceToastMessage = message, serviceToastType = type) }
-            delay(4000)
+            delay(5000)
             _uiState.update { state ->
                 if (state.serviceToastMessage == message) state.copy(serviceToastMessage = null) else state
             }

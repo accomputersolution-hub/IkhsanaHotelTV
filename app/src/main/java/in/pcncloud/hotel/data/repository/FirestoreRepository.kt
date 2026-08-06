@@ -4,6 +4,7 @@ import android.util.Log
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.data.model.GuestProfile
+import `in`.pcncloud.hotel.data.model.EmergencyContact
 import `in`.pcncloud.hotel.data.model.HotelAlert
 import `in`.pcncloud.hotel.data.model.HotelBranding
 import `in`.pcncloud.hotel.data.model.LiveOrder
@@ -713,7 +714,31 @@ class FirestoreRepository(
                 branding["hotelInfo"] as? String,
             ),
             status = data["status"] as? String ?: "active",
+            emergencyContacts = parseEmergencyContacts(data["emergency_contacts"]),
         )
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun parseEmergencyContacts(raw: Any?): List<EmergencyContact> {
+        val list = raw as? List<*> ?: return emptyList()
+        return list.mapIndexedNotNull { index, item ->
+            val map = item as? Map<*, *> ?: return@mapIndexedNotNull null
+            val title = firstNonBlank(
+                map["title"] as? String,
+                map["name"] as? String,
+            )
+            val extension = firstNonBlank(
+                map["extension"] as? String,
+                map["ext"] as? String,
+                map["subtitle"] as? String,
+            )
+            if (title.isBlank() && extension.isBlank()) return@mapIndexedNotNull null
+            EmergencyContact(
+                id = firstNonBlank(map["id"] as? String, "contact_$index"),
+                title = title,
+                extension = extension,
+            )
+        }
     }
 
     private fun defaultGuestProfile() = GuestProfile(
