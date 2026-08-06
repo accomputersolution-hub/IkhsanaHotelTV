@@ -20,7 +20,7 @@ import {
   setupModalClose,
 } from './utils.js';
 import { paths, logFirestoreWrite, logFirestoreListen } from './paths.js';
-import { getHotelId, onHotelChange } from './tenant-context.js';
+import { getHotelId, onHotelChange, onHotelMetaChange, isCorporateProperty } from './tenant-context.js';
 
 const DEFAULT_CATEGORIES = [
   { key: 'starters', label: 'Starters' },
@@ -69,10 +69,15 @@ export function initMenu() {
   setupMenuItemModal();
   setupAddCategoryModal();
   setupBulkUpload();
+  applyMenuPriceFieldVisibility();
   onHotelChange(() => {
     settingsSeeded = false;
+    applyMenuPriceFieldVisibility();
     listenMenuSettings();
     listenMenu();
+  });
+  onHotelMetaChange(() => {
+    applyMenuPriceFieldVisibility();
   });
 }
 
@@ -330,6 +335,31 @@ function populateCategorySelect() {
     .join('');
 }
 
+/**
+ * Hide Price for corporate properties; Category spans the full row.
+ */
+function applyMenuPriceFieldVisibility() {
+  const corporate = isCorporateProperty();
+  const priceWrap = document.getElementById('menu-item-price-wrap');
+  const priceInput = document.getElementById('menu-item-price');
+  const row = document.getElementById('menu-item-category-price-row');
+
+  if (priceWrap) priceWrap.classList.toggle('hidden', corporate);
+  if (priceInput) {
+    priceInput.required = !corporate;
+    if (corporate) {
+      priceInput.value = '0';
+      priceInput.removeAttribute('required');
+    } else {
+      priceInput.setAttribute('required', 'required');
+    }
+  }
+  if (row) {
+    row.classList.toggle('grid-cols-2', !corporate);
+    row.classList.toggle('grid-cols-1', corporate);
+  }
+}
+
 function setupMenuItemModal() {
   setupModalClose('menu-item-modal', 'menu-item-close');
 
@@ -343,10 +373,13 @@ function setupMenuItemModal() {
     btn.disabled = true;
     btn.textContent = 'Saving…';
 
+    const corporate = isCorporateProperty();
     const payload = {
       name: document.getElementById('menu-item-name').value.trim(),
       description: document.getElementById('menu-item-desc').value.trim(),
-      price: parseFloat(document.getElementById('menu-item-price').value) || 0,
+      price: corporate
+        ? 0
+        : parseFloat(document.getElementById('menu-item-price').value) || 0,
       category: document.getElementById('menu-item-category').value,
       imageUrl: document.getElementById('menu-item-image').value.trim(),
       available: document.getElementById('menu-item-available').checked,
@@ -393,6 +426,7 @@ function openMenuItemModal(itemId) {
 
   populateCategorySelect();
   form?.reset();
+  applyMenuPriceFieldVisibility();
 
   if (itemId) {
     const item = menuItems.find((i) => i.id === itemId);
@@ -401,7 +435,9 @@ function openMenuItemModal(itemId) {
     if (title) title.textContent = `Edit: ${item.name}`;
     document.getElementById('menu-item-name').value = item.name || '';
     document.getElementById('menu-item-desc').value = item.description || '';
-    document.getElementById('menu-item-price').value = item.price || 0;
+    document.getElementById('menu-item-price').value = isCorporateProperty()
+      ? 0
+      : item.price || 0;
     document.getElementById('menu-item-category').value = item.category || categories[0]?.key || 'starters';
     document.getElementById('menu-item-image').value = item.imageUrl || '';
     document.getElementById('menu-item-available').checked = item.available !== false;
@@ -410,6 +446,9 @@ function openMenuItemModal(itemId) {
     document.getElementById('menu-item-available').checked = true;
     const defaultCat = activeFilter !== 'all' ? activeFilter : categories[0]?.key || 'starters';
     document.getElementById('menu-item-category').value = defaultCat;
+    if (isCorporateProperty()) {
+      document.getElementById('menu-item-price').value = '0';
+    }
   }
 
   openModal('menu-item-modal');
