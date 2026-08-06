@@ -22,9 +22,13 @@ export { auth };
 
 let currentUser = null;
 let currentProfile = null;
-/** True until the first onAuthStateChanged (+ profile load) completes. */
+/** True until the first onAuthStateChanged settles (signed-in or signed-out). */
 let authLoading = true;
 const authListeners = new Set();
+
+const PROFILE_LOAD_TIMEOUT_MS = 12000;
+/** If Firebase never delivers the first auth event, unlock as signed-out. */
+const AUTH_EVENT_FAILSAFE_MS = 4000;
 
 export function getCurrentUser() {
   return currentUser;
@@ -88,13 +92,38 @@ function updateBootstrapGateUi() {
   if (form) form.classList.toggle('opacity-60', show);
 }
 
+/**
+ * Load users/{uid} only when a Firebase user exists.
+ * Must never be called with a null user (no blind Firestore fetch).
+ */
 async function loadUserProfile(user) {
-  if (!user) {
+  if (!user?.uid) {
     currentProfile = null;
     return null;
   }
-  const snap = await getDoc(doc(db, 'users', user.uid));
-  if (!snap.exists()) {
+
+  try {
+    const snap = await getDoc(doc(db, 'users', user.uid));
+    if (!snap.exists()) {
+      currentProfile = {
+        role: 'unknown',
+        hotelId: '',
+        email: user.email || '',
+        uid: user.uid,
+      };
+      return currentProfile;
+    }
+    const data = snap.data() || {};
+    currentProfile = {
+      role: data.role || 'hotel_admin',
+      hotelId: data.hotelId || '',
+      email: data.email || user.email || '',
+      displayName: data.displayName || '',
+      uid: user.uid,
+    };
+    return currentProfile;
+  } catch (err) {
+    console.error('[auth] loadUserProfile failed', err);
     currentProfile = {
       role: 'unknown',
       hotelId: '',
@@ -103,18 +132,7 @@ async function loadUserProfile(user) {
     };
     return currentProfile;
   }
-  const data = snap.data();
-  currentProfile = {
-    role: data.role || 'hotel_admin',
-    hotelId: data.hotelId || '',
-    email: data.email || user.email || '',
-    displayName: data.displayName || '',
-    uid: user.uid,
-  };
-  return currentProfile;
 }
-
-const PROFILE_LOAD_TIMEOUT_MS = 15000;
 
 function withTimeout(promise, ms, label) {
   let timer;
@@ -124,42 +142,87 @@ function withTimeout(promise, ms, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-async function restoreSession(user) {
+/** Authenticated-only session bind (profile + hotel). Never runs for null user. */
+async function loadAuthenticatedSession(user) {
   await loadUserProfile(user);
-  if (user && currentProfile?.role === 'hotel_admin' && currentProfile?.hotelId) {
+  if (currentProfile?.role === 'hotel_admin' && currentProfile?.hotelId) {
     setAssignedHotel(currentProfile.hotelId, { name: currentProfile.hotelId });
-  }
-  if (!user) {
-    clearHotelContext();
   }
 }
 
 /**
- * Bind Firebase Auth. `loading` stays true until the first callback finishes
- * (session restore + Firestore profile), then flips to false permanently for
- * subsequent auth events (login/logout still notify listeners).
+ * Resolve the boot gate. Always sets authLoading=false.
+ * @param {import('firebase/auth').User | null} user
+ * @param {object | null} profile
+ * @param {{ initial?: boolean }} [meta]
+ * @param {(user, profile, meta) => void} [onReady]
+ */
+function resolveAuthGate(user, profile, meta, onReady) {
+  authLoading = false;
+  try {
+    notifyAuth();
+  } catch (notifyErr) {
+    console.error('[auth] notify failed', notifyErr);
+  }
+  try {
+    onReady?.(user, profile, meta);
+  } catch (readyErr) {
+    console.error('[auth] onReady failed', readyErr);
+  }
+}
+
+/**
+ * Bind Firebase Auth.
  *
- * Always clears `authLoading` in `finally` so a failed/hung profile fetch
- * cannot leave the UI stuck on “Restoring session”.
+ * Unauthenticated (user === null): resolve immediately — no Firestore reads.
+ * Authenticated: load users/{uid} (try/catch + timeout), then resolve.
+ * Loading ALWAYS becomes false in both paths.
  */
 export function initAuth(onReady) {
-  return onAuthStateChanged(auth, async (user) => {
-    currentUser = user;
-    const wasInitialLoad = authLoading;
+  let firstEventDone = false;
 
+  const failsafeTimer = setTimeout(() => {
+    if (firstEventDone) return;
+    console.warn('[auth] No onAuthStateChanged event — treating as signed out');
+    firstEventDone = true;
+    currentUser = null;
+    currentProfile = null;
     try {
-      await withTimeout(restoreSession(user), PROFILE_LOAD_TIMEOUT_MS, 'Auth profile load');
+      clearHotelContext();
+    } catch (err) {
+      console.error('[auth] clearHotelContext failed', err);
+    }
+    resolveAuthGate(null, null, { initial: true }, onReady);
+  }, AUTH_EVENT_FAILSAFE_MS);
+
+  return onAuthStateChanged(auth, async (user) => {
+    const wasInitialLoad = !firstEventDone;
+    currentUser = user;
+
+    // ── 1) Signed out: unlock immediately, never touch Firestore ──────────
+    if (!user) {
+      firstEventDone = true;
+      clearTimeout(failsafeTimer);
+      currentProfile = null;
+      try {
+        clearHotelContext();
+      } catch (err) {
+        console.error('[auth] clearHotelContext failed', err);
+      }
+      resolveAuthGate(null, null, { initial: wasInitialLoad }, onReady);
+      return;
+    }
+
+    // ── 2) Signed in: fetch profile (never block the boot gate forever) ───
+    try {
+      await withTimeout(
+        loadAuthenticatedSession(user),
+        PROFILE_LOAD_TIMEOUT_MS,
+        'Auth profile load',
+      );
     } catch (err) {
       console.error('[auth] profile load failed', err);
-      if (!user) {
-        currentProfile = null;
-        try {
-          clearHotelContext();
-        } catch (clearErr) {
-          console.error('[auth] clearHotelContext failed', clearErr);
-        }
-      } else if (!currentProfile) {
-        // Keep a safe stub so route guards can still leave the boot screen.
+      if (!currentProfile) {
         currentProfile = {
           role: 'unknown',
           hotelId: '',
@@ -168,26 +231,32 @@ export function initAuth(onReady) {
         };
       }
     } finally {
-      authLoading = false;
-      try {
-        notifyAuth();
-      } catch (notifyErr) {
-        console.error('[auth] notify failed', notifyErr);
-      }
-      try {
-        onReady?.(user, currentProfile, { initial: wasInitialLoad });
-      } catch (readyErr) {
-        console.error('[auth] onReady failed', readyErr);
-      }
+      firstEventDone = true;
+      clearTimeout(failsafeTimer);
+      resolveAuthGate(user, currentProfile, { initial: wasInitialLoad }, onReady);
     }
   });
 }
 
 export async function loginWithEmail(email, password) {
   const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-  await loadUserProfile(cred.user);
-  if (currentProfile?.role === 'hotel_admin' && currentProfile.hotelId) {
-    setAssignedHotel(currentProfile.hotelId, { name: currentProfile.hotelId });
+  currentUser = cred.user;
+  try {
+    await withTimeout(
+      loadAuthenticatedSession(cred.user),
+      PROFILE_LOAD_TIMEOUT_MS,
+      'Login profile load',
+    );
+  } catch (err) {
+    console.error('[auth] login profile load failed', err);
+    if (!currentProfile) {
+      currentProfile = {
+        role: 'unknown',
+        hotelId: '',
+        email: cred.user.email || '',
+        uid: cred.user.uid,
+      };
+    }
   }
   authLoading = false;
   notifyAuth();
@@ -195,7 +264,11 @@ export async function loginWithEmail(email, password) {
 }
 
 export async function logout() {
-  clearHotelContext();
+  try {
+    clearHotelContext();
+  } catch (err) {
+    console.error('[auth] clearHotelContext on logout failed', err);
+  }
   await signOut(auth);
   currentUser = null;
   currentProfile = null;

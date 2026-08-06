@@ -62,6 +62,29 @@
       <p class="auth-boot-sub">Validating secure credentials…</p>
     </div>
   </div>
+  <!-- Non-module failsafe: if ES modules / Firebase never boot, still reveal login -->
+  <script>
+    (function () {
+      var BOOT_FAILSAFE_MS = 5000;
+      setTimeout(function () {
+        var body = document.body;
+        if (!body || !body.classList.contains('auth-booting')) return;
+        console.warn('[boot] failsafe — revealing login (auth module did not resolve)');
+        body.classList.remove('auth-booting');
+        var loader = document.getElementById('auth-boot-loader');
+        if (loader) {
+          loader.classList.add('hidden');
+          loader.setAttribute('aria-busy', 'false');
+        }
+        var login = document.getElementById('login-shell');
+        var sa = document.getElementById('super-admin-shell');
+        var pms = document.getElementById('app-shell');
+        if (login) login.classList.remove('hidden');
+        if (sa) sa.classList.add('hidden');
+        if (pms) pms.classList.add('hidden');
+      }, BOOT_FAILSAFE_MS);
+    })();
+  </script>
 
   <div id="toast" class="toast opacity-0 translate-y-4" role="status"></div>
 

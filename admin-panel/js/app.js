@@ -417,15 +417,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // Safety net: never leave the boot gate up indefinitely if Auth hangs.
   const bootWatchdog = window.setTimeout(() => {
     if (document.body.classList.contains('auth-booting') || isAuthLoading()) {
-      console.warn('[app] auth boot watchdog fired — forcing UI unlock');
+      console.warn('[app] auth boot watchdog fired — forcing login');
       forceAuthReady();
       setAuthBootUi(false);
-      if (!getCurrentProfile()) {
-        showShell('login');
-        toast('Session restore timed out. Please sign in again.', 'error');
-      }
+      stopHotelStatusWatch();
+      showDeactivatedGate(false);
+      navigateTo('/login');
+      showShell('login');
+      toast('Session restore timed out. Please sign in.', 'error');
     }
-  }, 16000);
+  }, 5000);
 
   try {
     initRouter();
@@ -435,7 +436,9 @@ document.addEventListener('DOMContentLoaded', () => {
   } catch (err) {
     console.error('[app] chrome init failed', err);
     window.clearTimeout(bootWatchdog);
+    forceAuthReady();
     setAuthBootUi(false);
+    navigateTo('/login');
     showShell('login');
     toast('Failed to start admin panel', 'error');
     return;
@@ -473,6 +476,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initAuth((user, profile) => {
     try {
       window.clearTimeout(bootWatchdog);
+      // Always drop the boot gate first so login is visible even if routing throws.
+      forceAuthReady();
       setAuthBootUi(false);
 
       if (!user) {
@@ -494,10 +499,13 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     } catch (err) {
       console.error('[app] auth ready handler failed', err);
+      forceAuthReady();
       setAuthBootUi(false);
+      navigateTo('/login');
       showShell('login');
       toast(err?.message || 'Failed to restore session', 'error');
     } finally {
+      forceAuthReady();
       clearAuthBootUi();
     }
   });
