@@ -11,7 +11,7 @@ import {
   serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 import { escapeHtml, toast } from './utils.js';
-import { logHotelWrite } from './paths.js';
+import { logFirestoreWrite } from './paths.js';
 import {
   getHotelId,
   onHotelChange,
@@ -256,7 +256,7 @@ async function persistAgenda(hotelId, nextItems) {
     updatedAt: serverTimestamp(),
   };
   await updateDoc(doc(db, 'Hotels', hotelId), payload);
-  logHotelWrite('Daily Agenda', `Hotels/${hotelId}`, {
+  logFirestoreWrite('Daily Agenda', `Hotels/${hotelId}`, {
     daily_agenda: payload.daily_agenda,
   });
   agendaItems = nextItems;
