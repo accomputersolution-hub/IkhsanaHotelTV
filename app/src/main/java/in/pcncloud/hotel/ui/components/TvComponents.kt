@@ -43,6 +43,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.annotation.DrawableRes
@@ -161,12 +162,6 @@ fun LuxuryNavCard(
         isFocused -> CorporateBlue
         else -> Color.White.copy(alpha = 0.18f)
     }
-    val chevronColor = when {
-        isCorporate && isFocused -> CorporateBlue
-        isCorporate -> TextMuted.copy(alpha = 0.55f)
-        isFocused -> GoldLight
-        else -> TextMuted.copy(alpha = 0.5f)
-    }
     val titleFont = if (isCorporate) FontFamily.SansSerif else SansBody
     val subtitleFont = if (isCorporate) FontFamily.SansSerif else SansBody
 
@@ -233,11 +228,12 @@ fun LuxuryNavCard(
                     false
                 }
             }
-            .padding(horizontal = 18.dp, vertical = 18.dp),
+            .padding(horizontal = 14.dp, vertical = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
             modifier = Modifier.fillMaxSize(),
         ) {
             if (isCorporate) {
@@ -259,33 +255,36 @@ fun LuxuryNavCard(
                         .graphicsLayer { alpha = iconAlpha },
                 )
             }
-            Spacer(modifier = Modifier.height(14.dp))
-            Text(
-                text = title,
-                fontSize = 19.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = titleFont,
-                color = titleColor,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = subtitle,
-                fontSize = 13.sp,
-                fontFamily = subtitleFont,
-                color = subtitleColor,
-                textAlign = TextAlign.Center,
-                lineHeight = 18.sp,
-                maxLines = 2,
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            Text(
-                text = "›",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Normal,
-                color = chevronColor,
-                modifier = Modifier.padding(bottom = 2.dp),
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = title,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = titleFont,
+                    color = titleColor,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    softWrap = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    fontFamily = subtitleFont,
+                    color = subtitleColor,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 16.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    softWrap = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 }
@@ -299,13 +298,13 @@ private fun CorporateNavIcon(
     modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = modifier.size(64.dp),
+        modifier = modifier.size(52.dp),
         contentAlignment = Alignment.Center,
     ) {
         Image(
             painter = painterResource(iconRes),
             contentDescription = contentDescription,
-            modifier = Modifier.size(34.dp),
+            modifier = Modifier.size(30.dp),
             contentScale = ContentScale.Fit,
             colorFilter = ColorFilter.tint(
                 if (focused) Color.White else Color.White.copy(alpha = 0.88f),
@@ -372,7 +371,7 @@ fun LuxuryIconBadge(
                 spotColor = GoldLuxury.copy(alpha = 0.65f),
                 clip = false,
             )
-            .size(64.dp)
+            .size(56.dp)
             .clip(CircleShape)
             .background(brush = fillBrush, shape = CircleShape)
             .border(

@@ -20,6 +20,7 @@ import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.admin.AdminSettingsScreen
+import `in`.pcncloud.hotel.ui.agenda.AgendaScreen
 import `in`.pcncloud.hotel.ui.alerts.AlertsScreen
 import `in`.pcncloud.hotel.ui.dining.DiningScreen
 import `in`.pcncloud.hotel.ui.entertainment.EntertainmentHubScreen
@@ -34,6 +35,11 @@ object Routes {
     const val HOTEL_INFO = "hotel_info"
     const val ALERTS = "alerts"
     const val SERVICES = "services"
+    /** Hotel-only: housekeeping department filter on ServicesScreen. */
+    const val SERVICES_HOUSEKEEPING = "services_housekeeping"
+    /** Hotel-only: concierge / front desk filter on ServicesScreen. */
+    const val SERVICES_CONCIERGE = "services_concierge"
+    const val AGENDA = "agenda"
     const val ADMIN = "admin"
     const val ENTERTAINMENT = "entertainment"
 }
@@ -145,6 +151,7 @@ fun HotelNavGraph(
                 onNavigateToDining = { showOverlay(Routes.DINING) },
                 onNavigateToAlerts = { showOverlay(Routes.ALERTS) },
                 onNavigateToServices = { showOverlay(Routes.SERVICES) },
+                onNavigateToAgenda = { showOverlay(Routes.AGENDA) },
                 onNavigateToEntertainment = { showOverlay(Routes.ENTERTAINMENT) },
                 onNavigateToAdmin = { showOverlay(Routes.ADMIN) },
             )
@@ -188,13 +195,34 @@ fun HotelNavGraph(
                     )
                 }
             }
-            Routes.SERVICES -> {
+            Routes.SERVICES,
+            Routes.SERVICES_HOUSEKEEPING,
+            Routes.SERVICES_CONCIERGE,
+            -> {
+                val departmentFilter = when (overlayRoute) {
+                    Routes.SERVICES_HOUSEKEEPING -> "housekeeping"
+                    Routes.SERVICES_CONCIERGE -> "concierge"
+                    else -> null
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(NavyDeep),
                 ) {
                     ServicesScreen(
+                        viewModelFactory = viewModelFactory,
+                        onBack = { navigateToHomeView() },
+                        departmentFilter = departmentFilter,
+                    )
+                }
+            }
+            Routes.AGENDA -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(NavyDeep),
+                ) {
+                    AgendaScreen(
                         viewModelFactory = viewModelFactory,
                         onBack = { navigateToHomeView() },
                     )

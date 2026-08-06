@@ -182,14 +182,15 @@ class HomeViewModel(
         private const val TAG = "HomeViewModel"
 
         private fun GuestProfile.mergeBranding(branding: HotelBranding): GuestProfile = copy(
+            // Hotels/{hotelId} from Web Admin is the source of truth for branding.
             hotelName = branding.hotelName.ifBlank { hotelName },
-            hotelLogoUrl = hotelLogoUrl.ifBlank { branding.logoUrl },
+            hotelLogoUrl = branding.logoUrl.ifBlank { hotelLogoUrl },
             bgWallpaperUrl = branding.bgWallpaperUrl.ifBlank { bgWallpaperUrl },
             themeColor = branding.themeColor.ifBlank { themeColor },
             tagline = branding.tagline.ifBlank { tagline },
             welcomeMessage = branding.welcomeMessage
-                .ifBlank { hotelInfo }
-                .ifBlank { welcomeMessage },
+                .ifBlank { welcomeMessage }
+                .ifBlank { hotelInfo },
             hotelInfo = branding.welcomeMessage.ifBlank { hotelInfo },
         )
     }

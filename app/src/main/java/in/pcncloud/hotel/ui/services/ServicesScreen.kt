@@ -95,6 +95,8 @@ private val CORPORATE_CONTACT_ICONS = listOf("💻", "☕", "📞", "🛠", "�
 fun ServicesScreen(
     viewModelFactory: HotelViewModelFactory,
     onBack: () -> Unit,
+    /** Hotel flavor: "housekeeping" | "concierge" | null (all). Ignored for corporate. */
+    departmentFilter: String? = null,
 ) {
     if (BuildConfig.IS_CORPORATE) {
         CorporateServicesScreen(
@@ -105,6 +107,7 @@ fun ServicesScreen(
         HotelServicesScreen(
             viewModelFactory = viewModelFactory,
             onBack = onBack,
+            departmentFilter = departmentFilter,
         )
     }
 }
@@ -320,13 +323,34 @@ private fun CorporateSupportCard(
 private fun HotelServicesScreen(
     viewModelFactory: HotelViewModelFactory,
     onBack: () -> Unit,
+    departmentFilter: String? = null,
 ) {
     val viewModel: ServicesViewModel = viewModel(factory = viewModelFactory)
     val uiState by viewModel.uiState.collectAsState()
     val firstItemFocus = remember { FocusRequester() }
+    val options = remember(departmentFilter, viewModel.serviceOptions) {
+        val filter = departmentFilter?.trim()?.lowercase().orEmpty()
+        if (filter.isBlank()) {
+            viewModel.serviceOptions
+        } else {
+            viewModel.serviceOptions.filter { it.department.equals(filter, ignoreCase = true) }
+        }
+    }
+    val screenTitle = when (departmentFilter?.lowercase()) {
+        "housekeeping" -> stringResource(R.string.feature_housekeeping)
+        "concierge" -> stringResource(R.string.feature_concierge)
+        else -> stringResource(R.string.services_title)
+    }
+    val screenSubtitle = when (departmentFilter?.lowercase()) {
+        "housekeeping" -> stringResource(R.string.feature_housekeeping_subtitle)
+        "concierge" -> stringResource(R.string.feature_concierge_subtitle)
+        else -> stringResource(R.string.services_subtitle)
+    }
 
-    LaunchedEffect(Unit) {
-        firstItemFocus.requestFocus()
+    LaunchedEffect(options.size) {
+        if (options.isNotEmpty()) {
+            runCatching { firstItemFocus.requestFocus() }
+        }
     }
 
     Box(
@@ -348,15 +372,15 @@ private fun HotelServicesScreen(
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Column {
                     LuxuryScreenHeader(
-                        title = stringResource(R.string.services_title),
-                        subtitle = stringResource(R.string.services_subtitle),
+                        title = screenTitle,
+                        subtitle = screenSubtitle,
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                 }
             }
 
             itemsIndexed(
-                items = viewModel.serviceOptions,
+                items = options,
                 key = { _, option -> option.serviceType },
             ) { index, option ->
                 ServiceCard(
@@ -382,7 +406,10 @@ private fun HotelServicesScreen(
                     }
                 }
                 itemsIndexed(
-                    items = uiState.activeRequests,
+                    items = uiState.activeRequests.filter { request ->
+                        val filter = departmentFilter?.trim()?.lowercase().orEmpty()
+                        filter.isBlank() || request.department.equals(filter, ignoreCase = true)
+                    },
                     key = { _, request -> request.id },
                     span = { _, _ -> GridItemSpan(maxLineSpan) },
                 ) { _, request ->

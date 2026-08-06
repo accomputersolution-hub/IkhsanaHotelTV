@@ -31,6 +31,8 @@ data class HotelBranding(
     val status: String = "active",
     /** Corporate helpdesk contacts from Hotels/{id}.emergency_contacts. */
     val emergencyContacts: List<EmergencyContact> = emptyList(),
+    /** Corporate daily schedule from Hotels/{id}.daily_agenda. */
+    val dailyAgenda: List<AgendaItem> = emptyList(),
 )
 
 /** One entry from Hotels/{hotelId}.emergency_contacts (admin Helpdesk Config). */
@@ -38,6 +40,14 @@ data class EmergencyContact(
     val id: String = "",
     val title: String = "",
     val extension: String = "",
+)
+
+/** One entry from Hotels/{hotelId}.daily_agenda (admin Daily Agenda). */
+data class AgendaItem(
+    val id: String = "",
+    val time: String = "",
+    val title: String = "",
+    val location: String = "",
 )
 
 /** Live room / guest status from Hotels/{hotelId}/Rooms/{roomNumber}. */

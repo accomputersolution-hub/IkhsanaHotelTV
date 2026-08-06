@@ -1,6 +1,5 @@
 package `in`.pcncloud.hotel.ui.components
 
-import android.os.Build
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -234,7 +233,12 @@ private fun ScreensaverBackground(
     wallpaperUrl: String,
     drift: Float,
 ) {
-    val useRemote = wallpaperUrl.isNotBlank() && !isScreensaverUnsafeImageUrl(wallpaperUrl)
+    val lower = wallpaperUrl.lowercase(Locale.US)
+    val useRemote = wallpaperUrl.isNotBlank() &&
+        !lower.contains(".svg") &&
+        !lower.contains("image/svg") &&
+        !lower.contains("format=svg") &&
+        !lower.contains("data:image/svg")
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (useRemote) {
@@ -302,9 +306,7 @@ private fun ScreensaverLogo(
     glow: Float,
 ) {
     val localLogo = painterResource(R.drawable.ic_logo)
-    val useRemote = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-        logoUrl.isNotBlank() &&
-        !isScreensaverUnsafeImageUrl(logoUrl)
+    val remoteUrl = logoUrl.trim().trim('"', '\'').trim().takeIf { it.isNotBlank() }
 
     Box(
         modifier = Modifier
@@ -316,13 +318,12 @@ private fun ScreensaverLogo(
             },
         contentAlignment = Alignment.Center,
     ) {
-        if (useRemote) {
+        if (remoteUrl != null) {
             AsyncImage(
-                model = logoUrl,
+                model = remoteUrl,
                 contentDescription = stringResource(R.string.screensaver_logo_cd),
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,
-                placeholder = localLogo,
                 error = localLogo,
             )
         } else {
@@ -334,12 +335,4 @@ private fun ScreensaverLogo(
             )
         }
     }
-}
-
-private fun isScreensaverUnsafeImageUrl(url: String): Boolean {
-    val lower = url.lowercase(Locale.US)
-    return lower.contains(".svg") ||
-        lower.contains("image/svg") ||
-        lower.contains("format=svg") ||
-        lower.contains("data:image/svg")
 }

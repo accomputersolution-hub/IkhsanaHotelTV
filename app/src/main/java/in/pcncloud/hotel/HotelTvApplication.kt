@@ -5,6 +5,9 @@ import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import coil.ImageLoader
+import coil.ImageLoaderFactory
+import coil.decode.SvgDecoder
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
 
@@ -15,7 +18,7 @@ import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
  * foreground-service starts from [Application.onCreate] (Background FGS
  * restrictions). Watchdog is started from [MainActivity.onResume] once UI is visible.
  */
-class HotelTvApplication : Application() {
+class HotelTvApplication : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
@@ -33,6 +36,13 @@ class HotelTvApplication : Application() {
         installCrashMarker()
         observeProcessLifecycle()
     }
+
+    /** App-wide Coil loader — enables remote SVG logos from Hotels/{id}.logoUrl. */
+    override fun newImageLoader(): ImageLoader =
+        ImageLoader.Builder(this)
+            .components { add(SvgDecoder.Factory()) }
+            .crossfade(true)
+            .build()
 
     private fun installCrashMarker() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()

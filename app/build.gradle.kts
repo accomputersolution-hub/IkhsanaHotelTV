@@ -92,6 +92,7 @@ dependencies {
     implementation(libs.androidx.tv.material)
     implementation(libs.coil.compose)
     implementation(libs.coil)
+    implementation(libs.coil.svg)
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.database)
     implementation("com.google.firebase:firebase-config-ktx")

@@ -7,10 +7,13 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,9 +23,12 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -42,6 +48,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -53,6 +60,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import android.util.Log
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -63,6 +72,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.integration.OnyxIptvLauncher
@@ -70,6 +80,7 @@ import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.BroadcastAlertOverlay
 import `in`.pcncloud.hotel.ui.components.LuxuryNavCard
 import `in`.pcncloud.hotel.ui.components.ServiceToast
+import `in`.pcncloud.hotel.ui.theme.CorporateBlue
 import `in`.pcncloud.hotel.ui.theme.GoldLight
 import `in`.pcncloud.hotel.ui.theme.GoldLuxury
 import `in`.pcncloud.hotel.ui.theme.GoldPrimary
@@ -91,6 +102,7 @@ fun HomeScreen(
     onNavigateToDining: () -> Unit,
     onNavigateToAlerts: () -> Unit,
     onNavigateToServices: () -> Unit,
+    onNavigateToAgenda: () -> Unit = {},
     onNavigateToEntertainment: () -> Unit = {},
     onNavigateToAdmin: () -> Unit = {},
 ) {
@@ -102,10 +114,13 @@ fun HomeScreen(
     val entertainmentFocus = remember { FocusRequester() }
     val diningFocus = remember { FocusRequester() }
     val servicesFocus = remember { FocusRequester() }
+    val agendaFocus = remember { FocusRequester() }
     val alertsFocus = remember { FocusRequester() }
     val alertDismissFocus = remember { FocusRequester() }
+    val alertBellFocus = remember { FocusRequester() }
 
     val activeAlert = uiState.activePopupAlert
+    val unreadAlerts = uiState.alerts.count { !it.read && !it.revoked }
 
     LaunchedEffect(activeAlert?.id) {
         if (activeAlert == null) {
@@ -121,15 +136,17 @@ fun HomeScreen(
     ) {
         ResortBackground(
             modifier = Modifier.fillMaxSize(),
-            wallpaperUrl = uiState.guestProfile.bgWallpaperUrl
-                .ifBlank { uiState.branding.bgWallpaperUrl },
+            // Hotels/{id} branding wallpaper first, then any room-level override.
+            wallpaperUrl = uiState.branding.bgWallpaperUrl
+                .ifBlank { uiState.guestProfile.bgWallpaperUrl },
         )
 
         HomeForegroundContent(
             modifier = Modifier.fillMaxSize(),
             roomNumber = uiState.guestProfile.roomNumber,
-            hotelLogoUrl = uiState.guestProfile.hotelLogoUrl
-                .ifBlank { uiState.branding.logoUrl },
+            // Prefer Hotels/{hotelId} branding from Web Admin over room/defaults.
+            hotelLogoUrl = uiState.branding.logoUrl
+                .ifBlank { uiState.guestProfile.hotelLogoUrl },
             hotelName = uiState.branding.hotelName
                 .ifBlank { uiState.guestProfile.hotelName },
             tagline = uiState.branding.tagline
@@ -139,15 +156,18 @@ fun HomeScreen(
                 .ifBlank { uiState.guestProfile.hotelInfo },
             guestName = uiState.guestProfile.guestName,
             salutation = uiState.guestProfile.salutation,
-            unreadAlerts = uiState.alerts.count { !it.read && !it.revoked },
+            unreadAlerts = unreadAlerts,
             liveTvFocus = liveTvFocus,
             entertainmentFocus = entertainmentFocus,
             diningFocus = diningFocus,
             servicesFocus = servicesFocus,
+            agendaFocus = agendaFocus,
             alertsFocus = alertsFocus,
+            alertBellFocus = alertBellFocus,
             onLiveTv = { OnyxIptvLauncher.launch(context) },
             onEntertainment = onNavigateToEntertainment,
             onDining = onNavigateToDining,
+            onAgenda = onNavigateToAgenda,
             onServices = onNavigateToServices,
             onAlerts = onNavigateToAlerts,
             onOpenAdmin = onNavigateToAdmin,
@@ -300,10 +320,13 @@ private fun HomeForegroundContent(
     entertainmentFocus: FocusRequester,
     diningFocus: FocusRequester,
     servicesFocus: FocusRequester,
+    agendaFocus: FocusRequester,
     alertsFocus: FocusRequester,
+    alertBellFocus: FocusRequester,
     onLiveTv: () -> Unit,
     onEntertainment: () -> Unit,
     onDining: () -> Unit,
+    onAgenda: () -> Unit,
     onServices: () -> Unit,
     onAlerts: () -> Unit,
     onOpenAdmin: () -> Unit,
@@ -318,7 +341,10 @@ private fun HomeForegroundContent(
             hotelLogoUrl = hotelLogoUrl,
             hotelName = hotelName,
             tagline = tagline,
+            unreadAlerts = unreadAlerts,
+            alertBellFocus = alertBellFocus,
             onOpenAdmin = onOpenAdmin,
+            onAlerts = onAlerts,
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -339,11 +365,13 @@ private fun HomeForegroundContent(
             entertainmentFocus = entertainmentFocus,
             diningFocus = diningFocus,
             servicesFocus = servicesFocus,
+            agendaFocus = agendaFocus,
             alertsFocus = alertsFocus,
             unreadAlerts = unreadAlerts,
             onLiveTv = onLiveTv,
             onEntertainment = onEntertainment,
             onDining = onDining,
+            onAgenda = onAgenda,
             onServices = onServices,
             onAlerts = onAlerts,
         )
@@ -357,20 +385,26 @@ private fun HomeHeader(
     hotelLogoUrl: String,
     hotelName: String,
     tagline: String,
+    unreadAlerts: Int,
+    alertBellFocus: FocusRequester,
     onOpenAdmin: () -> Unit,
+    onAlerts: () -> Unit,
 ) {
     val displayName = hotelName.ifBlank { stringResource(R.string.brand_name) }
     val displayTagline = tagline.trim()
+    val isCorporate = BuildConfig.IS_CORPORATE
 
     Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = if (isCorporate) Alignment.Top else Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(24.dp),
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 16.dp),
         ) {
             BrandLogo(hotelLogoUrl = hotelLogoUrl)
             Column(
@@ -404,26 +438,67 @@ private fun HomeHeader(
             }
         }
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            RoomBadge(
-                roomNumber = roomNumber.ifBlank { "101" },
-                onOpenAdmin = onOpenAdmin,
-            )
-            WifiStatusIcon()
-            LiveClockWidget()
+        if (isCorporate) {
+            // Corporate: Bell + Room on top; Wi‑Fi + Clock stacked below.
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(start = 8.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    CorporateAlertBellButton(
+                        unreadCount = unreadAlerts,
+                        focusRequester = alertBellFocus,
+                        onClick = onAlerts,
+                    )
+                    RoomBadge(
+                        roomNumber = roomNumber.ifBlank { "101" },
+                        onOpenAdmin = onOpenAdmin,
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    WifiStatusIcon()
+                    LiveClockWidget()
+                }
+            }
+        } else {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                RoomBadge(
+                    roomNumber = roomNumber.ifBlank { "101" },
+                    onOpenAdmin = onOpenAdmin,
+                )
+                WifiStatusIcon()
+                LiveClockWidget()
+            }
         }
     }
 }
 
 @Composable
 private fun BrandLogo(hotelLogoUrl: String) {
-    // Same remote binding pattern as ResortBackground; local ic_logo only as Coil fallback.
+    // Coil loads Hotels/{id}.logoUrl / branding.logoUrl; local ic_logo only when empty/error.
+    val context = LocalContext.current
     val localLogo = painterResource(R.drawable.ic_logo)
-    val remoteModel = hotelLogoUrl.takeIf {
-        it.isNotBlank() && !isLegacyUnsafeImageUrl(it)
+    val remoteUrl = normalizeRemoteImageUrl(hotelLogoUrl)
+
+    LaunchedEffect(remoteUrl) {
+        Log.i(
+            "BrandLogo",
+            if (remoteUrl != null) {
+                "Loading hotel logo → ${remoteUrl.take(120)}"
+            } else {
+                "No logoUrl from Firestore — showing local ic_logo fallback"
+            },
+        )
     }
 
     // Clean transparent logo slot — no gold circle frame; fitCenter so PNGs scale naturally.
@@ -434,22 +509,61 @@ private fun BrandLogo(hotelLogoUrl: String) {
             .padding(end = 8.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
-        AsyncImage(
-            model = remoteModel,
-            contentDescription = "Hotel Logo",
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(6.dp),
-            contentScale = ContentScale.Fit,
-            alignment = Alignment.CenterStart,
-            placeholder = localLogo,
-            error = localLogo,
-            fallback = localLogo,
-        )
+        if (remoteUrl != null) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(remoteUrl)
+                    .crossfade(true)
+                    .allowHardware(false)
+                    .listener(
+                        onSuccess = { _, _ ->
+                            Log.i("BrandLogo", "Hotel logo loaded OK")
+                        },
+                        onError = { _, result ->
+                            Log.e(
+                                "BrandLogo",
+                                "Hotel logo FAILED url=${remoteUrl.take(120)}: ${result.throwable.message}",
+                                result.throwable,
+                            )
+                        },
+                    )
+                    .build(),
+                contentDescription = "Hotel Logo",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(6.dp),
+                contentScale = ContentScale.Fit,
+                alignment = Alignment.CenterStart,
+                error = localLogo,
+                fallback = localLogo,
+            )
+        } else {
+            Image(
+                painter = localLogo,
+                contentDescription = "Hotel Logo",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(6.dp),
+                contentScale = ContentScale.Fit,
+                alignment = Alignment.CenterStart,
+            )
+        }
     }
 }
 
-/** Remote SVG / vector URLs fail on API 24 without an SVG decoder. */
+/**
+ * Normalize a Firestore logo / wallpaper URL for Coil.
+ * Do NOT block SVG — [HotelTvApplication] registers [coil.decode.SvgDecoder].
+ */
+private fun normalizeRemoteImageUrl(url: String): String? {
+    val cleaned = url.trim().trim('"', '\'').trim()
+    if (cleaned.isBlank()) return null
+    // Reject only inline data SVGs that Coil cannot fetch as a network model.
+    if (cleaned.startsWith("data:image/svg", ignoreCase = true)) return null
+    return cleaned
+}
+
+/** Wallpaper: skip formats that cannot paint a full-bleed background reliably. */
 private fun isLegacyUnsafeImageUrl(url: String): Boolean {
     val lower = url.lowercase(Locale.US)
     return lower.contains(".svg") ||
@@ -568,11 +682,20 @@ private fun RoomBadge(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun WifiStatusIcon() {
-    Text(
-        text = "📶",
-        fontSize = 22.sp,
-        color = TextPrimary,
-    )
+    if (BuildConfig.IS_CORPORATE) {
+        Image(
+            painter = painterResource(R.drawable.ic_wifi),
+            contentDescription = stringResource(R.string.wifi_status),
+            modifier = Modifier.size(22.dp),
+            colorFilter = ColorFilter.tint(TextPrimary.copy(alpha = 0.92f)),
+        )
+    } else {
+        Text(
+            text = "📶",
+            fontSize = 22.sp,
+            color = TextPrimary,
+        )
+    }
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -748,18 +871,22 @@ private fun NavigationCardsRow(
     entertainmentFocus: FocusRequester,
     diningFocus: FocusRequester,
     servicesFocus: FocusRequester,
+    agendaFocus: FocusRequester,
     alertsFocus: FocusRequester,
     unreadAlerts: Int,
     onLiveTv: () -> Unit,
     onEntertainment: () -> Unit,
     onDining: () -> Unit,
+    onAgenda: () -> Unit,
     onServices: () -> Unit,
     onAlerts: () -> Unit,
 ) {
+    val isCorporate = BuildConfig.IS_CORPORATE
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(200.dp),
+            .height(170.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         LuxuryNavCard(
@@ -769,7 +896,7 @@ private fun NavigationCardsRow(
             focusGlowColor = GoldLuxury,
             modifier = Modifier
                 .weight(1f)
-                .fillMaxHeight()
+                .height(170.dp)
                 .focusRequester(liveTvFocus),
             onClick = onLiveTv,
         )
@@ -780,18 +907,18 @@ private fun NavigationCardsRow(
             focusGlowColor = GoldLuxury,
             modifier = Modifier
                 .weight(1f)
-                .fillMaxHeight()
+                .height(170.dp)
                 .focusRequester(entertainmentFocus),
             onClick = onEntertainment,
         )
         LuxuryNavCard(
-            title = if (BuildConfig.IS_CORPORATE) {
-                "Today's Menu"
+            title = if (isCorporate) {
+                stringResource(R.string.feature_menu)
             } else {
                 stringResource(R.string.feature_dining)
             },
-            subtitle = if (BuildConfig.IS_CORPORATE) {
-                "Today's catered meals"
+            subtitle = if (isCorporate) {
+                stringResource(R.string.feature_menu_subtitle_corporate)
             } else {
                 stringResource(R.string.feature_dining_subtitle)
             },
@@ -799,44 +926,152 @@ private fun NavigationCardsRow(
             focusGlowColor = GoldLuxury,
             modifier = Modifier
                 .weight(1f)
-                .fillMaxHeight()
+                .height(170.dp)
                 .focusRequester(diningFocus),
             onClick = onDining,
         )
-        LuxuryNavCard(
-            title = if (BuildConfig.IS_CORPORATE) {
-                "Emergency Contacts"
-            } else {
-                stringResource(R.string.feature_services)
+        if (isCorporate) {
+            LuxuryNavCard(
+                title = stringResource(R.string.feature_agenda),
+                subtitle = stringResource(R.string.feature_agenda_subtitle),
+                iconRes = R.drawable.ic_nav_agenda,
+                focusGlowColor = GoldLuxury,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(170.dp)
+                    .focusRequester(agendaFocus),
+                onClick = onAgenda,
+            )
+            LuxuryNavCard(
+                title = stringResource(R.string.feature_emergency),
+                subtitle = stringResource(R.string.feature_emergency_subtitle),
+                iconRes = R.drawable.ic_nav_services,
+                focusGlowColor = GoldLuxury,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(170.dp)
+                    .focusRequester(servicesFocus),
+                onClick = onServices,
+            )
+        } else {
+            LuxuryNavCard(
+                title = stringResource(R.string.feature_services),
+                subtitle = stringResource(R.string.feature_services_subtitle),
+                iconRes = R.drawable.ic_nav_services,
+                focusGlowColor = GoldLuxury,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(170.dp)
+                    .focusRequester(servicesFocus),
+                onClick = onServices,
+            )
+            LuxuryNavCard(
+                title = stringResource(R.string.feature_alerts),
+                subtitle = if (unreadAlerts > 0) {
+                    "$unreadAlerts new alert(s)"
+                } else {
+                    stringResource(R.string.feature_alerts_subtitle)
+                },
+                iconRes = R.drawable.ic_nav_alerts,
+                focusGlowColor = GoldLuxury,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(170.dp)
+                    .focusRequester(alertsFocus),
+                onClick = onAlerts,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun CorporateAlertBellButton(
+    unreadCount: Int,
+    focusRequester: FocusRequester,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val shape = CircleShape
+    val badgeText = when {
+        unreadCount <= 0 -> null
+        unreadCount > 9 -> "9+"
+        else -> unreadCount.toString()
+    }
+
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .focusRequester(focusRequester)
+            .onFocusChanged { focused = it.isFocused }
+            // Single focusable click target (mouse / touch / DPAD when mapped).
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            // Explicit TV remote OK / Enter — same pattern as LuxuryNavCard.
+            .onKeyEvent { event ->
+                val isSelect = event.key == Key.Enter || event.key == Key.DirectionCenter
+                if (!isSelect) return@onKeyEvent false
+                if (event.type == KeyEventType.KeyUp) {
+                    onClick()
+                    true
+                } else {
+                    // Consume KeyDown so the event does not fall through.
+                    event.type == KeyEventType.KeyDown
+                }
             },
-            subtitle = if (BuildConfig.IS_CORPORATE) {
-                "IT & Helpdesk extensions"
-            } else {
-                stringResource(R.string.feature_services_subtitle)
-            },
-            iconRes = R.drawable.ic_nav_services,
-            focusGlowColor = GoldLuxury,
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .focusRequester(servicesFocus),
-            onClick = onServices,
-        )
-        LuxuryNavCard(
-            title = stringResource(R.string.feature_alerts),
-            subtitle = if (unreadAlerts > 0) {
-                "$unreadAlerts new alert(s)"
-            } else {
-                stringResource(R.string.feature_alerts_subtitle)
-            },
-            iconRes = R.drawable.ic_nav_alerts,
-            focusGlowColor = GoldLuxury,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .focusRequester(alertsFocus),
-            onClick = onAlerts,
-        )
+                .size(42.dp)
+                .background(
+                    color = if (focused) CorporateBlue.copy(alpha = 0.28f) else Color.White.copy(alpha = 0.08f),
+                    shape = shape,
+                )
+                .border(
+                    width = if (focused) 2.dp else 1.dp,
+                    color = if (focused) CorporateBlue else Color.White.copy(alpha = 0.2f),
+                    shape = shape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_alert_bell),
+                contentDescription = stringResource(R.string.feature_alerts),
+                modifier = Modifier.size(22.dp),
+                colorFilter = ColorFilter.tint(
+                    if (focused) Color.White else TextPrimary.copy(alpha = 0.92f),
+                ),
+            )
+        }
+
+        if (badgeText != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 2.dp, y = (-2).dp)
+                    .heightIn(min = 18.dp)
+                    .widthIn(min = 18.dp)
+                    .background(CorporateBlue, CircleShape)
+                    .border(1.dp, Color.White.copy(alpha = 0.85f), CircleShape)
+                    .padding(horizontal = 4.dp, vertical = 1.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = badgeText,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.SansSerif,
+                    color = Color.White,
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
 

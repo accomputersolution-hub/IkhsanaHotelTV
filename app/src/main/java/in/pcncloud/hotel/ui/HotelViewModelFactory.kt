@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.repository.FirestoreRepository
+import `in`.pcncloud.hotel.ui.agenda.AgendaViewModel
 import `in`.pcncloud.hotel.ui.dining.DiningViewModel
 import `in`.pcncloud.hotel.ui.home.HomeViewModel
 import `in`.pcncloud.hotel.ui.services.CorporateServicesViewModel
@@ -24,6 +25,8 @@ class HotelViewModelFactory(
             ServicesViewModel(repository) as T
         modelClass.isAssignableFrom(CorporateServicesViewModel::class.java) ->
             CorporateServicesViewModel(repository) as T
+        modelClass.isAssignableFrom(AgendaViewModel::class.java) ->
+            AgendaViewModel(repository) as T
         else -> throw IllegalArgumentException("Unknown ViewModel: ${modelClass.name}")
     }
 }

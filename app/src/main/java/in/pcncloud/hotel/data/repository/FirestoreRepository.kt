@@ -5,6 +5,7 @@ import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.data.model.GuestProfile
 import `in`.pcncloud.hotel.data.model.EmergencyContact
+import `in`.pcncloud.hotel.data.model.AgendaItem
 import `in`.pcncloud.hotel.data.model.HotelAlert
 import `in`.pcncloud.hotel.data.model.HotelBranding
 import `in`.pcncloud.hotel.data.model.LiveOrder
@@ -602,7 +603,15 @@ class FirestoreRepository(
     }
 
     private fun firstNonBlank(vararg values: String?): String =
-        values.firstOrNull { !it.isNullOrBlank() }.orEmpty()
+        values.mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }.firstOrNull().orEmpty()
+
+    /** Coerce Firestore field values (String / unexpected types) to a trimmed string. */
+    private fun asTrimmedString(value: Any?): String? = when (value) {
+        null -> null
+        is String -> value.trim().takeIf { it.isNotEmpty() }
+        is Number, is Boolean -> value.toString()
+        else -> value.toString().trim().takeIf { it.isNotEmpty() }
+    }
 
     /**
      * Parse a Rooms/{id} document into [RoomStatus].
@@ -682,39 +691,54 @@ class FirestoreRepository(
                 branding["name"] as? String,
             ),
             logoUrl = firstNonBlank(
-                branding["logo_url"] as? String,
-                branding["logoUrl"] as? String,
-                data["logo_url"] as? String,
-                data["logoUrl"] as? String,
+                asTrimmedString(branding["logo_url"]),
+                asTrimmedString(branding["logoUrl"]),
+                asTrimmedString(branding["logo"]),
+                asTrimmedString(data["logo_url"]),
+                asTrimmedString(data["logoUrl"]),
+                asTrimmedString(data["logo"]),
+                asTrimmedString(data["brand_logo"]),
+                asTrimmedString(data["brandLogoUrl"]),
             ),
             bgWallpaperUrl = firstNonBlank(
-                branding["bg_wallpaper"] as? String,
-                branding["bgWallpaper"] as? String,
-                data["bg_wallpaper"] as? String,
-                data["bgWallpaper"] as? String,
+                asTrimmedString(branding["bg_wallpaper"]),
+                asTrimmedString(branding["bgWallpaper"]),
+                asTrimmedString(branding["bgWallpaperUrl"]),
+                asTrimmedString(branding["wallpaper"]),
+                asTrimmedString(data["bg_wallpaper"]),
+                asTrimmedString(data["bgWallpaper"]),
+                asTrimmedString(data["bgWallpaperUrl"]),
+                asTrimmedString(data["wallpaper"]),
+                asTrimmedString(data["wallpaperUrl"]),
             ),
             themeColor = firstNonBlank(
-                branding["theme_color"] as? String,
-                branding["themeColor"] as? String,
-                data["theme_color"] as? String,
-                data["themeColor"] as? String,
+                asTrimmedString(branding["theme_color"]),
+                asTrimmedString(branding["themeColor"]),
+                asTrimmedString(data["theme_color"]),
+                asTrimmedString(data["themeColor"]),
             ),
             tagline = firstNonBlank(
-                data["tagline"] as? String,
-                branding["tagline"] as? String,
-                data["brand_tagline"] as? String,
-                branding["brandTagline"] as? String,
+                asTrimmedString(data["tagline"]),
+                asTrimmedString(branding["tagline"]),
+                asTrimmedString(data["brand_tagline"]),
+                asTrimmedString(branding["brand_tagline"]),
+                asTrimmedString(branding["brandTagline"]),
+                asTrimmedString(data["brandTagline"]),
             ),
             welcomeMessage = firstNonBlank(
-                data["welcome_message"] as? String,
-                data["welcomeMessage"] as? String,
-                branding["welcome_message"] as? String,
-                branding["welcomeMessage"] as? String,
-                data["hotelInfo"] as? String,
-                branding["hotelInfo"] as? String,
+                asTrimmedString(data["welcome_message"]),
+                asTrimmedString(data["welcomeMessage"]),
+                asTrimmedString(branding["welcome_message"]),
+                asTrimmedString(branding["welcomeMessage"]),
+                asTrimmedString(data["welcome_msg"]),
+                asTrimmedString(data["welcomeText"]),
+                asTrimmedString(branding["welcomeText"]),
+                asTrimmedString(data["hotelInfo"]),
+                asTrimmedString(branding["hotelInfo"]),
             ),
             status = data["status"] as? String ?: "active",
             emergencyContacts = parseEmergencyContacts(data["emergency_contacts"]),
+            dailyAgenda = parseDailyAgenda(data["daily_agenda"]),
         )
     }
 
@@ -739,6 +763,47 @@ class FirestoreRepository(
                 extension = extension,
             )
         }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun parseDailyAgenda(raw: Any?): List<AgendaItem> {
+        val list = raw as? List<*> ?: return emptyList()
+        return list.mapIndexedNotNull { index, item ->
+            val map = item as? Map<*, *> ?: return@mapIndexedNotNull null
+            val time = firstNonBlank(map["time"] as? String)
+            val title = firstNonBlank(
+                map["title"] as? String,
+                map["name"] as? String,
+            )
+            val location = firstNonBlank(
+                map["location"] as? String,
+                map["place"] as? String,
+                map["venue"] as? String,
+            )
+            if (time.isBlank() && title.isBlank() && location.isBlank()) {
+                return@mapIndexedNotNull null
+            }
+            AgendaItem(
+                id = firstNonBlank(map["id"] as? String, "agenda_$index"),
+                time = time,
+                title = title,
+                location = location,
+            )
+        }.sortedWith(
+            compareBy<AgendaItem> { agendaTimeSortKey(it.time) }
+                .thenBy { it.time },
+        )
+    }
+
+    /** Parse start of a time range for chronological sort (e.g. "09:00 AM - 10:30 AM"). */
+    private fun agendaTimeSortKey(time: String): Int {
+        val match = AGENDA_TIME_REGEX.find(time.trim()) ?: return Int.MAX_VALUE
+        var hours = match.groupValues[1].toIntOrNull() ?: return Int.MAX_VALUE
+        val minutes = match.groupValues[2].toIntOrNull() ?: 0
+        val meridian = match.groupValues[3].uppercase()
+        if (meridian == "PM" && hours < 12) hours += 12
+        if (meridian == "AM" && hours == 12) hours = 0
+        return hours * 60 + minutes
     }
 
     private fun defaultGuestProfile() = GuestProfile(
@@ -796,5 +861,7 @@ class FirestoreRepository(
 
     companion object {
         private const val TAG = "FirestoreRepository"
+        private val AGENDA_TIME_REGEX =
+            Regex("""(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?""")
     }
 }
