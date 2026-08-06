@@ -5,6 +5,7 @@ import { initMenu } from './menu.js';
 import { initGuests } from './guests.js';
 import { initHousekeeping, initConcierge } from './requests.js';
 import { initEmergencyContacts } from './emergency-contacts.js';
+import { initDailyAgenda } from './daily-agenda.js';
 import { initAnalytics } from './analytics.js';
 import { initNavigation, showModule, setHotelChromeVisible } from './navigation.js';
 import {
@@ -282,6 +283,7 @@ function ensurePmsInited() {
   initMenu();
   initHousekeeping();
   initEmergencyContacts();
+  initDailyAgenda();
   initConcierge();
   initAnalytics();
 }

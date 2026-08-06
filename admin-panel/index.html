@@ -717,6 +717,10 @@
           <span class="nav-label" id="nav-hk-label">Housekeeping Queue</span>
           <span id="nav-hk-badge" class="nav-pending-badge hidden">0</span>
         </button>
+        <button id="nav-agenda" class="nav-item hidden" data-module="agenda">
+          <span class="nav-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><rect x="3.5" y="5" width="17" height="15" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 3.5v3M16 3.5v3M3.5 10h17" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span>
+          <span class="nav-label">Daily Agenda</span>
+        </button>
         <button class="nav-item" data-module="concierge">
           <span class="nav-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M3 13h18l-1.5 5H4.5L3 13z" stroke="currentColor" stroke-width="1.7"/><path d="M5 13 7 7h10l2 6M7 18.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM17 18.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" stroke="currentColor" stroke-width="1.7"/></svg></span>
           <span class="nav-label">Travel &amp; Concierge</span>
@@ -1087,6 +1091,75 @@
 
               <div id="helpdesk-contacts-list" class="helpdesk-contacts-list flex-1 overflow-y-auto">
                 <p class="empty-state">No emergency contacts yet. Add one above.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Corporate: Daily Agenda -->
+        <div data-module-view="agenda" class="module-view hidden">
+          <div class="module-card">
+            <div class="module-card-header">
+              <div>
+                <h2 class="text-base font-bold">Today’s Agenda</h2>
+                <p class="text-xs mt-0.5">
+                  Manage the daily schedule shown on TV ·
+                  <code>Hotels/{id}.daily_agenda</code>
+                </p>
+              </div>
+              <div class="agenda-header-actions">
+                <span id="agenda-item-count" class="count-badge">0</span>
+                <button type="button" id="agenda-clear-all-btn" class="quick-btn quick-btn-danger" disabled>
+                  Clear All
+                </button>
+              </div>
+            </div>
+            <div class="module-card-body flex flex-col gap-5 min-h-0">
+              <form id="agenda-item-form" class="agenda-form grid grid-cols-1 md:grid-cols-3 gap-3">
+                <input type="hidden" id="agenda-item-id" value="" />
+                <div>
+                  <label for="agenda-item-time" class="block text-sm font-medium mb-1">Time</label>
+                  <input
+                    id="agenda-item-time"
+                    type="text"
+                    required
+                    maxlength="80"
+                    placeholder="e.g. 09:00 AM - 10:30 AM"
+                    class="sa-field w-full outline-none"
+                  />
+                </div>
+                <div>
+                  <label for="agenda-item-title" class="block text-sm font-medium mb-1">Title</label>
+                  <input
+                    id="agenda-item-title"
+                    type="text"
+                    required
+                    maxlength="120"
+                    placeholder="e.g. Leadership Strategy Session"
+                    class="sa-field w-full outline-none"
+                  />
+                </div>
+                <div>
+                  <label for="agenda-item-location" class="block text-sm font-medium mb-1">Location</label>
+                  <input
+                    id="agenda-item-location"
+                    type="text"
+                    required
+                    maxlength="120"
+                    placeholder="e.g. Conference Hall A"
+                    class="sa-field w-full outline-none"
+                  />
+                </div>
+                <div class="agenda-form-actions md:col-span-3">
+                  <button type="submit" id="agenda-save-btn" class="btn-gold px-5 py-2.5 rounded-xl font-semibold">
+                    Add Item
+                  </button>
+                  <button type="button" id="agenda-cancel-edit-btn" class="quick-btn hidden">Cancel Edit</button>
+                </div>
+              </form>
+
+              <div id="agenda-items-list" class="agenda-items-list flex-1 overflow-y-auto">
+                <p class="empty-state">No agenda items yet. Add today’s schedule above.</p>
               </div>
             </div>
           </div>

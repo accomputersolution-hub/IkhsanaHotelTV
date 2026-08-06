@@ -7,6 +7,7 @@ import { navigateTo } from './router.js';
 import { isSuperAdmin } from './auth.js';
 import { isCorporateProperty, onHotelMetaChange } from './tenant-context.js';
 import { applyHelpdeskChrome } from './emergency-contacts.js';
+import { applyAgendaChrome } from './daily-agenda.js';
 
 const MODULES = {
   pms: { label: 'Room & Guest PMS', title: 'Room & Guest PMS' },
@@ -14,6 +15,7 @@ const MODULES = {
   menu: { label: 'Digital Menu Config', title: 'Digital Menu Configuration' },
   messaging: { label: 'TV Mass Messaging', title: 'TV Mass Messaging' },
   housekeeping: { label: 'Housekeeping Queue', title: 'Housekeeping Queue' },
+  agenda: { label: 'Daily Agenda', title: "Today's Agenda" },
   concierge: { label: 'Travel & Concierge', title: 'Travel & Concierge' },
   analytics: { label: 'Executive Analytics', title: 'Executive Analytics' },
 };
@@ -36,10 +38,20 @@ export function initNavigation() {
   setupQuickActions();
   setupGlobalSearch();
   applyHelpdeskChrome();
+  applyAgendaChrome();
+  if (activeModule === 'agenda' && !isCorporateProperty()) {
+    activeModule = 'pms';
+  }
   showModule(activeModule);
 
   onHotelMetaChange(() => {
     applyHelpdeskChrome();
+    applyAgendaChrome();
+    if (activeModule === 'agenda' && !isCorporateProperty()) {
+      showModule('pms');
+      navigateTo('/pms/pms');
+      return;
+    }
     if (activeModule === 'kds' || activeModule === 'housekeeping') {
       const titleEl = document.getElementById('module-title');
       if (titleEl) titleEl.textContent = moduleTitle(activeModule);
@@ -62,6 +74,9 @@ function setupSidebarNav() {
 }
 
 export function showModule(id) {
+  if (id === 'agenda' && !isCorporateProperty()) {
+    id = 'pms';
+  }
   if (!MODULES[id]) return;
   activeModule = id;
   localStorage.setItem('activeModule', id);

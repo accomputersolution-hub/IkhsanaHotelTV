@@ -14,7 +14,7 @@ export function getRoute() {
   if (path.startsWith('/pms') || path === '/' || path === '') return '/pms';
   // Support legacy module deep-links: #/kds etc.
   const mod = path.replace(/^\//, '').split('/')[0];
-  if (['pms', 'kds', 'menu', 'messaging', 'housekeeping', 'concierge', 'analytics'].includes(mod)) {
+  if (['pms', 'kds', 'menu', 'messaging', 'housekeeping', 'agenda', 'concierge', 'analytics'].includes(mod)) {
     return '/pms';
   }
   return path;
@@ -25,7 +25,7 @@ export function getModuleFromRoute() {
   const path = hash.startsWith('/') ? hash : `/${hash}`;
   const parts = path.split('/').filter(Boolean);
   if (parts[0] === 'pms' && parts[1]) return parts[1];
-  if (['pms', 'kds', 'menu', 'messaging', 'housekeeping', 'concierge', 'analytics'].includes(parts[0])) {
+  if (['pms', 'kds', 'menu', 'messaging', 'housekeeping', 'agenda', 'concierge', 'analytics'].includes(parts[0])) {
     return parts[0];
   }
   return localStorage.getItem('activeModule') || 'pms';
