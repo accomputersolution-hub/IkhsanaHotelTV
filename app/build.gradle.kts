@@ -38,6 +38,22 @@ android {
         }
     }
 
+    flavorDimensions += "client"
+    productFlavors {
+        create("hotel") {
+            dimension = "client"
+            applicationId = "in.pcncloud.hotel"
+            manifestPlaceholders["appName"] = "Ikhsana Hotel TV"
+            buildConfigField("boolean", "IS_CORPORATE", "false")
+        }
+        create("corporate") {
+            dimension = "client"
+            applicationId = "in.pcncloud.corporate"
+            manifestPlaceholders["appName"] = "L&T Training Hub"
+            buildConfigField("boolean", "IS_CORPORATE", "true")
+        }
+    }
+
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")

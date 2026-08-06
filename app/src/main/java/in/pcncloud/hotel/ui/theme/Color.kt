@@ -19,6 +19,11 @@ val FocusTeal = Color(0xFF34D399)
 val FocusBlueTeal = Color(0xFF38BDF8)
 val FocusRoyalBlue = Color(0xFF6366F1)
 
+/** L&T / corporate focus accent — clean professional blue. */
+val CorporateBlue = Color(0xFF0066B3)
+/** Simple frosted dark glass for corporate nav cards. */
+val CorporateGlass = Color(0xCC1A1A1A) // ~80% dark grey/black
+
 val TextPrimary = Color(0xFFF1F5F9)
 val TextMuted = Color(0xFF94A3B8)
 val TextDim = Color(0xFF64748B)

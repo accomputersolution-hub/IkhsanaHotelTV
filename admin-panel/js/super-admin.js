@@ -269,6 +269,7 @@ export function impersonateHotel(hotelId, hotelMeta) {
     branding: hotelMeta?.branding || {},
     status,
     hotelId,
+    property_type: hotelMeta?.property_type || hotelMeta?.propertyType || 'hotel',
   };
   TenantManager.setImpersonatedHotel(hotelId, meta);
   toast(`Managing ${meta.name}`);

@@ -58,6 +58,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
+import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import androidx.compose.ui.window.Dialog
 import `in`.pcncloud.hotel.data.model.CartItem
@@ -130,7 +131,11 @@ fun DiningScreen(
                 .padding(horizontal = 32.dp, vertical = 28.dp),
         ) {
             LuxuryScreenHeader(
-                title = stringResource(R.string.dining_title),
+                title = if (BuildConfig.IS_CORPORATE) {
+                    "Today's Menu"
+                } else {
+                    stringResource(R.string.dining_title)
+                },
                 subtitle = stringResource(R.string.dining_subtitle),
             )
 
@@ -211,9 +216,13 @@ fun DiningScreen(
                     },
                     orderFocus = orderFocus,
                     onPlaceOrder = {
-                        when (uiState.selectedPayment) {
-                            PaymentMethod.PAID_ONLINE -> showQrDialog = true
-                            PaymentMethod.PAY_AT_CHECKOUT -> viewModel.requestPlaceOrder()
+                        if (BuildConfig.IS_CORPORATE) {
+                            viewModel.requestPlaceOrder()
+                        } else {
+                            when (uiState.selectedPayment) {
+                                PaymentMethod.PAID_ONLINE -> showQrDialog = true
+                                PaymentMethod.PAY_AT_CHECKOUT -> viewModel.requestPlaceOrder()
+                            }
                         }
                     },
                     modifier = Modifier
@@ -416,14 +425,16 @@ private fun MenuItemCard(
                     lineHeight = 18.sp,
                 )
             }
-            Text(
-                text = "₹${item.price.toInt()}",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = SansBody,
-                color = GoldLuxury,
-                maxLines = 1,
-            )
+            if (!BuildConfig.IS_CORPORATE) {
+                Text(
+                    text = "₹${item.price.toInt()}",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = SansBody,
+                    color = GoldLuxury,
+                    maxLines = 1,
+                )
+            }
         }
 
         // Quantity stepper pinned to the far right
@@ -590,24 +601,26 @@ private fun OrderSummaryPanel(
                     cart.forEach { cartItem ->
                         CartLineRow(cartItem = cartItem)
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.order_total),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = SansBody,
-                            color = TextPrimary,
-                        )
-                        Text(
-                            text = "₹${cartTotal.toInt()}",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = GoldLuxury,
-                        )
+                    if (!BuildConfig.IS_CORPORATE) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.order_total),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = SansBody,
+                                color = TextPrimary,
+                            )
+                            Text(
+                                text = "₹${cartTotal.toInt()}",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = GoldLuxury,
+                            )
+                        }
                     }
                 }
 
@@ -635,12 +648,14 @@ private fun OrderSummaryPanel(
                 }
             }
 
-            // ── Payment method toggle ─────────────────────────────────
-            PaymentToggle(
-                selected = selectedPayment,
-                onSelectCheckout = { onSelectPayment(PaymentMethod.PAY_AT_CHECKOUT) },
-                onPayNow = onPayNow,
-            )
+            // ── Payment method toggle (hotel only) ────────────────────
+            if (!BuildConfig.IS_CORPORATE) {
+                PaymentToggle(
+                    selected = selectedPayment,
+                    onSelectCheckout = { onSelectPayment(PaymentMethod.PAY_AT_CHECKOUT) },
+                    onPayNow = onPayNow,
+                )
+            }
 
             if (orderMessage == "success") {
                 Text(
@@ -661,6 +676,7 @@ private fun OrderSummaryPanel(
                 !roomOccupied -> stringResource(R.string.vacant_room_cta_hint)
                 isPlacingOrder -> stringResource(R.string.loading)
                 !hasItems -> stringResource(R.string.cart_add_items_cta)
+                BuildConfig.IS_CORPORATE -> "Place Request"
                 selectedPayment == PaymentMethod.PAID_ONLINE ->
                     stringResource(R.string.pay_now) + " · ₹${cartTotal.toInt()}"
                 else -> stringResource(R.string.cart_confirm_cta, cartTotal)
@@ -705,12 +721,14 @@ private fun CartLineRow(cartItem: CartItem) {
                 color = TextMuted,
             )
         }
-        Text(
-            text = "₹${cartItem.lineTotal.toInt()}",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = GoldLuxury,
-        )
+        if (!BuildConfig.IS_CORPORATE) {
+            Text(
+                text = "₹${cartItem.lineTotal.toInt()}",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = GoldLuxury,
+            )
+        }
     }
 }
 

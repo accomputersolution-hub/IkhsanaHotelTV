@@ -63,6 +63,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
+import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.integration.OnyxIptvLauncher
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
@@ -419,12 +420,11 @@ private fun HomeHeader(
 
 @Composable
 private fun BrandLogo(hotelLogoUrl: String) {
-    // Multi-color PNG (ic_logo) fallback — reliable on API 24.
-    // Never load remote SVG / unsupported formats on API 24 (Coil shows a broken "X").
+    // Same remote binding pattern as ResortBackground; local ic_logo only as Coil fallback.
     val localLogo = painterResource(R.drawable.ic_logo)
-    val useRemote = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
-        hotelLogoUrl.isNotBlank() &&
-        !isLegacyUnsafeImageUrl(hotelLogoUrl)
+    val remoteModel = hotelLogoUrl.takeIf {
+        it.isNotBlank() && !isLegacyUnsafeImageUrl(it)
+    }
 
     // Clean transparent logo slot — no gold circle frame; fitCenter so PNGs scale naturally.
     Box(
@@ -434,29 +434,18 @@ private fun BrandLogo(hotelLogoUrl: String) {
             .padding(end = 8.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
-        if (useRemote) {
-            AsyncImage(
-                model = hotelLogoUrl,
-                contentDescription = "Hotel Logo",
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(6.dp),
-                contentScale = ContentScale.Fit,
-                alignment = Alignment.CenterStart,
-                placeholder = localLogo,
-                error = localLogo,
-            )
-        } else {
-            androidx.compose.foundation.Image(
-                painter = localLogo,
-                contentDescription = "Hotel Logo",
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(6.dp),
-                contentScale = ContentScale.Fit,
-                alignment = Alignment.CenterStart,
-            )
-        }
+        AsyncImage(
+            model = remoteModel,
+            contentDescription = "Hotel Logo",
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(6.dp),
+            contentScale = ContentScale.Fit,
+            alignment = Alignment.CenterStart,
+            placeholder = localLogo,
+            error = localLogo,
+            fallback = localLogo,
+        )
     }
 }
 
@@ -796,8 +785,16 @@ private fun NavigationCardsRow(
             onClick = onEntertainment,
         )
         LuxuryNavCard(
-            title = stringResource(R.string.feature_dining),
-            subtitle = stringResource(R.string.feature_dining_subtitle),
+            title = if (BuildConfig.IS_CORPORATE) {
+                "Today's Menu"
+            } else {
+                stringResource(R.string.feature_dining)
+            },
+            subtitle = if (BuildConfig.IS_CORPORATE) {
+                "Today's catered meals"
+            } else {
+                stringResource(R.string.feature_dining_subtitle)
+            },
             iconRes = R.drawable.ic_nav_dining,
             focusGlowColor = GoldLuxury,
             modifier = Modifier
@@ -807,8 +804,16 @@ private fun NavigationCardsRow(
             onClick = onDining,
         )
         LuxuryNavCard(
-            title = stringResource(R.string.feature_services),
-            subtitle = stringResource(R.string.feature_services_subtitle),
+            title = if (BuildConfig.IS_CORPORATE) {
+                "Emergency Contacts"
+            } else {
+                stringResource(R.string.feature_services)
+            },
+            subtitle = if (BuildConfig.IS_CORPORATE) {
+                "IT & Helpdesk extensions"
+            } else {
+                stringResource(R.string.feature_services_subtitle)
+            },
             iconRes = R.drawable.ic_nav_services,
             focusGlowColor = GoldLuxury,
             modifier = Modifier

@@ -107,6 +107,7 @@ function startHotelStatusWatch(hotelId, onStatus) {
         themeColor: data.branding?.themeColor || data.themeColor || '',
         bgWallpaper: data.branding?.bgWallpaper || data.bgWallpaper || '',
         branding: data.branding || {},
+        property_type: data.property_type || data.propertyType || 'hotel',
       });
       onStatus?.(status, data);
     },

@@ -5,6 +5,7 @@ import { onAnalyticsShown } from './analytics.js';
 import { toast } from './utils.js';
 import { navigateTo } from './router.js';
 import { isSuperAdmin } from './auth.js';
+import { isCorporateProperty, onHotelMetaChange } from './tenant-context.js';
 
 const MODULES = {
   pms: { label: 'Room & Guest PMS', title: 'Room & Guest PMS' },
@@ -15,6 +16,11 @@ const MODULES = {
   concierge: { label: 'Travel & Concierge', title: 'Travel & Concierge' },
   analytics: { label: 'Executive Analytics', title: 'Executive Analytics' },
 };
+
+function moduleTitle(id) {
+  if (id === 'kds' && isCorporateProperty()) return 'Pantry Requests';
+  return MODULES[id]?.title || '';
+}
 
 let activeModule = localStorage.getItem('activeModule') || 'pms';
 
@@ -28,6 +34,13 @@ export function initNavigation() {
   setupQuickActions();
   setupGlobalSearch();
   showModule(activeModule);
+
+  onHotelMetaChange(() => {
+    if (activeModule === 'kds') {
+      const titleEl = document.getElementById('module-title');
+      if (titleEl) titleEl.textContent = moduleTitle('kds');
+    }
+  });
 }
 
 export function setHotelChromeVisible(visible) {
@@ -60,7 +73,7 @@ export function showModule(id) {
   });
 
   const titleEl = document.getElementById('module-title');
-  if (titleEl) titleEl.textContent = MODULES[id].title;
+  if (titleEl) titleEl.textContent = moduleTitle(id);
 
   if (id === 'analytics') onAnalyticsShown();
 

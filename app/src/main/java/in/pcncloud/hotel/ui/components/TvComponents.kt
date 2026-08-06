@@ -40,6 +40,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -47,7 +48,10 @@ import androidx.compose.ui.unit.sp
 import androidx.annotation.DrawableRes
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
+import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.ui.services.ServiceToastType
+import `in`.pcncloud.hotel.ui.theme.CorporateBlue
+import `in`.pcncloud.hotel.ui.theme.CorporateGlass
 import `in`.pcncloud.hotel.ui.theme.GoldGlassBorder
 import `in`.pcncloud.hotel.ui.theme.GoldGlassFill
 import `in`.pcncloud.hotel.ui.theme.GoldLight
@@ -135,7 +139,14 @@ fun LuxuryNavCard(
         animationSpec = tween(durationMillis = 150),
         label = "navCardScale",
     )
-    val titleColor = if (isFocused) GoldLight else TextPrimary
+    val isCorporate = BuildConfig.IS_CORPORATE
+
+    val titleColor = when {
+        isCorporate && isFocused -> Color.White
+        isCorporate -> TextPrimary
+        isFocused -> GoldLight
+        else -> TextPrimary
+    }
     val subtitleColor = if (isFocused) TextPrimary.copy(alpha = 0.9f) else TextMuted
     val iconAlpha by animateFloatAsState(
         targetValue = if (isFocused) 1f else 0.92f,
@@ -146,6 +157,18 @@ fun LuxuryNavCard(
     // Raising opacity on focus paints a square dark slab on API 24 (clip+scale bug).
     val fillTop = NavyDeep.copy(alpha = 0.42f)
     val fillBottom = NavyDeep.copy(alpha = 0.32f)
+    val corporateBorderColor = when {
+        isFocused -> CorporateBlue
+        else -> Color.White.copy(alpha = 0.18f)
+    }
+    val chevronColor = when {
+        isCorporate && isFocused -> CorporateBlue
+        isCorporate -> TextMuted.copy(alpha = 0.55f)
+        isFocused -> GoldLight
+        else -> TextMuted.copy(alpha = 0.5f)
+    }
+    val titleFont = if (isCorporate) FontFamily.SansSerif else SansBody
+    val subtitleFont = if (isCorporate) FontFamily.SansSerif else SansBody
 
     Box(
         modifier = modifier
@@ -156,31 +179,47 @@ fun LuxuryNavCard(
                 clip = true
                 shape = cardShape
             }
-            .background(
-                brush = Brush.verticalGradient(listOf(fillTop, fillBottom)),
-                shape = cardShape,
-            )
-            .border(
-                width = if (isFocused) 3.dp else 1.dp,
-                brush = if (isFocused) {
-                    Brush.linearGradient(
-                        listOf(
-                            focusGlowColor,
-                            GoldLight,
-                            focusGlowColor.copy(alpha = 0.78f),
-                            GoldLight.copy(alpha = 0.95f),
-                            focusGlowColor,
-                        ),
-                    )
+            .then(
+                if (isCorporate) {
+                    Modifier.background(CorporateGlass, cardShape)
                 } else {
-                    Brush.linearGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.25f),
-                            Color.White.copy(alpha = 0.12f),
-                        ),
+                    Modifier.background(
+                        brush = Brush.verticalGradient(listOf(fillTop, fillBottom)),
+                        shape = cardShape,
                     )
                 },
-                shape = cardShape,
+            )
+            .then(
+                if (isCorporate) {
+                    Modifier.border(
+                        width = if (isFocused) 2.dp else 1.dp,
+                        color = corporateBorderColor,
+                        shape = cardShape,
+                    )
+                } else {
+                    Modifier.border(
+                        width = if (isFocused) 3.dp else 1.dp,
+                        brush = if (isFocused) {
+                            Brush.linearGradient(
+                                listOf(
+                                    focusGlowColor,
+                                    GoldLight,
+                                    focusGlowColor.copy(alpha = 0.78f),
+                                    GoldLight.copy(alpha = 0.95f),
+                                    focusGlowColor,
+                                ),
+                            )
+                        } else {
+                            Brush.linearGradient(
+                                listOf(
+                                    Color.White.copy(alpha = 0.25f),
+                                    Color.White.copy(alpha = 0.12f),
+                                ),
+                            )
+                        },
+                        shape = cardShape,
+                    )
+                },
             )
             .onFocusChanged { isFocused = it.isFocused }
             .focusable()
@@ -201,22 +240,31 @@ fun LuxuryNavCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxSize(),
         ) {
-            LuxuryIconBadge(
-                iconRes = iconRes,
-                contentDescription = title,
-                focused = isFocused,
-                modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .graphicsLayer {
-                        alpha = iconAlpha
-                    },
-            )
+            if (isCorporate) {
+                CorporateNavIcon(
+                    iconRes = iconRes,
+                    contentDescription = title,
+                    focused = isFocused,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .graphicsLayer { alpha = iconAlpha },
+                )
+            } else {
+                LuxuryIconBadge(
+                    iconRes = iconRes,
+                    contentDescription = title,
+                    focused = isFocused,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .graphicsLayer { alpha = iconAlpha },
+                )
+            }
             Spacer(modifier = Modifier.height(14.dp))
             Text(
                 text = title,
                 fontSize = 19.sp,
                 fontWeight = FontWeight.Bold,
-                fontFamily = SansBody,
+                fontFamily = titleFont,
                 color = titleColor,
                 textAlign = TextAlign.Center,
             )
@@ -224,7 +272,7 @@ fun LuxuryNavCard(
             Text(
                 text = subtitle,
                 fontSize = 13.sp,
-                fontFamily = SansBody,
+                fontFamily = subtitleFont,
                 color = subtitleColor,
                 textAlign = TextAlign.Center,
                 lineHeight = 18.sp,
@@ -235,10 +283,35 @@ fun LuxuryNavCard(
                 text = "›",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Normal,
-                color = if (isFocused) GoldLight else TextMuted.copy(alpha = 0.5f),
+                color = chevronColor,
                 modifier = Modifier.padding(bottom = 2.dp),
             )
         }
+    }
+}
+
+/** Clean icon without decorative ring — corporate / L&T dashboard cards. */
+@Composable
+private fun CorporateNavIcon(
+    @DrawableRes iconRes: Int,
+    contentDescription: String,
+    focused: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier.size(64.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(iconRes),
+            contentDescription = contentDescription,
+            modifier = Modifier.size(34.dp),
+            contentScale = ContentScale.Fit,
+            colorFilter = ColorFilter.tint(
+                if (focused) Color.White else Color.White.copy(alpha = 0.88f),
+                BlendMode.SrcIn,
+            ),
+        )
     }
 }
 

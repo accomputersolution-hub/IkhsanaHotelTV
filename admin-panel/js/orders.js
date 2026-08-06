@@ -21,7 +21,12 @@ import {
 } from './utils.js';
 import { normalizeRoom, logFirestoreWrite } from './paths.js';
 import { writeRoomAlert } from './alerts.js';
-import { getHotelId, onHotelChange } from './tenant-context.js';
+import {
+  getHotelId,
+  onHotelChange,
+  onHotelMetaChange,
+  isCorporateProperty,
+} from './tenant-context.js';
 
 const ORDER_STATUS_ALERTS = {
   preparing: {
@@ -32,6 +37,32 @@ const ORDER_STATUS_ALERTS = {
     title: 'Order Update',
     message: 'Order Update: Your order is on the way/delivered.',
   },
+};
+
+/** Hotel KDS status labels (unchanged). */
+const HOTEL_STATUS_LABELS = {
+  pending: 'Pending',
+  preparing: 'Cooking',
+  delivered: 'Ready',
+};
+
+/** Corporate pantry status labels. */
+const CORPORATE_STATUS_LABELS = {
+  pending: 'Pending',
+  preparing: 'Preparing',
+  delivered: 'Served',
+};
+
+const HOTEL_FILTER_LABELS = {
+  pending: 'Pending',
+  preparing: 'Cooking',
+  delivered: 'Ready',
+};
+
+const CORPORATE_FILTER_LABELS = {
+  pending: 'Pending',
+  preparing: 'Preparing',
+  delivered: 'Served',
 };
 
 let knownOrderIds = new Set();
@@ -45,7 +76,60 @@ export function initOrders() {
   onHotelChange(() => {
     knownOrderIds = new Set();
     ordersInitialized = false;
+    applyKdsChrome();
     listenOrders();
+  });
+  onHotelMetaChange(() => {
+    applyKdsChrome();
+    renderOrders();
+  });
+}
+
+function statusLabels() {
+  return isCorporateProperty() ? CORPORATE_STATUS_LABELS : HOTEL_STATUS_LABELS;
+}
+
+function labelForStatus(status) {
+  const labels = statusLabels();
+  return labels[status] || STATUS_LABELS[status] || status;
+}
+
+function roomLabel(roomNumber) {
+  const room = escapeHtml(String(roomNumber || '—'));
+  if (isCorporateProperty()) {
+    return `Conf Room ${room}`;
+  }
+  return `Room ${room}`;
+}
+
+/** Update KDS page title, filters, and top module title for property type. */
+function applyKdsChrome() {
+  const corporate = isCorporateProperty();
+  const titleEl = document.getElementById('kds-page-title');
+  const subtitleEl = document.getElementById('kds-page-subtitle');
+  const moduleTitleEl = document.getElementById('module-title');
+  const kdsView = document.querySelector('[data-module-view="kds"]');
+  const kdsNav = document.querySelector('[data-module="kds"] .nav-label');
+
+  if (titleEl) {
+    titleEl.textContent = corporate ? 'Pantry Requests' : 'Kitchen Display System';
+  }
+  if (subtitleEl) {
+    subtitleEl.textContent = corporate
+      ? 'Live pantry tickets · Bell on new request · real-time board'
+      : 'Live_Orders · Bell on new order · real-time ticket board';
+  }
+  if (kdsNav) {
+    kdsNav.textContent = corporate ? 'Pantry Requests' : 'Kitchen KDS';
+  }
+  if (moduleTitleEl && kdsView && !kdsView.classList.contains('hidden')) {
+    moduleTitleEl.textContent = corporate ? 'Pantry Requests' : 'Kitchen Display System';
+  }
+
+  const filterLabels = corporate ? CORPORATE_FILTER_LABELS : HOTEL_FILTER_LABELS;
+  document.querySelectorAll('[data-kds-filter-label]').forEach((tab) => {
+    const key = tab.dataset.kdsFilterLabel;
+    if (filterLabels[key]) tab.textContent = filterLabels[key];
   });
 }
 
@@ -83,7 +167,11 @@ function listenOrders() {
             playOrderBell();
             const banner = document.getElementById('new-order-banner');
             const room = data?.roomNumber || '?';
-            banner.innerHTML = `New order from Room <strong>${room}</strong> — Kitchen ticket created`;
+            const place = isCorporateProperty()
+              ? `Conf Room <strong>${escapeHtml(String(room))}</strong>`
+              : `Room <strong>${escapeHtml(String(room))}</strong>`;
+            const kind = isCorporateProperty() ? 'pantry request' : 'order';
+            banner.innerHTML = `New ${kind} from ${place} — ticket created`;
             banner.classList.remove('hidden');
             setTimeout(() => banner.classList.add('hidden'), 6000);
           }
@@ -139,7 +227,11 @@ async function sendOrderStatusAlert(order, newStatus) {
 function renderOrders() {
   const container = document.getElementById('orders-list');
   const badge = document.getElementById('orders-count');
+  if (!container || !badge) return;
+
+  const corporate = isCorporateProperty();
   const orders = getFilteredOrders();
+  const labels = statusLabels();
 
   const pending = allOrders.filter((o) => o.status !== 'delivered').length;
   badge.textContent = pending;
@@ -148,8 +240,12 @@ function renderOrders() {
   if (!orders.length) {
     container.innerHTML = `
       <div class="col-span-full empty-state">
-        <p>${allOrders.length ? 'No orders match this filter' : 'No orders yet'}</p>
-        <p class="text-sm mt-1">Incoming room orders will appear here in real time.</p>
+        <p>${allOrders.length ? 'No orders match this filter' : corporate ? 'No pantry requests yet' : 'No orders yet'}</p>
+        <p class="text-sm mt-1">${
+          corporate
+            ? 'Incoming conference-room meal requests will appear here in real time.'
+            : 'Incoming room orders will appear here in real time.'
+        }</p>
       </div>`;
     return;
   }
@@ -158,27 +254,31 @@ function renderOrders() {
     .map((order) => {
       const status = order.status || 'pending';
       const next = nextStatus(status);
+      const priceHtml = corporate
+        ? ''
+        : `<p class="order-price">₹${(order.totalAmount || 0).toFixed(0)}</p>`;
+      const doneLabel = corporate ? 'Served · Complete' : 'Ready · Complete';
       return `
       <div class="order-card" data-searchable data-search-text="room ${escapeHtml(String(order.roomNumber || ''))} ${escapeHtml(order.guestName || '')} ${escapeHtml(formatItems(order.items))}">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div class="flex items-center gap-3 flex-wrap">
-              <span class="order-room">Room ${escapeHtml(String(order.roomNumber || '—'))}</span>
+              <span class="order-room">${roomLabel(order.roomNumber)}</span>
               <span class="${STATUS_STYLES[status] || STATUS_STYLES.pending}">
-                ${STATUS_LABELS[status] || status}
+                ${escapeHtml(labels[status] || status)}
               </span>
             </div>
-            <p class="order-meta">${escapeHtml(order.guestName || 'Guest')} · synced ${formatTime(order.timestamp)}</p>
+            <p class="order-meta">${escapeHtml(order.guestName || (corporate ? 'Staff' : 'Guest'))} · synced ${formatTime(order.timestamp)}</p>
           </div>
-          <p class="order-price">₹${(order.totalAmount || 0).toFixed(0)}</p>
+          ${priceHtml}
         </div>
         <p class="order-items-box">${escapeHtml(formatItems(order.items))}</p>
         ${
           next
             ? `<button data-action="advance" data-id="${order.id}" data-next="${next}" class="kds-advance-btn">
-                Mark as ${STATUS_LABELS[next]}
+                Mark as ${escapeHtml(labels[next] || next)}
               </button>`
-            : `<p class="kds-delivered-label">Ready · Complete</p>`
+            : `<p class="kds-delivered-label">${doneLabel}</p>`
         }
       </div>`;
     })
@@ -189,6 +289,7 @@ function renderOrders() {
       const id = btn.dataset.id;
       const nextSt = btn.dataset.next;
       const order = allOrders.find((o) => o.id === id);
+      const nextLabel = labelForStatus(nextSt);
       btn.disabled = true;
       btn.textContent = 'Updating…';
       try {
@@ -197,15 +298,15 @@ function renderOrders() {
 
         if (nextSt === 'preparing' || nextSt === 'delivered') {
           await sendOrderStatusAlert(order, nextSt);
-          toast(`Order marked as ${STATUS_LABELS[nextSt]} — guest notified on TV`);
+          toast(`Order marked as ${nextLabel} — guest notified on TV`);
         } else {
-          toast(`Order marked as ${STATUS_LABELS[nextSt]}`);
+          toast(`Order marked as ${nextLabel}`);
         }
       } catch (err) {
         toast('Failed to update order', 'error');
         console.error('[Firestore ERROR] Order status update failed:', err);
         btn.disabled = false;
-        btn.textContent = `Mark as ${STATUS_LABELS[nextSt]}`;
+        btn.textContent = `Mark as ${nextLabel}`;
       }
     });
   });

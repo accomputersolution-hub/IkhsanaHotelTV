@@ -68,6 +68,8 @@ class PairingActivity : AppCompatActivity() {
         btnPair = findViewById(R.id.btnPair)
         tvPairError = findViewById(R.id.tvPairError)
 
+        applyFlavorCopy()
+
         baseBottomPadding = scrollView.paddingBottom
         imePaddingPx = TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP,
@@ -113,6 +115,21 @@ class PairingActivity : AppCompatActivity() {
 
         btnPair.setOnClickListener { beginPairing() }
         etHotelId.requestFocus()
+    }
+
+    /**
+     * Corporate flavor swaps pairing copy; hotel flavor keeps layout XML / string resources.
+     */
+    private fun applyFlavorCopy() {
+        if (!BuildConfig.IS_CORPORATE) return
+
+        findViewById<TextView>(R.id.pairing_title).text = "Setup Training Display"
+        findViewById<TextView>(R.id.pairing_subtitle).text =
+            "Enter the Client ID from Super Admin (e.g. lnt_001). We verify Clients/{id} in Firestore before saving."
+        findViewById<TextView>(R.id.pairing_hotel_id_label).text = "Client ID / Slug"
+        etHotelId.hint = "Client ID / Slug"
+        findViewById<TextView>(R.id.pairing_room_label).text = "Conference Room"
+        etRoomNumber.hint = "Conference Room"
     }
 
     override fun onDestroy() {

@@ -19,6 +19,7 @@ let hotelId = (() => {
 let hotelMeta = safeParse(localStorage.getItem(META_KEY), null);
 let impersonating = Boolean(localStorage.getItem(IMPERSONATE_KEY));
 const listeners = new Set();
+const metaListeners = new Set();
 
 // Persist migrated underscore slug if localStorage still had a hyphenated id
 if (hotelId && localStorage.getItem(STORAGE_KEY) !== hotelId) {
@@ -39,6 +40,16 @@ function notify() {
       fn(hotelId, hotelMeta);
     } catch (err) {
       console.error('[TenantManager] listener error', err);
+    }
+  });
+}
+
+function notifyMeta() {
+  metaListeners.forEach((fn) => {
+    try {
+      fn(hotelMeta);
+    } catch (err) {
+      console.error('[TenantManager] meta listener error', err);
     }
   });
 }
@@ -87,6 +98,7 @@ function setHotelContext(id, meta = null, opts = {}) {
 
   if (changed) notify();
   applyBranding(hotelMeta);
+  notifyMeta();
   return hotelId;
 }
 
@@ -103,6 +115,7 @@ export function updateHotelMeta(partial = {}) {
   };
   localStorage.setItem(META_KEY, JSON.stringify(hotelMeta));
   applyBranding(hotelMeta);
+  notifyMeta();
   return hotelMeta;
 }
 
@@ -120,6 +133,24 @@ export function getHotelId() {
 
 export function getHotelMeta() {
   return hotelMeta;
+}
+
+/**
+ * Property type from Hotels/{id}.property_type ('hotel' | 'corporate').
+ * Defaults to 'hotel' when missing / undefined.
+ */
+export function getPropertyType() {
+  const raw =
+    hotelMeta?.property_type ??
+    hotelMeta?.propertyType ??
+    hotelMeta?.branding?.property_type ??
+    'hotel';
+  const normalized = String(raw || 'hotel').trim().toLowerCase();
+  return normalized === 'corporate' ? 'corporate' : 'hotel';
+}
+
+export function isCorporateProperty() {
+  return getPropertyType() === 'corporate';
 }
 
 export function hasHotelContext() {
@@ -147,6 +178,20 @@ export function onHotelChange(fn) {
   return () => listeners.delete(fn);
 }
 
+/**
+ * Lightweight subscribe for meta/branding/property_type updates (same hotel).
+ * Invokes immediately. Does not rebind Firestore collection listeners.
+ */
+export function onHotelMetaChange(fn) {
+  metaListeners.add(fn);
+  try {
+    fn(hotelMeta);
+  } catch (err) {
+    console.error('[TenantManager] meta listener error', err);
+  }
+  return () => metaListeners.delete(fn);
+}
+
 export const onTenantChange = onHotelChange;
 
 /**
@@ -167,6 +212,8 @@ export function setAssignedHotel(selectedHotelId, meta = null) {
 export const TenantManager = {
   getHotelId,
   getHotelMeta,
+  getPropertyType,
+  isCorporateProperty,
   getHotelStatus,
   isHotelInactive,
   hasHotelContext,
@@ -177,6 +224,7 @@ export const TenantManager = {
   updateHotelMeta,
   clearHotelContext,
   onHotelChange,
+  onHotelMetaChange,
   onTenantChange,
   /** Strict Android-parity root */
   hotelsCollection: 'Hotels',

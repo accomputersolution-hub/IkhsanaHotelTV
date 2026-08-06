@@ -807,15 +807,15 @@
           <div class="module-card">
             <div class="module-card-header">
               <div>
-                <h2 class="text-base font-bold">Kitchen Display System</h2>
-                <p class="text-xs mt-0.5">Live_Orders · Bell on new order · real-time ticket board</p>
+                <h2 id="kds-page-title" class="text-base font-bold">Kitchen Display System</h2>
+                <p id="kds-page-subtitle" class="text-xs mt-0.5">Live_Orders · Bell on new order · real-time ticket board</p>
               </div>
               <div class="flex items-center gap-3">
                 <div class="filter-tabs">
                   <button class="filter-tab active" data-filter="all">All</button>
-                  <button class="filter-tab" data-filter="pending">Pending</button>
-                  <button class="filter-tab" data-filter="preparing">Cooking</button>
-                  <button class="filter-tab" data-filter="delivered">Ready</button>
+                  <button class="filter-tab" data-filter="pending" data-kds-filter-label="pending">Pending</button>
+                  <button class="filter-tab" data-filter="preparing" data-kds-filter-label="preparing">Cooking</button>
+                  <button class="filter-tab" data-filter="delivered" data-kds-filter-label="delivered">Ready</button>
                 </div>
                 <span id="orders-count" class="count-badge">0</span>
               </div>
