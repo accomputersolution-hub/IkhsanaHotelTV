@@ -516,7 +516,7 @@
 
       <div class="bulk-upload-toolbar">
         <button id="bulk-download-sample-btn" type="button" class="btn-gold btn-secondary-outline">Download Sample CSV</button>
-        <span class="bulk-upload-hint">Columns: category, name, price, description, is_veg, image_url</span>
+        <span id="bulk-upload-hint" class="bulk-upload-hint">Columns: category, name, price, description, is_veg, image_url</span>
       </div>
 
       <div id="bulk-dropzone" class="bulk-dropzone" tabindex="0">
@@ -540,7 +540,7 @@
                 <th>#</th>
                 <th>Category</th>
                 <th>Name</th>
-                <th>Price</th>
+                <th data-bulk-price-col>Price</th>
                 <th>Veg</th>
                 <th>Description</th>
                 <th>Status</th>

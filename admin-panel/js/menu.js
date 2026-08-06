@@ -50,7 +50,7 @@ let menuUnsub = null;
 let bulkParsedRows = [];
 let bulkImporting = false;
 
-const SAMPLE_CSV = `category,name,price,description,is_veg,image_url
+const SAMPLE_CSV_HOTEL = `category,name,price,description,is_veg,image_url
 starters,Paneer Tikka,280,Grilled cottage cheese with spices,true,
 starters,Chicken Seekh Kebab,320,Minced chicken skewers,false,
 main_course,Butter Chicken,450,Creamy tomato gravy with chicken,false,
@@ -61,8 +61,39 @@ desserts,Gulab Jamun,150,Warm milk dumplings in syrup,true,
 desserts,Chocolate Brownie,200,Warm brownie with ice cream,true,
 `;
 
-const REQUIRED_COLUMNS = ['category', 'name', 'price'];
+const SAMPLE_CSV_CORPORATE = `category,name,description,is_veg,image_url
+starters,Paneer Tikka,Grilled cottage cheese with spices,true,
+starters,Chicken Seekh Kebab,Minced chicken skewers,false,
+main_course,Butter Chicken,Creamy tomato gravy with chicken,false,
+main_course,Aloo Mutter,Potato and peas curry,true,
+beverages,Masala Chai,Spiced Indian tea,true,
+beverages,Fresh Lime Soda,Sweet or salted,true,
+desserts,Gulab Jamun,Warm milk dumplings in syrup,true,
+desserts,Chocolate Brownie,Warm brownie with ice cream,true,
+`;
+
 const BATCH_LIMIT = 400;
+
+function requiredBulkColumns() {
+  return isCorporateProperty() ? ['category', 'name'] : ['category', 'name', 'price'];
+}
+
+function sampleCsvContent() {
+  return isCorporateProperty() ? SAMPLE_CSV_CORPORATE : SAMPLE_CSV_HOTEL;
+}
+
+function applyBulkUploadChrome() {
+  const corporate = isCorporateProperty();
+  const hint = document.getElementById('bulk-upload-hint');
+  if (hint) {
+    hint.textContent = corporate
+      ? 'Columns: category, name, description, is_veg, image_url'
+      : 'Columns: category, name, price, description, is_veg, image_url';
+  }
+  document.querySelectorAll('[data-bulk-price-col]').forEach((el) => {
+    el.classList.toggle('hidden', corporate);
+  });
+}
 
 export function initMenu() {
   renderFilterTabs();
@@ -70,14 +101,17 @@ export function initMenu() {
   setupAddCategoryModal();
   setupBulkUpload();
   applyMenuPriceFieldVisibility();
+  applyBulkUploadChrome();
   onHotelChange(() => {
     settingsSeeded = false;
     applyMenuPriceFieldVisibility();
+    applyBulkUploadChrome();
     listenMenuSettings();
     listenMenu();
   });
   onHotelMetaChange(() => {
     applyMenuPriceFieldVisibility();
+    applyBulkUploadChrome();
   });
 }
 
@@ -524,6 +558,7 @@ function setupBulkUpload() {
 
   document.getElementById('bulk-upload-btn')?.addEventListener('click', () => {
     resetBulkUploadUi();
+    applyBulkUploadChrome();
     openModal('bulk-upload-modal');
   });
 
@@ -579,16 +614,22 @@ function setupBulkUpload() {
 }
 
 function downloadSampleCsv() {
-  const blob = new Blob([SAMPLE_CSV], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob([sampleCsvContent()], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'menu_items_sample.csv';
+  a.download = isCorporateProperty()
+    ? 'menu_items_sample_corporate.csv'
+    : 'menu_items_sample.csv';
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-  toast('Sample CSV downloaded');
+  toast(
+    isCorporateProperty()
+      ? 'Corporate sample CSV downloaded (no price column)'
+      : 'Sample CSV downloaded',
+  );
 }
 
 function resetBulkUploadUi() {
@@ -760,6 +801,8 @@ function normalizeHeader(header) {
 function validateBulkRows(rawRows) {
   const errors = [];
   const parsed = [];
+  const corporate = isCorporateProperty();
+  const requiredCols = requiredBulkColumns();
 
   if (!Array.isArray(rawRows) || !rawRows.length) {
     errors.push('File is empty or has no data rows');
@@ -768,10 +811,10 @@ function validateBulkRows(rawRows) {
 
   const first = rawRows[0] || {};
   const headers = Object.keys(first);
-  const missingCols = REQUIRED_COLUMNS.filter((col) => !headers.includes(col));
+  const missingCols = requiredCols.filter((col) => !headers.includes(col));
   if (missingCols.length) {
     // Also accept if later rows somehow have keys — but typically header row defines keys
-    const anyHasRequired = REQUIRED_COLUMNS.every((col) =>
+    const anyHasRequired = requiredCols.every((col) =>
       rawRows.some((r) => Object.prototype.hasOwnProperty.call(r, col)),
     );
     if (!anyHasRequired) {
@@ -785,8 +828,6 @@ function validateBulkRows(rawRows) {
     const name = String(row.name ?? '').trim();
     const categoryRaw = String(row.category ?? '').trim();
     const category = normalizeCategoryKey(categoryRaw);
-    const priceRaw = row.price;
-    const price = parsePrice(priceRaw);
     const description = String(row.description ?? '').trim();
     const imageUrl = String(row.image_url ?? row.imageurl ?? row.imageUrl ?? '').trim();
     const isVeg = parseBoolean(row.is_veg ?? row.isveg ?? row.isVeg, true);
@@ -798,8 +839,18 @@ function validateBulkRows(rawRows) {
     const rowErrors = [];
     if (!name) rowErrors.push('name required');
     if (!categoryRaw) rowErrors.push('category required');
-    if (price === null) rowErrors.push(`invalid price "${priceRaw}"`);
-    if (price !== null && price < 0) rowErrors.push('price cannot be negative');
+
+    let price = 0;
+    if (corporate) {
+      // Corporate: ignore / omit price column; always persist 0.
+      price = 0;
+    } else {
+      const priceRaw = row.price;
+      const parsedPrice = parsePrice(priceRaw);
+      if (parsedPrice === null) rowErrors.push(`invalid price "${priceRaw}"`);
+      if (parsedPrice !== null && parsedPrice < 0) rowErrors.push('price cannot be negative');
+      price = parsedPrice ?? 0;
+    }
 
     const valid = rowErrors.length === 0;
     if (!valid) {
@@ -813,7 +864,7 @@ function validateBulkRows(rawRows) {
       payload: {
         name,
         category,
-        price: price ?? 0,
+        price,
         description,
         imageUrl,
         isVeg,
@@ -872,23 +923,28 @@ function renderBulkPreview(rows) {
   const count = document.getElementById('bulk-preview-count');
   if (!wrap || !body) return;
 
+  applyBulkUploadChrome();
   wrap.classList.remove('hidden');
   if (count) {
     const valid = rows.filter((r) => r.valid).length;
     count.textContent = `${valid}/${rows.length}`;
   }
 
+  const corporate = isCorporateProperty();
   body.innerHTML = rows
     .map((row) => {
       const p = row.payload;
       const statusClass = row.valid ? 'bulk-row-ok' : 'bulk-row-bad';
       const statusLabel = row.valid ? 'OK' : escapeHtml(row.error || 'Invalid');
+      const priceCell = corporate
+        ? ''
+        : `<td>${row.valid ? `₹${Number(p.price).toFixed(0)}` : '—'}</td>`;
       return `
         <tr class="${statusClass}">
           <td>${row.rowNum}</td>
           <td>${escapeHtml(p.category)}</td>
           <td>${escapeHtml(p.name || '—')}</td>
-          <td>${row.valid ? `₹${Number(p.price).toFixed(0)}` : '—'}</td>
+          ${priceCell}
           <td>${p.isVeg ? 'Veg' : 'Non-Veg'}</td>
           <td class="bulk-desc-cell">${escapeHtml(p.description || '—')}</td>
           <td>${statusLabel}</td>
