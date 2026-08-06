@@ -10,6 +10,8 @@ import coil.ImageLoaderFactory
 import coil.decode.SvgDecoder
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
 /**
  * Process-wide lifecycle + crash bookkeeping for kiosk bring-to-front gating.
@@ -37,12 +39,36 @@ class HotelTvApplication : Application(), ImageLoaderFactory {
         observeProcessLifecycle()
     }
 
-    /** App-wide Coil loader — enables remote SVG logos from Hotels/{id}.logoUrl. */
-    override fun newImageLoader(): ImageLoader =
-        ImageLoader.Builder(this)
+    /**
+     * App-wide Coil loader.
+     * Wikimedia / many CDNs reject bare OkHttp User-Agents (403) — that previously
+     * made Hotels/{id}.logoUrl fall back to the yellow local flower while wallpaper
+     * (different host) still loaded.
+     */
+    override fun newImageLoader(): ImageLoader {
+        val client = OkHttpClient.Builder()
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .addInterceptor { chain ->
+                val request = chain.request().newBuilder()
+                    .header(
+                        "User-Agent",
+                        "IkhsanaHotelTV/1.0 (Android TV; PCN Cloud IPTV; +https://pcncloud.in)",
+                    )
+                    .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                    .build()
+                chain.proceed(request)
+            }
+            .build()
+
+        return ImageLoader.Builder(this)
+            .okHttpClient(client)
             .components { add(SvgDecoder.Factory()) }
             .crossfade(true)
             .build()
+    }
 
     private fun installCrashMarker() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()

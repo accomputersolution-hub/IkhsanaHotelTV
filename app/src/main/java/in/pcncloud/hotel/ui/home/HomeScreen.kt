@@ -554,12 +554,24 @@ private fun BrandLogo(hotelLogoUrl: String) {
 /**
  * Normalize a Firestore logo / wallpaper URL for Coil.
  * Do NOT block SVG — [HotelTvApplication] registers [coil.decode.SvgDecoder].
+ *
+ * Also rewrites Wikipedia / Commons "File:" HTML pages to Special:FilePath
+ * so Coil receives the actual image bytes (not an HTML article page).
  */
 private fun normalizeRemoteImageUrl(url: String): String? {
-    val cleaned = url.trim().trim('"', '\'').trim()
+    var cleaned = url.trim().trim('"', '\'').trim()
     if (cleaned.isBlank()) return null
     // Reject only inline data SVGs that Coil cannot fetch as a network model.
     if (cleaned.startsWith("data:image/svg", ignoreCase = true)) return null
+
+    val wikiFilePage = Regex(
+        pattern = """^https?://(?:commons\.wikimedia\.org|(?:[a-z]+\.)?wikipedia\.org)/wiki/File:(.+)$""",
+        option = RegexOption.IGNORE_CASE,
+    ).matchEntire(cleaned)
+    if (wikiFilePage != null) {
+        val fileName = wikiFilePage.groupValues[1]
+        cleaned = "https://commons.wikimedia.org/wiki/Special:FilePath/$fileName"
+    }
     return cleaned
 }
 
