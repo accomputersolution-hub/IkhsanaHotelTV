@@ -17,6 +17,7 @@ import {
   ensureSuperAdminProfile,
   needsBootstrap,
   isAuthLoading,
+  forceAuthReady,
 } from './auth.js';
 import {
   getHotelId,
@@ -49,6 +50,13 @@ function setAuthBootUi(loading) {
     document.getElementById('login-shell')?.classList.add('hidden');
     document.getElementById('super-admin-shell')?.classList.add('hidden');
     document.getElementById('app-shell')?.classList.add('hidden');
+  }
+}
+
+/** Always drop the boot gate once auth is no longer loading. */
+function clearAuthBootUi() {
+  if (!isAuthLoading()) {
+    setAuthBootUi(false);
   }
 }
 
@@ -103,13 +111,13 @@ function startHotelStatusWatch(hotelId, onStatus) {
       const status = data.status || 'active';
       cachedHotelStatus = status;
       updateHotelMeta({
-        name: data.name || hotelId,
+        name: data?.name || hotelId,
         status,
-        logoUrl: data.branding?.logoUrl || data.logoUrl || '',
-        themeColor: data.branding?.themeColor || data.themeColor || '',
-        bgWallpaper: data.branding?.bgWallpaper || data.bgWallpaper || '',
-        branding: data.branding || {},
-        property_type: data.property_type || data.propertyType || 'hotel',
+        logoUrl: data?.branding?.logoUrl || data?.logoUrl || '',
+        themeColor: data?.branding?.themeColor || data?.themeColor || '',
+        bgWallpaper: data?.branding?.bgWallpaper || data?.bgWallpaper || '',
+        branding: data?.branding || {},
+        property_type: data?.property_type || data?.propertyType || 'hotel',
       });
       onStatus?.(status, data);
     },
@@ -171,103 +179,119 @@ async function applyRoute(route) {
     return;
   }
 
-  const profile = getCurrentProfile();
+  try {
+    const profile = getCurrentProfile();
 
-  if (!profile || needsBootstrap()) {
-    stopHotelStatusWatch();
-    showDeactivatedGate(false);
-    showShell('login');
-    return;
-  }
-
-  if (profile.role === 'super_admin') {
-    // Keep hotels registry live so both Super Admin + PMS navbar dropdowns stay filled
-    startSuperAdminListeners();
-
-    if (route === '/super-admin' || route === '/login') {
+    if (!profile || needsBootstrap()) {
       stopHotelStatusWatch();
       showDeactivatedGate(false);
-      showShell('super-admin');
-      setHotelChromeVisible(false);
-      return;
-    }
-
-    if (!hasHotelContext()) {
-      toast('Select a hotel to open its PMS', 'error');
-      navigateTo('/super-admin');
-      showShell('super-admin');
-      return;
-    }
-
-    const hotelId = getHotelId();
-    const status = await fetchHotelStatus(hotelId);
-    cachedHotelStatus = status;
-    startHotelStatusWatch(hotelId, (nextStatus) => {
-      if (isInactiveStatus(nextStatus) && getRoute() !== '/super-admin') {
-        handleInactiveForCurrentUser(nextStatus);
-      } else if (!isInactiveStatus(nextStatus)) {
-        showDeactivatedGate(false);
-      }
-    });
-
-    if (handleInactiveForCurrentUser(status)) {
-      return;
-    }
-
-    showShell('pms');
-    setHotelChromeVisible(true);
-    ensurePmsInited();
-    showModule(getModuleFromRoute());
-    updateImpersonationBanner();
-    return;
-  }
-
-  if (profile.role === 'hotel_admin') {
-    stopSuperAdminListeners();
-    if (!hasHotelContext() && profile.hotelId) {
-      setAssignedHotel(profile.hotelId, { name: profile.hotelId });
-    }
-
-    const hotelId = getHotelId() || profile.hotelId;
-    if (!hotelId) {
       showShell('login');
-      toast('No hotel assigned to this account', 'error');
       return;
     }
 
-    const status = await fetchHotelStatus(hotelId);
-    cachedHotelStatus = status;
-    startHotelStatusWatch(hotelId, (nextStatus) => {
-      if (isInactiveStatus(nextStatus)) {
-        handleInactiveForCurrentUser(nextStatus);
-      } else {
+    if (profile.role === 'super_admin') {
+      // Keep hotels registry live so both Super Admin + PMS navbar dropdowns stay filled
+      startSuperAdminListeners();
+
+      if (route === '/super-admin' || route === '/login') {
+        stopHotelStatusWatch();
         showDeactivatedGate(false);
-        // If they were locked and hotel is reactivated while still on PMS hash, restore UI
-        if (getRoute() !== '/login') {
-          showShell('pms');
-          setHotelChromeVisible(true);
-          ensurePmsInited();
-          showModule(getModuleFromRoute());
-        }
+        showShell('super-admin');
+        setHotelChromeVisible(false);
+        return;
       }
-    });
 
-    if (handleInactiveForCurrentUser(status)) {
+      if (!hasHotelContext()) {
+        toast('Select a hotel to open its PMS', 'error');
+        navigateTo('/super-admin');
+        showShell('super-admin');
+        return;
+      }
+
+      const hotelId = getHotelId();
+      const status = await fetchHotelStatus(hotelId);
+      cachedHotelStatus = status;
+      startHotelStatusWatch(hotelId, (nextStatus) => {
+        if (isInactiveStatus(nextStatus) && getRoute() !== '/super-admin') {
+          handleInactiveForCurrentUser(nextStatus);
+        } else if (!isInactiveStatus(nextStatus)) {
+          showDeactivatedGate(false);
+        }
+      });
+
+      if (handleInactiveForCurrentUser(status)) {
+        return;
+      }
+
+      showShell('pms');
+      setHotelChromeVisible(true);
+      ensurePmsInited();
+      showModule(getModuleFromRoute());
+      updateImpersonationBanner();
       return;
     }
 
-    showDeactivatedGate(false);
-    showShell('pms');
-    setHotelChromeVisible(true);
-    ensurePmsInited();
-    showModule(getModuleFromRoute());
-    document.getElementById('impersonation-bar')?.classList.add('hidden');
-    document.getElementById('pms-impersonate-wrap')?.classList.add('hidden');
-    return;
-  }
+    if (profile.role === 'hotel_admin') {
+      stopSuperAdminListeners();
+      if (!hasHotelContext() && profile?.hotelId) {
+        setAssignedHotel(profile.hotelId, { name: profile.hotelId });
+      }
 
-  showShell('login');
-  toast('Your account has no role. Ask a Super Admin to assign one.', 'error');
+      const hotelId = getHotelId() || profile?.hotelId;
+      if (!hotelId) {
+        showShell('login');
+        toast('No hotel assigned to this account', 'error');
+        return;
+      }
+
+      const status = await fetchHotelStatus(hotelId);
+      cachedHotelStatus = status;
+      startHotelStatusWatch(hotelId, (nextStatus) => {
+        if (isInactiveStatus(nextStatus)) {
+          handleInactiveForCurrentUser(nextStatus);
+        } else {
+          showDeactivatedGate(false);
+          // If they were locked and hotel is reactivated while still on PMS hash, restore UI
+          if (getRoute() !== '/login') {
+            showShell('pms');
+            setHotelChromeVisible(true);
+            ensurePmsInited();
+            showModule(getModuleFromRoute());
+          }
+        }
+      });
+
+      if (handleInactiveForCurrentUser(status)) {
+        return;
+      }
+
+      showDeactivatedGate(false);
+      showShell('pms');
+      setHotelChromeVisible(true);
+      ensurePmsInited();
+      showModule(getModuleFromRoute());
+      document.getElementById('impersonation-bar')?.classList.add('hidden');
+      document.getElementById('pms-impersonate-wrap')?.classList.add('hidden');
+      return;
+    }
+
+    showShell('login');
+    toast('Your account has no role. Ask a Super Admin to assign one.', 'error');
+  } catch (err) {
+    console.error('[app] applyRoute failed', err);
+    try {
+      const profile = getCurrentProfile();
+      if (!profile) showShell('login');
+      else if (profile.role === 'super_admin') showShell('super-admin');
+      else showShell('pms');
+    } catch (shellErr) {
+      console.error('[app] fallback shell failed', shellErr);
+      showShell('login');
+    }
+    toast(err?.message || 'Failed to open workspace', 'error');
+  } finally {
+    clearAuthBootUi();
+  }
 }
 
 let pmsInited = false;
@@ -275,17 +299,28 @@ function ensurePmsInited() {
   if (pmsInited) return;
   pmsInited = true;
   setConnectionStatus('connecting');
-  initNavigation();
-  initAudio();
-  initOrders();
-  initGuests();
-  initAlerts();
-  initMenu();
-  initHousekeeping();
-  initEmergencyContacts();
-  initDailyAgenda();
-  initConcierge();
-  initAnalytics();
+
+  const steps = [
+    ['navigation', initNavigation],
+    ['audio', initAudio],
+    ['orders', initOrders],
+    ['guests', initGuests],
+    ['alerts', initAlerts],
+    ['menu', initMenu],
+    ['housekeeping', initHousekeeping],
+    ['emergency-contacts', initEmergencyContacts],
+    ['daily-agenda', initDailyAgenda],
+    ['concierge', initConcierge],
+    ['analytics', initAnalytics],
+  ];
+
+  for (const [name, init] of steps) {
+    try {
+      init();
+    } catch (err) {
+      console.error(`[app] PMS init failed (${name})`, err);
+    }
+  }
 }
 
 function updateImpersonationBanner() {
@@ -379,17 +414,42 @@ document.addEventListener('DOMContentLoaded', () => {
   // Show boot loader immediately — hide login flash until Auth resolves
   setAuthBootUi(true);
 
-  initRouter();
-  setupLoginForm();
-  setupChromeActions();
-  initSuperAdmin();
+  // Safety net: never leave the boot gate up indefinitely if Auth hangs.
+  const bootWatchdog = window.setTimeout(() => {
+    if (document.body.classList.contains('auth-booting') || isAuthLoading()) {
+      console.warn('[app] auth boot watchdog fired — forcing UI unlock');
+      forceAuthReady();
+      setAuthBootUi(false);
+      if (!getCurrentProfile()) {
+        showShell('login');
+        toast('Session restore timed out. Please sign in again.', 'error');
+      }
+    }
+  }, 16000);
+
+  try {
+    initRouter();
+    setupLoginForm();
+    setupChromeActions();
+    initSuperAdmin();
+  } catch (err) {
+    console.error('[app] chrome init failed', err);
+    window.clearTimeout(bootWatchdog);
+    setAuthBootUi(false);
+    showShell('login');
+    toast('Failed to start admin panel', 'error');
+    return;
+  }
 
   onRouteChange((route) => {
     if (isAuthLoading()) {
       setAuthBootUi(true);
       return;
     }
-    applyRoute(route);
+    applyRoute(route).catch((err) => {
+      console.error('[app] route change failed', err);
+      clearAuthBootUi();
+    });
   });
 
   // When Super Admin switches hotel while already on PMS, re-run the status gate.
@@ -403,27 +463,42 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     if (getRoute() === '/login' || getRoute() === '/super-admin') return;
-    applyRoute(getRoute());
+    applyRoute(getRoute()).catch((err) => {
+      console.error('[app] hotel-change route failed', err);
+      clearAuthBootUi();
+    });
   });
   hotelChangeReady = true;
 
   initAuth((user, profile) => {
-    // loading is false inside initAuth before this callback runs
-    setAuthBootUi(false);
+    try {
+      window.clearTimeout(bootWatchdog);
+      setAuthBootUi(false);
 
-    if (!user) {
-      stopHotelStatusWatch();
-      showDeactivatedGate(false);
-      navigateTo('/login');
+      if (!user) {
+        stopHotelStatusWatch();
+        showDeactivatedGate(false);
+        navigateTo('/login');
+        showShell('login');
+        return;
+      }
+
+      // Preserve deep-link hash on refresh; only redirect away from empty/#/login
+      if (!location.hash || location.hash === '#/login') {
+        if (profile?.role === 'super_admin') navigateTo('/super-admin');
+        else navigateTo('/pms');
+      }
+      applyRoute(getRoute()).catch((err) => {
+        console.error('[app] initial route failed', err);
+        clearAuthBootUi();
+      });
+    } catch (err) {
+      console.error('[app] auth ready handler failed', err);
+      setAuthBootUi(false);
       showShell('login');
-      return;
+      toast(err?.message || 'Failed to restore session', 'error');
+    } finally {
+      clearAuthBootUi();
     }
-
-    // Preserve deep-link hash on refresh; only redirect away from empty/#/login
-    if (!location.hash || location.hash === '#/login') {
-      if (profile?.role === 'super_admin') navigateTo('/super-admin');
-      else navigateTo('/pms');
-    }
-    applyRoute(getRoute());
   });
 });

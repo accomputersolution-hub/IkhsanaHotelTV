@@ -41,8 +41,14 @@ export function initDailyAgenda() {
 
 /** Show/hide sidebar item for corporate properties only. */
 export function applyAgendaChrome() {
-  const navBtn = document.getElementById('nav-agenda');
-  if (navBtn) navBtn.classList.toggle('hidden', !isCorporateProperty());
+  try {
+    const navBtn = document.getElementById('nav-agenda');
+    const corporate = isCorporateProperty();
+    navBtn?.classList.toggle('hidden', !corporate);
+  } catch (err) {
+    console.error('[agenda] chrome failed', err);
+    document.getElementById('nav-agenda')?.classList.add('hidden');
+  }
 }
 
 function listenAgenda() {

@@ -44,30 +44,34 @@ export function initEmergencyContacts() {
 
 /** Toggle hotel HK queue vs corporate helpdesk UI + sidebar label/icon. */
 export function applyHelpdeskChrome() {
-  const corporate = isCorporateProperty();
-  const hotelPanel = document.getElementById('hk-hotel-panel');
-  const corpPanel = document.getElementById('hk-corporate-panel');
-  const navLabel = document.getElementById('nav-hk-label');
-  const navIcon = document.getElementById('nav-hk-icon');
-  const navBadge = document.getElementById('nav-hk-badge');
-  const moduleTitleEl = document.getElementById('module-title');
-  const hkView = document.querySelector('[data-module-view="housekeeping"]');
+  try {
+    const corporate = isCorporateProperty();
+    const hotelPanel = document.getElementById('hk-hotel-panel');
+    const corpPanel = document.getElementById('hk-corporate-panel');
+    const navLabel = document.getElementById('nav-hk-label');
+    const navIcon = document.getElementById('nav-hk-icon');
+    const navBadge = document.getElementById('nav-hk-badge');
+    const moduleTitleEl = document.getElementById('module-title');
+    const hkView = document.querySelector('[data-module-view="housekeeping"]');
 
-  if (hotelPanel) hotelPanel.classList.toggle('hidden', corporate);
-  if (corpPanel) corpPanel.classList.toggle('hidden', !corporate);
+    hotelPanel?.classList.toggle('hidden', corporate);
+    corpPanel?.classList.toggle('hidden', !corporate);
 
-  if (navLabel) {
-    navLabel.textContent = corporate ? 'Helpdesk Config' : 'Housekeeping Queue';
-  }
-  if (navIcon) {
-    navIcon.innerHTML = corporate ? HK_ICON_CORPORATE : HK_ICON_HOTEL;
-  }
-  if (navBadge && corporate) {
-    navBadge.classList.add('hidden');
-  }
+    if (navLabel) {
+      navLabel.textContent = corporate ? 'Helpdesk Config' : 'Housekeeping Queue';
+    }
+    if (navIcon) {
+      navIcon.innerHTML = corporate ? HK_ICON_CORPORATE : HK_ICON_HOTEL;
+    }
+    if (navBadge && corporate) {
+      navBadge.classList.add('hidden');
+    }
 
-  if (moduleTitleEl && hkView && !hkView.classList.contains('hidden')) {
-    moduleTitleEl.textContent = corporate ? 'Helpdesk Config' : 'Housekeeping Queue';
+    if (moduleTitleEl && hkView && !hkView.classList.contains('hidden')) {
+      moduleTitleEl.textContent = corporate ? 'Helpdesk Config' : 'Housekeeping Queue';
+    }
+  } catch (err) {
+    console.error('[helpdesk] chrome failed', err);
   }
 }
 

@@ -67,6 +67,13 @@ function setHotelContext(id, meta = null, opts = {}) {
 
   const branding = meta?.branding || {};
   if (meta) {
+    const propertyType = normalizePropertyType(
+      meta?.property_type ??
+        meta?.propertyType ??
+        branding?.property_type ??
+        (hotelMeta?.hotelId === next ? hotelMeta?.property_type : undefined) ??
+        'hotel',
+    );
     hotelMeta = {
       ...hotelMeta,
       ...meta,
@@ -75,11 +82,16 @@ function setHotelContext(id, meta = null, opts = {}) {
       themeColor: meta.themeColor || branding.themeColor || hotelMeta?.themeColor || '',
       bgWallpaper: meta.bgWallpaper || branding.bgWallpaper || hotelMeta?.bgWallpaper || '',
       name: meta.name || hotelMeta?.name || next,
+      property_type: propertyType,
     };
   } else if (!next) {
     hotelMeta = null;
   } else if (hotelMeta?.hotelId !== next) {
-    hotelMeta = { ...(hotelMeta || {}), hotelId: next };
+    hotelMeta = {
+      ...(hotelMeta || {}),
+      hotelId: next,
+      property_type: normalizePropertyType(hotelMeta?.property_type),
+    };
   }
 
   if (opts.impersonate && next) {
@@ -108,11 +120,15 @@ function setHotelContext(id, meta = null, opts = {}) {
  */
 export function updateHotelMeta(partial = {}) {
   if (!hotelId) return null;
-  hotelMeta = {
+  const next = {
     ...(hotelMeta || {}),
-    ...partial,
+    ...(partial || {}),
     hotelId,
   };
+  next.property_type = normalizePropertyType(
+    partial?.property_type ?? partial?.propertyType ?? next.property_type ?? next.propertyType,
+  );
+  hotelMeta = next;
   localStorage.setItem(META_KEY, JSON.stringify(hotelMeta));
   applyBranding(hotelMeta);
   notifyMeta();
@@ -136,21 +152,41 @@ export function getHotelMeta() {
 }
 
 /**
+ * Normalize Hotels/{id}.property_type to 'hotel' | 'corporate'.
+ * Missing / undefined / invalid values safely default to 'hotel'.
+ */
+export function normalizePropertyType(value) {
+  try {
+    const normalized = String(value ?? 'hotel').trim().toLowerCase();
+    return normalized === 'corporate' ? 'corporate' : 'hotel';
+  } catch {
+    return 'hotel';
+  }
+}
+
+/**
  * Property type from Hotels/{id}.property_type ('hotel' | 'corporate').
  * Defaults to 'hotel' when missing / undefined.
  */
 export function getPropertyType() {
-  const raw =
-    hotelMeta?.property_type ??
-    hotelMeta?.propertyType ??
-    hotelMeta?.branding?.property_type ??
-    'hotel';
-  const normalized = String(raw || 'hotel').trim().toLowerCase();
-  return normalized === 'corporate' ? 'corporate' : 'hotel';
+  return normalizePropertyType(
+    hotelMeta?.property_type ?? hotelMeta?.propertyType ?? hotelMeta?.branding?.property_type,
+  );
 }
 
 export function isCorporateProperty() {
-  return getPropertyType() === 'corporate';
+  try {
+    return getPropertyType() === 'corporate';
+  } catch {
+    return false;
+  }
+}
+
+// Normalize any cached meta so older localStorage entries without property_type stay safe.
+if (hotelMeta) {
+  hotelMeta.property_type = normalizePropertyType(
+    hotelMeta?.property_type ?? hotelMeta?.propertyType,
+  );
 }
 
 export function hasHotelContext() {
@@ -213,6 +249,7 @@ export const TenantManager = {
   getHotelId,
   getHotelMeta,
   getPropertyType,
+  normalizePropertyType,
   isCorporateProperty,
   getHotelStatus,
   isHotelInactive,

@@ -39,6 +39,11 @@ export function isAuthLoading() {
   return authLoading;
 }
 
+/** Last-resort unlock if session restore hangs (boot watchdog). */
+export function forceAuthReady() {
+  authLoading = false;
+}
+
 export function isSuperAdmin() {
   return currentProfile?.role === 'super_admin';
 }
@@ -109,31 +114,72 @@ async function loadUserProfile(user) {
   return currentProfile;
 }
 
+const PROFILE_LOAD_TIMEOUT_MS = 15000;
+
+function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+async function restoreSession(user) {
+  await loadUserProfile(user);
+  if (user && currentProfile?.role === 'hotel_admin' && currentProfile?.hotelId) {
+    setAssignedHotel(currentProfile.hotelId, { name: currentProfile.hotelId });
+  }
+  if (!user) {
+    clearHotelContext();
+  }
+}
+
 /**
  * Bind Firebase Auth. `loading` stays true until the first callback finishes
  * (session restore + Firestore profile), then flips to false permanently for
  * subsequent auth events (login/logout still notify listeners).
+ *
+ * Always clears `authLoading` in `finally` so a failed/hung profile fetch
+ * cannot leave the UI stuck on “Restoring session”.
  */
 export function initAuth(onReady) {
   return onAuthStateChanged(auth, async (user) => {
     currentUser = user;
+    const wasInitialLoad = authLoading;
+
     try {
-      await loadUserProfile(user);
-      if (user && currentProfile?.role === 'hotel_admin' && currentProfile.hotelId) {
-        setAssignedHotel(currentProfile.hotelId, { name: currentProfile.hotelId });
-      }
-      if (!user) {
-        clearHotelContext();
-      }
+      await withTimeout(restoreSession(user), PROFILE_LOAD_TIMEOUT_MS, 'Auth profile load');
     } catch (err) {
       console.error('[auth] profile load failed', err);
-      currentProfile = null;
+      if (!user) {
+        currentProfile = null;
+        try {
+          clearHotelContext();
+        } catch (clearErr) {
+          console.error('[auth] clearHotelContext failed', clearErr);
+        }
+      } else if (!currentProfile) {
+        // Keep a safe stub so route guards can still leave the boot screen.
+        currentProfile = {
+          role: 'unknown',
+          hotelId: '',
+          email: user.email || '',
+          uid: user.uid,
+        };
+      }
+    } finally {
+      authLoading = false;
+      try {
+        notifyAuth();
+      } catch (notifyErr) {
+        console.error('[auth] notify failed', notifyErr);
+      }
+      try {
+        onReady?.(user, currentProfile, { initial: wasInitialLoad });
+      } catch (readyErr) {
+        console.error('[auth] onReady failed', readyErr);
+      }
     }
-
-    const wasInitialLoad = authLoading;
-    authLoading = false;
-    notifyAuth();
-    onReady?.(user, currentProfile, { initial: wasInitialLoad });
   });
 }
 

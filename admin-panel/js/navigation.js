@@ -37,24 +37,56 @@ export function initNavigation() {
   setupClock();
   setupQuickActions();
   setupGlobalSearch();
-  applyHelpdeskChrome();
-  applyAgendaChrome();
-  if (activeModule === 'agenda' && !isCorporateProperty()) {
-    activeModule = 'pms';
+
+  try {
+    applyHelpdeskChrome?.();
+  } catch (err) {
+    console.error('[nav] helpdesk chrome failed', err);
   }
-  showModule(activeModule);
+  try {
+    applyAgendaChrome?.();
+  } catch (err) {
+    console.error('[nav] agenda chrome failed', err);
+  }
+
+  try {
+    if (activeModule === 'agenda' && !isCorporateProperty()) {
+      activeModule = 'pms';
+    }
+    showModule(activeModule);
+  } catch (err) {
+    console.error('[nav] showModule failed', err);
+    activeModule = 'pms';
+    try {
+      showModule('pms');
+    } catch (_) {
+      /* ignore */
+    }
+  }
 
   onHotelMetaChange(() => {
-    applyHelpdeskChrome();
-    applyAgendaChrome();
-    if (activeModule === 'agenda' && !isCorporateProperty()) {
-      showModule('pms');
-      navigateTo('/pms/pms');
-      return;
+    try {
+      applyHelpdeskChrome?.();
+    } catch (err) {
+      console.error('[nav] helpdesk chrome failed', err);
     }
-    if (activeModule === 'kds' || activeModule === 'housekeeping') {
-      const titleEl = document.getElementById('module-title');
-      if (titleEl) titleEl.textContent = moduleTitle(activeModule);
+    try {
+      applyAgendaChrome?.();
+    } catch (err) {
+      console.error('[nav] agenda chrome failed', err);
+    }
+    try {
+      if (activeModule === 'agenda' && !isCorporateProperty()) {
+        showModule('pms');
+        navigateTo('/pms/pms');
+        return;
+      }
+      if (activeModule === 'kds' || activeModule === 'housekeeping') {
+        const titleEl = document.getElementById('module-title');
+        if (titleEl) titleEl.textContent = moduleTitle(activeModule);
+      }
+    } catch (err) {
+      console.error('[nav] meta chrome update failed', err);
     }
   });
 }
