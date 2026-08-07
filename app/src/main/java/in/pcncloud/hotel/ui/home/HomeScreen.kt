@@ -1,6 +1,13 @@
 package `in`.pcncloud.hotel.ui.home
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -43,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -50,6 +58,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -61,6 +71,7 @@ import androidx.compose.ui.res.painterResource
 import android.util.Log
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -68,6 +79,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
@@ -121,9 +133,10 @@ fun HomeScreen(
 
     val activeAlert = uiState.activePopupAlert
     val unreadAlerts = uiState.alerts.count { !it.read && !it.revoked }
+    val contentReady = uiState.isContentReady
 
-    LaunchedEffect(activeAlert?.id) {
-        if (activeAlert == null) {
+    LaunchedEffect(contentReady, activeAlert?.id) {
+        if (contentReady && activeAlert == null) {
             liveTvFocus.requestFocus()
         }
     }
@@ -134,69 +147,127 @@ fun HomeScreen(
             .clip(RectangleShape)
             .background(NavyDeep),
     ) {
-        ResortBackground(
+        Crossfade(
+            targetState = contentReady,
+            animationSpec = tween(durationMillis = 280),
+            label = "homeBootCrossfade",
             modifier = Modifier.fillMaxSize(),
-            // Hotels/{id} branding wallpaper first, then any room-level override.
-            wallpaperUrl = uiState.branding.bgWallpaperUrl
-                .ifBlank { uiState.guestProfile.bgWallpaperUrl },
-        )
+        ) { ready ->
+            if (!ready) {
+                // Neutral boot shell — never show "YOUR HOTEL" / generic guest placeholders.
+                HomeBootLoading(modifier = Modifier.fillMaxSize())
+            } else {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    ResortBackground(
+                        modifier = Modifier.fillMaxSize(),
+                        wallpaperUrl = uiState.branding.bgWallpaperUrl
+                            .ifBlank { uiState.guestProfile.bgWallpaperUrl },
+                    )
 
-        HomeForegroundContent(
-            modifier = Modifier.fillMaxSize(),
-            roomNumber = uiState.guestProfile.roomNumber,
-            // Prefer Hotels/{hotelId} branding from Web Admin over room/defaults.
-            hotelLogoUrl = uiState.branding.logoUrl
-                .ifBlank { uiState.guestProfile.hotelLogoUrl },
-            hotelName = uiState.branding.hotelName
-                .ifBlank { uiState.guestProfile.hotelName },
-            tagline = uiState.branding.tagline
-                .ifBlank { uiState.guestProfile.tagline },
-            welcomeMessage = uiState.branding.welcomeMessage
-                .ifBlank { uiState.guestProfile.welcomeMessage }
-                .ifBlank { uiState.guestProfile.hotelInfo },
-            guestName = uiState.guestProfile.guestName,
-            salutation = uiState.guestProfile.salutation,
-            unreadAlerts = unreadAlerts,
-            liveTvFocus = liveTvFocus,
-            entertainmentFocus = entertainmentFocus,
-            diningFocus = diningFocus,
-            servicesFocus = servicesFocus,
-            agendaFocus = agendaFocus,
-            alertsFocus = alertsFocus,
-            alertBellFocus = alertBellFocus,
-            onLiveTv = { OnyxIptvLauncher.launch(context) },
-            onEntertainment = onNavigateToEntertainment,
-            onDining = onNavigateToDining,
-            onAgenda = onNavigateToAgenda,
-            onServices = onNavigateToServices,
-            onAlerts = onNavigateToAlerts,
-            onOpenAdmin = onNavigateToAdmin,
-        )
-
-        uiState.serviceToastMessage?.let { message ->
-            ServiceToast(
-                message = message,
-                type = uiState.serviceToastType,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 36.dp, bottom = 36.dp),
-            )
-        }
-
-        activeAlert?.let { alert ->
-            LaunchedEffect(alert.id, alert.durationMs) {
-                if (alert.durationMs > 0L) {
-                    delay(alert.durationMs)
-                    viewModel.dismissPopup()
+                    HomeForegroundContent(
+                        modifier = Modifier.fillMaxSize(),
+                        roomNumber = uiState.guestProfile.roomNumber,
+                        hotelLogoUrl = uiState.branding.logoUrl
+                            .ifBlank { uiState.guestProfile.hotelLogoUrl },
+                        hotelName = uiState.branding.hotelName
+                            .ifBlank { uiState.guestProfile.hotelName },
+                        tagline = uiState.branding.tagline
+                            .ifBlank { uiState.guestProfile.tagline },
+                        welcomeMessage = uiState.branding.welcomeMessage
+                            .ifBlank { uiState.guestProfile.welcomeMessage }
+                            .ifBlank { uiState.guestProfile.hotelInfo },
+                        guestName = uiState.guestProfile.guestName,
+                        salutation = uiState.guestProfile.salutation,
+                        unreadAlerts = unreadAlerts,
+                        liveTvFocus = liveTvFocus,
+                        entertainmentFocus = entertainmentFocus,
+                        diningFocus = diningFocus,
+                        servicesFocus = servicesFocus,
+                        agendaFocus = agendaFocus,
+                        alertsFocus = alertsFocus,
+                        alertBellFocus = alertBellFocus,
+                        onLiveTv = { OnyxIptvLauncher.launch(context) },
+                        onEntertainment = onNavigateToEntertainment,
+                        onDining = onNavigateToDining,
+                        onAgenda = onNavigateToAgenda,
+                        onServices = onNavigateToServices,
+                        onAlerts = onNavigateToAlerts,
+                        onOpenAdmin = onNavigateToAdmin,
+                    )
                 }
             }
+        }
 
-            BroadcastAlertOverlay(
-                title = alert.title,
-                message = alert.message,
-                onDismiss = viewModel::dismissPopup,
-                modifier = Modifier.fillMaxSize(),
-                dismissFocusRequester = alertDismissFocus,
+        if (contentReady) {
+            uiState.serviceToastMessage?.let { message ->
+                ServiceToast(
+                    message = message,
+                    type = uiState.serviceToastType,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 36.dp, bottom = 36.dp),
+                )
+            }
+
+            activeAlert?.let { alert ->
+                LaunchedEffect(alert.id, alert.durationMs) {
+                    if (alert.durationMs > 0L) {
+                        delay(alert.durationMs)
+                        viewModel.dismissPopup()
+                    }
+                }
+
+                BroadcastAlertOverlay(
+                    title = alert.title,
+                    message = alert.message,
+                    onDismiss = viewModel::dismissPopup,
+                    modifier = Modifier.fillMaxSize(),
+                    dismissFocusRequester = alertDismissFocus,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Full-screen boot / resume gate — compact local logo + welcome + spinner.
+ * Matches splash so the handoff into home does not flash a different mark.
+ */
+@Composable
+private fun HomeBootLoading(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .background(NavyDeep)
+            .clip(RectangleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Image(
+                painter = painterResource(BrandAssets.logoRes),
+                contentDescription = stringResource(R.string.splash_logo_content_description),
+                modifier = Modifier.size(90.dp),
+                contentScale = ContentScale.Fit,
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = stringResource(R.string.splash_welcome_loading),
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = SerifDisplay,
+                color = TextPrimary,
+                textAlign = TextAlign.Center,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 48.dp),
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            AndroidView(
+                factory = { context ->
+                    android.widget.ProgressBar(context).apply {
+                        isIndeterminate = true
+                    }
+                },
+                modifier = Modifier.size(48.dp),
             )
         }
     }
@@ -354,7 +425,6 @@ private fun HomeForegroundContent(
         WelcomeBanner(
             guestName = guestName,
             salutation = salutation,
-            roomNumber = roomNumber,
             welcomeMessage = welcomeMessage,
         )
 
@@ -390,7 +460,10 @@ private fun HomeHeader(
     onOpenAdmin: () -> Unit,
     onAlerts: () -> Unit,
 ) {
-    val displayName = hotelName.ifBlank { stringResource(R.string.brand_name) }
+    val displayName = hotelName.trim().ifBlank {
+        // Only after loading — blank name stays blank rather than flashing "YOUR HOTEL".
+        ""
+    }
     val displayTagline = tagline.trim()
     val isCorporate = BuildConfig.IS_CORPORATE
 
@@ -412,16 +485,18 @@ private fun HomeHeader(
                     .weight(1f)
                     .padding(start = 4.dp),
             ) {
-                Text(
-                    text = displayName.uppercase(),
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = SerifDisplay,
-                    color = TextPrimary,
-                    letterSpacing = 2.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (displayName.isNotBlank()) {
+                    Text(
+                        text = displayName.uppercase(),
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = SerifDisplay,
+                        color = TextPrimary,
+                        letterSpacing = 2.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 if (displayTagline.isNotBlank()) {
                     Text(
                         text = displayTagline,
@@ -485,18 +560,24 @@ private fun HomeHeader(
 
 @Composable
 private fun BrandLogo(hotelLogoUrl: String) {
-    // Coil loads Hotels/{id}.logoUrl / branding.logoUrl; local ic_logo only when empty/error.
+    // Corporate: always local lt_logo (no network swap). Hotel: Coil + local fallback.
     val context = LocalContext.current
-    val localLogo = painterResource(R.drawable.ic_logo)
-    val remoteUrl = normalizeRemoteImageUrl(hotelLogoUrl)
+    val localLogo = painterResource(BrandAssets.logoRes)
+    val remoteUrl = if (BuildConfig.IS_CORPORATE) {
+        null
+    } else {
+        normalizeRemoteImageUrl(hotelLogoUrl)
+    }
 
     LaunchedEffect(remoteUrl) {
         Log.i(
             "BrandLogo",
-            if (remoteUrl != null) {
+            if (BuildConfig.IS_CORPORATE) {
+                "Corporate — using local BrandAssets.logoRes (lt_logo)"
+            } else if (remoteUrl != null) {
                 "Loading hotel logo → ${remoteUrl.take(120)}"
             } else {
-                "No logoUrl from Firestore — showing local ic_logo fallback"
+                "No logoUrl from Firestore — showing flavor BrandAssets.logoRes"
             },
         )
     }
@@ -780,10 +861,14 @@ private fun GoldSeparatorLine() {
 private fun WelcomeBanner(
     guestName: String,
     salutation: String,
-    roomNumber: String,
     welcomeMessage: String,
 ) {
-    val subtitle = welcomeMessage.ifBlank { stringResource(R.string.welcome_subtitle) }
+    val subtitle = welcomeMessage.trim()
+    val welcomeShadow = Shadow(
+        color = Color.Black.copy(alpha = 0.7f),
+        offset = Offset(0f, 2f),
+        blurRadius = 10f,
+    )
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -794,8 +879,9 @@ private fun WelcomeBanner(
             fontSize = 16.sp,
             fontWeight = FontWeight.Normal,
             fontFamily = SerifDisplay,
-            color = GoldPrimary,
+            color = Color.White,
             letterSpacing = 8.sp,
+            style = TextStyle(shadow = welcomeShadow),
         )
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -813,68 +899,30 @@ private fun WelcomeBanner(
                 fontSize = 38.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = SerifDisplay,
-                color = TextPrimary,
+                color = Color.White,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                style = TextStyle(shadow = welcomeShadow),
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        if (subtitle.isNotBlank()) {
+            Spacer(modifier = Modifier.height(20.dp))
 
-        RoomBadgeWithLines(roomNumber = roomNumber.ifBlank { "101" })
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        Text(
-            text = subtitle,
-            fontSize = 15.sp,
-            fontStyle = FontStyle.Italic,
-            fontFamily = SerifDisplay,
-            color = TextPrimary.copy(alpha = 0.82f),
-            textAlign = TextAlign.Center,
-            lineHeight = 24.sp,
-            modifier = Modifier.padding(horizontal = 48.dp),
-        )
+            Text(
+                text = subtitle,
+                fontSize = 15.sp,
+                fontStyle = FontStyle.Italic,
+                fontFamily = SerifDisplay,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                lineHeight = 24.sp,
+                style = TextStyle(shadow = welcomeShadow),
+                modifier = Modifier.padding(horizontal = 48.dp),
+            )
+        }
     }
-}
-
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-private fun RoomBadgeWithLines(roomNumber: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        GoldLine(modifier = Modifier.width(80.dp))
-        Spacer(modifier = Modifier.width(16.dp))
-        Text(
-            text = stringResource(R.string.room_badge, roomNumber),
-            fontSize = 14.sp,
-            fontFamily = SerifDisplay,
-            color = GoldLight,
-            letterSpacing = 1.sp,
-        )
-        Spacer(modifier = Modifier.width(16.dp))
-        GoldLine(modifier = Modifier.width(80.dp))
-    }
-}
-
-@Composable
-private fun GoldLine(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .height(1.dp)
-            .background(
-                Brush.horizontalGradient(
-                    colors = listOf(
-                        Color.Transparent,
-                        GoldPrimary.copy(alpha = 0.7f),
-                    ),
-                ),
-            ),
-    )
 }
 
 @Composable
@@ -894,33 +942,46 @@ private fun NavigationCardsRow(
     onAlerts: () -> Unit,
 ) {
     val isCorporate = BuildConfig.IS_CORPORATE
+    val cardHeight = if (isCorporate) 180.dp else 170.dp
+    val cardSpacing = if (isCorporate) 12.dp else 14.dp
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(170.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+            .height(if (isCorporate) 200.dp else 170.dp),
+        horizontalArrangement = Arrangement.spacedBy(
+            cardSpacing,
+            if (isCorporate) Alignment.CenterHorizontally else Alignment.Start,
+        ),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        fun cardMod(focus: FocusRequester): Modifier =
+            if (isCorporate) {
+                Modifier
+                    .width(160.dp)
+                    .height(cardHeight)
+                    .focusRequester(focus)
+            } else {
+                Modifier
+                    .weight(1f)
+                    .height(cardHeight)
+                    .focusRequester(focus)
+            }
+
         LuxuryNavCard(
             title = stringResource(R.string.feature_live_tv),
             subtitle = stringResource(R.string.feature_live_tv_subtitle),
-            iconRes = R.drawable.ic_nav_live_tv,
+            iconRes = NavCardIcons.liveTv,
             focusGlowColor = GoldLuxury,
-            modifier = Modifier
-                .weight(1f)
-                .height(170.dp)
-                .focusRequester(liveTvFocus),
+            modifier = cardMod(liveTvFocus),
             onClick = onLiveTv,
         )
         LuxuryNavCard(
             title = stringResource(R.string.feature_entertainment),
             subtitle = stringResource(R.string.feature_entertainment_subtitle),
-            iconRes = R.drawable.ic_nav_entertainment,
+            iconRes = NavCardIcons.entertainment,
             focusGlowColor = GoldLuxury,
-            modifier = Modifier
-                .weight(1f)
-                .height(170.dp)
-                .focusRequester(entertainmentFocus),
+            modifier = cardMod(entertainmentFocus),
             onClick = onEntertainment,
         )
         LuxuryNavCard(
@@ -934,35 +995,26 @@ private fun NavigationCardsRow(
             } else {
                 stringResource(R.string.feature_dining_subtitle)
             },
-            iconRes = R.drawable.ic_nav_dining,
+            iconRes = NavCardIcons.menu,
             focusGlowColor = GoldLuxury,
-            modifier = Modifier
-                .weight(1f)
-                .height(170.dp)
-                .focusRequester(diningFocus),
+            modifier = cardMod(diningFocus),
             onClick = onDining,
         )
         if (isCorporate) {
             LuxuryNavCard(
                 title = stringResource(R.string.feature_agenda),
                 subtitle = stringResource(R.string.feature_agenda_subtitle),
-                iconRes = R.drawable.ic_nav_agenda,
+                iconRes = NavCardIcons.agenda,
                 focusGlowColor = GoldLuxury,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(170.dp)
-                    .focusRequester(agendaFocus),
+                modifier = cardMod(agendaFocus),
                 onClick = onAgenda,
             )
             LuxuryNavCard(
                 title = stringResource(R.string.feature_emergency),
                 subtitle = stringResource(R.string.feature_emergency_subtitle),
-                iconRes = R.drawable.ic_nav_services,
+                iconRes = NavCardIcons.emergency,
                 focusGlowColor = GoldLuxury,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(170.dp)
-                    .focusRequester(servicesFocus),
+                modifier = cardMod(servicesFocus),
                 onClick = onServices,
             )
         } else {
@@ -971,10 +1023,7 @@ private fun NavigationCardsRow(
                 subtitle = stringResource(R.string.feature_services_subtitle),
                 iconRes = R.drawable.ic_nav_services,
                 focusGlowColor = GoldLuxury,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(170.dp)
-                    .focusRequester(servicesFocus),
+                modifier = cardMod(servicesFocus),
                 onClick = onServices,
             )
             LuxuryNavCard(
@@ -986,10 +1035,7 @@ private fun NavigationCardsRow(
                 },
                 iconRes = R.drawable.ic_nav_alerts,
                 focusGlowColor = GoldLuxury,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(170.dp)
-                    .focusRequester(alertsFocus),
+                modifier = cardMod(alertsFocus),
                 onClick = onAlerts,
             )
         }

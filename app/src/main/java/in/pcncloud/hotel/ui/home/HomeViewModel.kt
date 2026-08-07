@@ -23,6 +23,7 @@ data class HomeUiState(
     val rooms: List<RoomStatus> = emptyList(),
     val alerts: List<HotelAlert> = emptyList(),
     val activePopupAlert: HotelAlert? = null,
+    /** True until the first guest + branding + rooms snapshot arrives from Firestore. */
     val isLoading: Boolean = true,
     val serviceToastMessage: String? = null,
     val serviceToastType: ServiceToastType = ServiceToastType.STATUS,
@@ -30,6 +31,10 @@ data class HomeUiState(
     /** True when Hotels/{hotelId}.status is explicitly "inactive". */
     val isHotelInactive: Boolean
         get() = branding.status.equals("inactive", ignoreCase = true)
+
+    /** Home UI may render only after initial Firestore sync (avoids generic placeholder flash). */
+    val isContentReady: Boolean
+        get() = !isLoading
 }
 
 class HomeViewModel(
@@ -67,6 +72,8 @@ class HomeViewModel(
                     resetForNewSession(profile, branding, rooms)
                 } else {
                     trackedSessionKey = profile.sessionKey
+                    // First snapshot from all three listeners = content ready.
+                    // Keep isLoading true until then so Home never paints placeholders.
                     _uiState.update {
                         it.copy(
                             guestProfile = profile,

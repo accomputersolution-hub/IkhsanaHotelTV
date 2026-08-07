@@ -16,7 +16,6 @@
         android:paddingHorizontal="48dp"
         android:paddingVertical="32dp">
 
-        <!-- Optional legacy id; always hidden — splash is text + spinner only. -->
         <ImageView
             android:id="@+id/splash_logo"
             android:layout_width="90dp"

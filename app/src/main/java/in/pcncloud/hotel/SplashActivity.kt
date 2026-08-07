@@ -8,43 +8,41 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.widget.ImageView
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.isVisible
-import coil.load
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
+import `in`.pcncloud.hotel.ui.home.BrandAssets
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.MetadataChanges
 
 /**
- * Branded cold-start splash: loads Hotels/{paired_hotel_id} and shows
- * hotel logo + "Welcome to {name}" before opening [MainActivity].
- *
- * Unpaired devices briefly show a generic loader, then [PairingActivity].
- *
- * On first launch path, requests [Settings.ACTION_MANAGE_OVERLAY_PERMISSION]
- * (`SYSTEM_ALERT_WINDOW`) before pairing / dashboard initialization.
- *
- * Delayed navigation is cancelled in [onStop] so Home/minimize cannot be
- * overridden by a pending `startActivity` a few seconds later.
+ * Dedicated cold-start splash (3–4s minimum):
+ * - Compact local flavor logo ([BrandAssets] / `@drawable/lt_logo` on corporate)
+ * - Welcome tagline + circular progress
+ * - Waits for Hotels/{id} + Rooms/{room} snapshots (or timeout) before [MainActivity]
  */
 class SplashActivity : AppCompatActivity() {
 
     private lateinit var hotelConfig: HotelConfig
-    private lateinit var splashLogo: ImageView
+    private var splashLogo: ImageView? = null
     private lateinit var splashWelcome: TextView
     private lateinit var splashStatus: TextView
+    private lateinit var splashProgress: ProgressBar
 
     private var hotelListener: ListenerRegistration? = null
+    private var roomListener: ListenerRegistration? = null
     private var startedAtMs: Long = 0L
     private var hasNavigated = false
-    private var brandingApplied = false
+    private var brandingReady = false
+    private var roomReady = false
     private var mainTransitionScheduled = false
     private var unpairedFlow = false
 
@@ -57,10 +55,13 @@ class SplashActivity : AppCompatActivity() {
     private val proceedUnpaired = Runnable { openPairing() }
     private val proceedMain = Runnable { openMain() }
     private val forceProceedMain = Runnable {
-        if (!brandingApplied) {
-            Log.w(TAG, "Branding timeout — continuing to MainActivity")
-            splashStatus.text = getString(R.string.splash_status_ready)
-        }
+        Log.w(
+            TAG,
+            "Splash timeout — brandingReady=$brandingReady roomReady=$roomReady → MainActivity",
+        )
+        splashStatus.text = getString(R.string.splash_status_ready)
+        brandingReady = true
+        roomReady = true
         scheduleMain(minRemainingMs = 0L)
     }
 
@@ -77,19 +78,19 @@ class SplashActivity : AppCompatActivity() {
         splashLogo = findViewById(R.id.splash_logo)
         splashWelcome = findViewById(R.id.splash_welcome)
         splashStatus = findViewById(R.id.splash_status)
+        splashProgress = findViewById(R.id.splash_progress)
         startedAtMs = SystemClock.elapsedRealtime()
 
-        splashWelcome.text = getString(R.string.splash_welcome_generic)
-        splashLogo.setImageResource(R.drawable.ic_logo)
+        // Compact local mark only — never Coil / Firebase on splash.
+        splashLogo?.setImageResource(BrandAssets.logoRes)
+        splashLogo?.isVisible = true
+        splashWelcome.text = getString(R.string.splash_welcome_loading)
+        splashStatus.text = getString(R.string.splash_status_loading)
+        splashProgress.isVisible = true
 
         ensureOverlayPermissionThenInit()
     }
 
-    /**
-     * Gate: [Settings.canDrawOverlays] → if missing, open
-     * [Settings.ACTION_MANAGE_OVERLAY_PERMISSION] for this package and wait for
-     * [onActivityResult] before pairing / dashboard init.
-     */
     private fun ensureOverlayPermissionThenInit() {
         if (overlayGatePassed) {
             beginAppInitialization()
@@ -109,7 +110,6 @@ class SplashActivity : AppCompatActivity() {
     }
 
     private fun hasOverlayPermission(): Boolean {
-        // Pre-Marshmallow: overlay permission model does not apply.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
         return Settings.canDrawOverlays(this)
     }
@@ -144,7 +144,6 @@ class SplashActivity : AppCompatActivity() {
         if (requestCode != REQUEST_OVERLAY_PERMISSION) return
 
         awaitingOverlayResult = false
-        // OEMs often return RESULT_CANCELED even when the toggle was enabled — always re-check.
         Log.d(TAG, "Overlay settings returned resultCode=$resultCode")
 
         if (hasOverlayPermission()) {
@@ -158,16 +157,11 @@ class SplashActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Graceful denial: inform the user, optionally re-open settings once more on tap
-     * of status, then continue to pairing/dashboard so the TV is never stuck on splash.
-     */
     private fun handleOverlayDenied(canRetry: Boolean) {
         splashStatus.text = getString(R.string.splash_overlay_denied)
         Toast.makeText(this, R.string.splash_overlay_denied_toast, Toast.LENGTH_LONG).show()
 
         if (canRetry && !overlayGatePassed) {
-            // Brief pause so the user can read the message, then continue init anyway.
             splashRoot().postDelayed({
                 if (isFinishing || isDestroyed || overlayGatePassed) return@postDelayed
                 if (hasOverlayPermission()) {
@@ -185,7 +179,6 @@ class SplashActivity : AppCompatActivity() {
         }
     }
 
-    /** Pairing vs dashboard bootstrap — only after the overlay gate. */
     private fun beginAppInitialization() {
         if (hasNavigated) return
 
@@ -198,7 +191,6 @@ class SplashActivity : AppCompatActivity() {
             unpairedFlow = true
             splashWelcome.text = getString(R.string.splash_welcome_generic)
             splashStatus.text = getString(R.string.splash_status_pairing)
-            splashLogo.setImageResource(R.drawable.ic_logo)
             if (KioskPolicy.canActivityNavigate(lifecycle)) {
                 resumePendingNavigation()
             }
@@ -206,12 +198,17 @@ class SplashActivity : AppCompatActivity() {
         }
 
         val hotelId = hotelConfig.getHotelId()!!
-        Log.d(TAG, "Paired hotel_id=$hotelId room=${hotelConfig.getRoomNumberOrNull()} — listening Hotels/$hotelId")
+        val roomNumber = hotelConfig.getRoomNumberOrNull().orEmpty()
+        Log.d(TAG, "Paired hotel_id=$hotelId room=$roomNumber — prefetching config")
         unpairedFlow = false
         splashWelcome.text = getString(R.string.splash_welcome_loading)
         splashStatus.text = getString(R.string.splash_status_loading)
+
         if (hotelListener == null) {
             bindHotelBranding(hotelId)
+        }
+        if (roomListener == null) {
+            bindRoomConfig(hotelId, roomNumber)
         }
         if (KioskPolicy.canActivityNavigate(lifecycle)) {
             resumePendingNavigation()
@@ -226,7 +223,6 @@ class SplashActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
-        // Cancel delayed startActivity — this is the main "reopens after a few seconds" bug.
         clearCallbacks()
         mainTransitionScheduled = false
         if (!isChangingConfigurations && !isFinishing && !awaitingOverlayResult) {
@@ -243,12 +239,9 @@ class SplashActivity : AppCompatActivity() {
             splashRoot().postDelayed(proceedUnpaired, UNPAIRED_DELAY_MS)
             return
         }
-        // Paired: re-arm timeout + continue if branding already ready.
         splashRoot().removeCallbacks(forceProceedMain)
-        splashRoot().postDelayed(forceProceedMain, BRANDING_TIMEOUT_MS)
-        if (brandingApplied) {
-            scheduleMain()
-        }
+        splashRoot().postDelayed(forceProceedMain, DATA_TIMEOUT_MS)
+        tryScheduleMainWhenReady()
     }
 
     private fun splashRoot() = findViewById<android.view.View>(R.id.splash_root)
@@ -263,67 +256,80 @@ class SplashActivity : AppCompatActivity() {
 
                 if (error != null) {
                     Log.e(TAG, "Hotel branding listen failed for Hotels/$hotelId", error)
-                    splashStatus.text = getString(R.string.splash_status_ready)
-                    scheduleMain()
+                    brandingReady = true
+                    tryScheduleMainWhenReady()
                     return@addSnapshotListener
                 }
 
                 if (snapshot == null || !snapshot.exists()) {
-                    Log.w(TAG, "Hotels/$hotelId missing — continuing with defaults")
-                    splashWelcome.text = getString(R.string.splash_welcome_generic)
-                    splashStatus.text = getString(R.string.splash_status_ready)
-                    scheduleMain()
+                    Log.w(TAG, "Hotels/$hotelId missing — continuing with splash copy")
+                    brandingReady = true
+                    tryScheduleMainWhenReady()
                     return@addSnapshotListener
                 }
 
                 val data = snapshot.data ?: emptyMap()
-                @Suppress("UNCHECKED_CAST")
-                val branding = (data["branding"] as? Map<String, Any?>) ?: emptyMap()
-
                 val hotelName = firstNonBlank(
                     data["name"] as? String,
                     data["hotel_name"] as? String,
                     data["hotelName"] as? String,
-                ).ifBlank { getString(R.string.brand_name) }
-
-                val logoUrl = firstNonBlank(
-                    branding["logo_url"] as? String,
-                    branding["logoUrl"] as? String,
-                    data["logo_url"] as? String,
-                    data["logoUrl"] as? String,
                 )
 
-                brandingApplied = true
-                splashWelcome.text = getString(R.string.splash_welcome_to, hotelName)
-                splashStatus.text = getString(R.string.splash_status_ready)
-                loadLogo(logoUrl)
+                // Keep corporate welcome tagline stable; hotel may refine with name.
+                if (hotelName.isNotBlank() && !BuildConfig.IS_CORPORATE) {
+                    splashWelcome.text = getString(R.string.splash_welcome_to, hotelName)
+                } else if (splashWelcome.text.isNullOrBlank()) {
+                    splashWelcome.text = getString(R.string.splash_welcome_loading)
+                }
 
-                Log.i(TAG, "Splash branding ready → name=$hotelName logo=${logoUrl.take(64)}")
-                scheduleMain()
+                brandingReady = true
+                Log.i(TAG, "Splash hotel config ready → name=$hotelName")
+                tryScheduleMainWhenReady()
             }
     }
 
-    private fun loadLogo(logoUrl: String) {
-        if (logoUrl.isBlank()) {
-            splashLogo.setImageResource(R.drawable.ic_logo)
-            splashLogo.isVisible = true
+    private fun bindRoomConfig(hotelId: String, roomNumber: String) {
+        if (roomNumber.isBlank()) {
+            Log.w(TAG, "No room number — marking roomReady")
+            roomReady = true
+            tryScheduleMainWhenReady()
             return
         }
-        splashLogo.load(logoUrl) {
-            crossfade(true)
-            placeholder(R.drawable.ic_logo)
-            error(R.drawable.ic_logo)
-            listener(
-                onError = { _, result ->
-                    Log.w(TAG, "Logo load failed: ${result.throwable.message}")
-                },
-            )
-        }
+
+        roomListener?.remove()
+        roomListener = FirebaseFirestore.getInstance()
+            .collection(FirestorePaths.HOTELS)
+            .document(hotelId)
+            .collection(FirestorePaths.ROOMS)
+            .document(roomNumber)
+            .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
+                if (hasNavigated) return@addSnapshotListener
+
+                if (error != null) {
+                    Log.e(TAG, "Room listen failed for Rooms/$roomNumber", error)
+                    roomReady = true
+                    tryScheduleMainWhenReady()
+                    return@addSnapshotListener
+                }
+
+                roomReady = true
+                Log.i(
+                    TAG,
+                    "Splash room ready → exists=${snapshot?.exists()} room=$roomNumber",
+                )
+                tryScheduleMainWhenReady()
+            }
+    }
+
+    private fun tryScheduleMainWhenReady() {
+        if (!brandingReady || !roomReady) return
+        splashStatus.text = getString(R.string.splash_status_ready)
+        scheduleMain()
     }
 
     private fun scheduleMain(minRemainingMs: Long = MIN_DISPLAY_MS) {
         if (hasNavigated || mainTransitionScheduled || !overlayGatePassed) return
-        // Do not arm navigation while stopped — onStart will reschedule.
+        if (!brandingReady || !roomReady) return
         if (!KioskPolicy.canActivityNavigate(lifecycle)) {
             Log.d(TAG, "scheduleMain skipped — lifecycle=${lifecycle.currentState}")
             return
@@ -331,6 +337,7 @@ class SplashActivity : AppCompatActivity() {
         mainTransitionScheduled = true
         val elapsed = SystemClock.elapsedRealtime() - startedAtMs
         val delay = (minRemainingMs - elapsed).coerceAtLeast(0L)
+        Log.d(TAG, "scheduleMain in ${delay}ms (elapsed=${elapsed}ms min=$minRemainingMs)")
         splashRoot().removeCallbacks(proceedMain)
         splashRoot().removeCallbacks(forceProceedMain)
         splashRoot().postDelayed(proceedMain, delay)
@@ -367,26 +374,23 @@ class SplashActivity : AppCompatActivity() {
         clearCallbacks()
         hotelListener?.remove()
         hotelListener = null
+        roomListener?.remove()
+        roomListener = null
         releaseSplashSurfaces()
         startActivity(
             Intent(this, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             },
         )
-        // Avoid fade swap while Splash BufferQueue is being abandoned (EGL 12301).
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
         finish()
     }
 
-    /**
-     * Detach Coil / ImageView before [finish] so the GPU is not still dequeuing
-     * into an abandoned BufferQueue (EGL error 12301 on physical TVs).
-     */
     private fun releaseSplashSurfaces() {
         try {
-            splashLogo.animate().cancel()
-            splashLogo.setImageDrawable(null)
+            splashLogo?.animate()?.cancel()
+            splashLogo?.setImageDrawable(null)
             window.decorView.clearAnimation()
         } catch (e: Exception) {
             Log.w(TAG, "releaseSplashSurfaces failed", e)
@@ -403,6 +407,8 @@ class SplashActivity : AppCompatActivity() {
         clearCallbacks()
         hotelListener?.remove()
         hotelListener = null
+        roomListener?.remove()
+        roomListener = null
         super.onDestroy()
     }
 
@@ -413,8 +419,8 @@ class SplashActivity : AppCompatActivity() {
         private const val TAG = "SplashActivity"
         private const val REQUEST_OVERLAY_PERMISSION = 1001
         private const val UNPAIRED_DELAY_MS = 3_000L
-        private const val MIN_DISPLAY_MS = 2_000L
-        private const val BRANDING_TIMEOUT_MS = 8_000L
+        private const val MIN_DISPLAY_MS = 3_500L
+        private const val DATA_TIMEOUT_MS = 10_000L
         private const val OVERLAY_DENY_CONTINUE_MS = 2_500L
     }
 }

@@ -47,6 +47,7 @@ import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.data.model.HotelBranding
+import `in`.pcncloud.hotel.ui.home.BrandAssets
 import `in`.pcncloud.hotel.ui.theme.GoldLight
 import `in`.pcncloud.hotel.ui.theme.GoldPrimary
 import `in`.pcncloud.hotel.ui.theme.NavyDeep
@@ -305,7 +306,7 @@ private fun ScreensaverLogo(
     logoUrl: String,
     glow: Float,
 ) {
-    val localLogo = painterResource(R.drawable.ic_logo)
+    val localLogo = painterResource(BrandAssets.logoRes)
     val remoteUrl = logoUrl.trim().trim('"', '\'').trim().takeIf { it.isNotBlank() }
 
     Box(

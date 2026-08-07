@@ -1,6 +1,8 @@
 package `in`.pcncloud.hotel.ui.components
 
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -44,6 +47,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.annotation.DrawableRes
@@ -51,8 +55,6 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.ui.services.ServiceToastType
-import `in`.pcncloud.hotel.ui.theme.CorporateBlue
-import `in`.pcncloud.hotel.ui.theme.CorporateGlass
 import `in`.pcncloud.hotel.ui.theme.GoldGlassBorder
 import `in`.pcncloud.hotel.ui.theme.GoldGlassFill
 import `in`.pcncloud.hotel.ui.theme.GoldLight
@@ -62,6 +64,13 @@ import `in`.pcncloud.hotel.ui.theme.NavyDeep
 import `in`.pcncloud.hotel.ui.theme.SansBody
 import `in`.pcncloud.hotel.ui.theme.TextMuted
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
+
+private val CorpGold = Color(0xFFD4AF37)
+private val CorpGoldBright = Color(0xFFFFD700)
+private val CorpGoldBorderIdle = Color(0x66D4AF37)
+private val CorpCardBg = Color(0xFA111111)
+private val CorpCardBgBottom = Color(0xFF1A1A1A)
+private val CorpSubtitle = Color(0xFFCCCCCC)
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -131,6 +140,154 @@ fun LuxuryNavCard(
     @DrawableRes iconRes: Int,
     focusGlowColor: Color = GoldLuxury,
     modifier: Modifier = Modifier,
+    /** When false, draw the asset's original colors (for full-color PNGs). Corporate only. */
+    tintIcon: Boolean = !BuildConfig.IS_CORPORATE,
+    iconSize: Dp = if (BuildConfig.IS_CORPORATE) 56.dp else 52.dp,
+    onClick: () -> Unit,
+) {
+    if (BuildConfig.IS_CORPORATE) {
+        CorporateLuxuryNavCard(
+            title = title,
+            subtitle = subtitle,
+            iconRes = iconRes,
+            iconSize = iconSize,
+            modifier = modifier,
+            onClick = onClick,
+        )
+    } else {
+        HotelLuxuryNavCard(
+            title = title,
+            subtitle = subtitle,
+            iconRes = iconRes,
+            focusGlowColor = focusGlowColor,
+            modifier = modifier,
+            onClick = onClick,
+        )
+    }
+}
+
+/** Premium Black & Gold corporate tile — portrait TV card with D-pad focus pop. */
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun CorporateLuxuryNavCard(
+    title: String,
+    subtitle: String,
+    @DrawableRes iconRes: Int,
+    iconSize: Dp,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    val cardShape = RoundedCornerShape(16.dp)
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.05f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "corpNavCardScale",
+    )
+    val borderColor = if (isFocused) CorpGoldBright else CorpGoldBorderIdle
+    val borderWidth = if (isFocused) 3.dp else 1.dp
+    val glowElevation = if (isFocused) 24.dp else 4.dp
+
+    Box(
+        modifier = modifier
+            .shadow(
+                elevation = glowElevation,
+                shape = cardShape,
+                ambientColor = if (isFocused) {
+                    CorpGoldBright.copy(alpha = 0.7f)
+                } else {
+                    Color.Black.copy(alpha = 0.5f)
+                },
+                spotColor = if (isFocused) {
+                    CorpGoldBright.copy(alpha = 0.9f)
+                } else {
+                    Color.Black.copy(alpha = 0.4f)
+                },
+                clip = false,
+            )
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                clip = true
+                shape = cardShape
+            }
+            .background(
+                color = CorpCardBg,
+                shape = cardShape,
+            )
+            .border(width = borderWidth, color = borderColor, shape = cardShape)
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown &&
+                    (event.key == Key.Enter || event.key == Key.DirectionCenter)
+                ) {
+                    onClick()
+                    true
+                } else {
+                    false
+                }
+            }
+            .padding(horizontal = 12.dp, vertical = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            // Full-color 3D PNG — never tint.
+            Image(
+                painter = painterResource(iconRes),
+                contentDescription = title,
+                modifier = Modifier.size(iconSize),
+                contentScale = ContentScale.Fit,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = title.uppercase(),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.SansSerif,
+                color = CorpGold,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                softWrap = true,
+                lineHeight = 17.sp,
+                letterSpacing = 0.4.sp,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = subtitle,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Normal,
+                fontFamily = FontFamily.SansSerif,
+                color = CorpSubtitle,
+                textAlign = TextAlign.Center,
+                lineHeight = 14.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                softWrap = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+/** Original hotel / hospitality tile — unchanged for hotel flavor. */
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun HotelLuxuryNavCard(
+    title: String,
+    subtitle: String,
+    @DrawableRes iconRes: Int,
+    focusGlowColor: Color,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     var isFocused by remember { mutableStateOf(false) }
@@ -138,83 +295,51 @@ fun LuxuryNavCard(
     val scale by animateFloatAsState(
         targetValue = if (isFocused) 1.05f else 1f,
         animationSpec = tween(durationMillis = 150),
-        label = "navCardScale",
+        label = "hotelNavCardScale",
     )
-    val isCorporate = BuildConfig.IS_CORPORATE
-
-    val titleColor = when {
-        isCorporate && isFocused -> Color.White
-        isCorporate -> TextPrimary
-        isFocused -> GoldLight
-        else -> TextPrimary
-    }
+    val titleColor = if (isFocused) GoldLight else TextPrimary
     val subtitleColor = if (isFocused) TextPrimary.copy(alpha = 0.9f) else TextMuted
     val iconAlpha by animateFloatAsState(
         targetValue = if (isFocused) 1f else 0.92f,
         animationSpec = tween(durationMillis = 150),
-        label = "navCardIconAlpha",
+        label = "hotelNavCardIconAlpha",
     )
-    // Keep fill alpha identical when focused — only the border indicates focus.
-    // Raising opacity on focus paints a square dark slab on API 24 (clip+scale bug).
     val fillTop = NavyDeep.copy(alpha = 0.42f)
     val fillBottom = NavyDeep.copy(alpha = 0.32f)
-    val corporateBorderColor = when {
-        isFocused -> CorporateBlue
-        else -> Color.White.copy(alpha = 0.18f)
-    }
-    val titleFont = if (isCorporate) FontFamily.SansSerif else SansBody
-    val subtitleFont = if (isCorporate) FontFamily.SansSerif else SansBody
 
     Box(
         modifier = modifier
-            // Scale + clip in one graphicsLayer so rounded outline survives on API 24
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
                 clip = true
                 shape = cardShape
             }
-            .then(
-                if (isCorporate) {
-                    Modifier.background(CorporateGlass, cardShape)
-                } else {
-                    Modifier.background(
-                        brush = Brush.verticalGradient(listOf(fillTop, fillBottom)),
-                        shape = cardShape,
-                    )
-                },
+            .background(
+                brush = Brush.verticalGradient(listOf(fillTop, fillBottom)),
+                shape = cardShape,
             )
-            .then(
-                if (isCorporate) {
-                    Modifier.border(
-                        width = if (isFocused) 2.dp else 1.dp,
-                        color = corporateBorderColor,
-                        shape = cardShape,
+            .border(
+                width = if (isFocused) 3.dp else 1.dp,
+                brush = if (isFocused) {
+                    Brush.linearGradient(
+                        listOf(
+                            focusGlowColor,
+                            GoldLight,
+                            focusGlowColor.copy(alpha = 0.78f),
+                            GoldLight.copy(alpha = 0.95f),
+                            focusGlowColor,
+                        ),
                     )
                 } else {
-                    Modifier.border(
-                        width = if (isFocused) 3.dp else 1.dp,
-                        brush = if (isFocused) {
-                            Brush.linearGradient(
-                                listOf(
-                                    focusGlowColor,
-                                    GoldLight,
-                                    focusGlowColor.copy(alpha = 0.78f),
-                                    GoldLight.copy(alpha = 0.95f),
-                                    focusGlowColor,
-                                ),
-                            )
-                        } else {
-                            Brush.linearGradient(
-                                listOf(
-                                    Color.White.copy(alpha = 0.25f),
-                                    Color.White.copy(alpha = 0.12f),
-                                ),
-                            )
-                        },
-                        shape = cardShape,
+                    Brush.linearGradient(
+                        listOf(
+                            Color.White.copy(alpha = 0.25f),
+                            Color.White.copy(alpha = 0.12f),
+                        ),
                     )
                 },
+                shape = cardShape,
             )
             .onFocusChanged { isFocused = it.isFocused }
             .focusable()
@@ -236,25 +361,14 @@ fun LuxuryNavCard(
             verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
             modifier = Modifier.fillMaxSize(),
         ) {
-            if (isCorporate) {
-                CorporateNavIcon(
-                    iconRes = iconRes,
-                    contentDescription = title,
-                    focused = isFocused,
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .graphicsLayer { alpha = iconAlpha },
-                )
-            } else {
-                LuxuryIconBadge(
-                    iconRes = iconRes,
-                    contentDescription = title,
-                    focused = isFocused,
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .graphicsLayer { alpha = iconAlpha },
-                )
-            }
+            LuxuryIconBadge(
+                iconRes = iconRes,
+                contentDescription = title,
+                focused = isFocused,
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .graphicsLayer { alpha = iconAlpha },
+            )
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -264,7 +378,7 @@ fun LuxuryNavCard(
                     text = title,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    fontFamily = titleFont,
+                    fontFamily = SansBody,
                     color = titleColor,
                     textAlign = TextAlign.Center,
                     maxLines = 2,
@@ -275,7 +389,7 @@ fun LuxuryNavCard(
                 Text(
                     text = subtitle,
                     fontSize = 12.sp,
-                    fontFamily = subtitleFont,
+                    fontFamily = SansBody,
                     color = subtitleColor,
                     textAlign = TextAlign.Center,
                     lineHeight = 16.sp,
@@ -286,31 +400,6 @@ fun LuxuryNavCard(
                 )
             }
         }
-    }
-}
-
-/** Clean icon without decorative ring — corporate / L&T dashboard cards. */
-@Composable
-private fun CorporateNavIcon(
-    @DrawableRes iconRes: Int,
-    contentDescription: String,
-    focused: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier.size(52.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Image(
-            painter = painterResource(iconRes),
-            contentDescription = contentDescription,
-            modifier = Modifier.size(30.dp),
-            contentScale = ContentScale.Fit,
-            colorFilter = ColorFilter.tint(
-                if (focused) Color.White else Color.White.copy(alpha = 0.88f),
-                BlendMode.SrcIn,
-            ),
-        )
     }
 }
 

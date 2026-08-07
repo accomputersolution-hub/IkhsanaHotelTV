@@ -16,6 +16,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
+import `in`.pcncloud.hotel.ui.home.BrandAssets
 
 /**
  * Foreground keep-alive for optional hotel kiosk / overlay scenarios.
@@ -144,7 +145,7 @@ class KioskWatchdogService : Service() {
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.kiosk_notification_title))
             .setContentText(getString(R.string.kiosk_notification_text))
-            .setSmallIcon(R.drawable.ic_logo)
+            .setSmallIcon(BrandAssets.logoRes)
             .setContentIntent(contentIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
