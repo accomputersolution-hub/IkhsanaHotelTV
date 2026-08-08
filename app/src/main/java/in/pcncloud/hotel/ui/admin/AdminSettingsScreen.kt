@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -26,6 +27,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -50,7 +52,6 @@ import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
-import `in`.pcncloud.hotel.admin.AdminSession
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.kiosk.BlockedKeysManager
 import `in`.pcncloud.hotel.kiosk.HotelSessionManager
@@ -76,38 +77,46 @@ private const val PIN_LENGTH = 4
  * Staff Admin Mode: Master PIN gate + settings panel.
  * Auto-dismisses after [ADMIN_IDLE_TIMEOUT_MS] with no remote key activity,
  * clears [AdminSession], and returns to the guest home screen via [onExitToHome].
+ *
+ * [sessionEpoch] must change on every open so an Activity-scoped ViewModel cannot
+ * reuse a previous PIN / authenticated flag across Dining / Agenda / Emergency.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun AdminSettingsScreen(
     onExitToHome: () -> Unit,
+    sessionEpoch: Int = 0,
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
     val hotelConfig = remember { HotelConfig(context.applicationContext) }
+    val authVm: AdminAuthViewModel = viewModel(key = "staff-admin-$sessionEpoch")
 
-    var pinDigits by remember { mutableStateOf("") }
-    var pinError by remember { mutableStateOf(false) }
-    var authenticated by remember { mutableStateOf(false) }
-    var showKeyBlocker by remember { mutableStateOf(false) }
     var kioskEnabled by remember {
         mutableStateOf(KioskPolicy.isKioskModeEnabled(context))
     }
     var lastInteractionAt by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-    LaunchedEffect(Unit) {
-        // Always start locked; wipe any prior in-memory session.
-        AdminSession.clear()
+    val pinDigits = authVm.pinDigits
+    val pinError = authVm.pinError
+    val authenticated = authVm.isAuthenticated
+    val showKeyBlocker = authVm.showKeyBlocker
+
+    DisposableEffect(sessionEpoch) {
+        // Always start locked when Staff Settings is shown.
+        authVm.resetSession()
+        onDispose {
+            BlockedKeysManager.setLearnMode(context.applicationContext, false)
+            (activity as? MainActivity)?.nestedAdminBackHandler = null
+            authVm.resetSession()
+        }
     }
 
     fun exitAdmin(reason: String) {
         Log.i(TAG, "Exiting Admin Mode — $reason")
-        showKeyBlocker = false
+        authVm.resetSession()
         BlockedKeysManager.setLearnMode(context.applicationContext, false)
         (activity as? MainActivity)?.nestedAdminBackHandler = null
-        AdminSession.clear()
-        authenticated = false
-        pinDigits = ""
         onExitToHome()
     }
 
@@ -120,6 +129,12 @@ fun AdminSettingsScreen(
         lastInteractionAt = System.currentTimeMillis()
     }
 
+    // Physical Back on PIN / settings → full session wipe + Guest Home.
+    // Key Blocker keeps its own BackHandler (pop to settings only).
+    BackHandler(enabled = !showKeyBlocker) {
+        exitAdmin("back")
+    }
+
     // Key Blocker Back → Staff Settings only (never Guest Home / kiosk reclaim).
     DisposableEffect(showKeyBlocker, authenticated) {
         val main = activity as? MainActivity
@@ -127,7 +142,7 @@ fun AdminSettingsScreen(
             main?.nestedAdminBackHandler = {
                 onRemoteActivity()
                 BlockedKeysManager.setLearnMode(context.applicationContext, false)
-                showKeyBlocker = false
+                authVm.closeKeyBlocker()
                 true
             }
         } else {
@@ -140,15 +155,11 @@ fun AdminSettingsScreen(
 
     fun submitPin() {
         onRemoteActivity()
-        if (pinDigits == BuildConfig.DEFAULT_MASTER_PIN) {
-            AdminSession.unlock(pinDigits)
-            pinDigits = ""
-            pinError = false
-            authenticated = true
+        if (authVm.pinDigits == BuildConfig.DEFAULT_MASTER_PIN) {
+            authVm.markPinAccepted(authVm.pinDigits)
             Log.i(TAG, "Master PIN accepted — Admin Mode unlocked")
         } else {
-            pinError = true
-            pinDigits = ""
+            authVm.markPinIncorrect()
             Log.w(TAG, "Master PIN rejected")
         }
     }
@@ -214,21 +225,16 @@ fun AdminSettingsScreen(
                         pinError = pinError,
                         onDigit = { digit ->
                             onRemoteActivity()
-                            pinError = false
-                            if (pinDigits.length < PIN_LENGTH) {
-                                val next = pinDigits + digit
-                                pinDigits = next
-                                if (next.length == PIN_LENGTH) {
+                            if (authVm.pinDigits.length < PIN_LENGTH) {
+                                authVm.appendPinDigit(digit, PIN_LENGTH)
+                                if (authVm.pinDigits.length == PIN_LENGTH) {
                                     submitPin()
                                 }
                             }
                         },
                         onBackspace = {
                             onRemoteActivity()
-                            pinError = false
-                            if (pinDigits.isNotEmpty()) {
-                                pinDigits = pinDigits.dropLast(1)
-                            }
+                            authVm.backspacePin()
                         },
                         onCancel = { exitAdmin("cancel_pin") },
                     )
@@ -236,7 +242,7 @@ fun AdminSettingsScreen(
                     KeyBlockerScreen(
                         onBack = {
                             onRemoteActivity()
-                            showKeyBlocker = false
+                            authVm.closeKeyBlocker()
                         },
                         onRemoteActivity = { onRemoteActivity() },
                     )
@@ -312,17 +318,19 @@ fun AdminSettingsScreen(
                                     ?.applyKioskModeChangedLocally(false, "AdminSettings.exitTv")
                                 kioskEnabled = false
                             }
-                            AdminSession.clear()
+                            authVm.resetSession()
                             if (host != null) {
                                 KioskPolicy.launchSystemDefaultLauncher(host)
                             } else {
                                 KioskPolicy.launchSystemDefaultLauncher(context)
                             }
                             Log.i(TAG, "Technician exit → disableKioskMode + moveTaskToBack")
+                            exitAdmin("exit_android_tv")
                         },
                         onUnpair = {
                             onRemoteActivity()
                             Log.i(TAG, "Admin Unpair Room / Logout — wiping session → PairingActivity")
+                            authVm.resetSession()
                             val host = activity
                             if (host != null) {
                                 HotelSessionManager.performLogout(host, reason = "admin_pin_unpair")
@@ -334,7 +342,7 @@ fun AdminSettingsScreen(
                         },
                         onOpenKeyBlocker = {
                             onRemoteActivity()
-                            showKeyBlocker = true
+                            authVm.openKeyBlocker()
                         },
                         onClose = { exitAdmin("close") },
                     )

@@ -168,7 +168,11 @@
     <string name="admin_kiosk_synced_remote">Kiosk flag synced from Remote Config</string>
     <string name="admin_exit_android_tv">Exit to Android TV Launcher</string>
     <string name="admin_idle_hint">Admin Mode closes automatically after 3 minutes of inactivity</string>
-    <string name="admin_open_hint">Hold OK on Room badge for staff settings</string>
+    <string name="admin_open_hint">Press OK 5 times on the Room badge for staff settings</string>
+    <plurals name="staff_settings_clicks_remaining">
+        <item quantity="one">Press %d more time to open Staff Settings</item>
+        <item quantity="other">Press %d more times to open Staff Settings</item>
+    </plurals>
     <string name="device_admin_description">Hotel TV kiosk device admin for Lock Task Mode</string>
     <string name="home_key_interceptor_description">Silently blocks the TV remote HOME button under hotel kiosk so the stock launcher does not flash. Screen Pinning remains the fallback.</string>
     <string name="home_key_interceptor_label">Hotel TV Home Key Interceptor</string>

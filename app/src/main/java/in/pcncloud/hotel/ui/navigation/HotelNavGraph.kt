@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -17,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.LocalContext
 import `in`.pcncloud.hotel.MainActivity
+import `in`.pcncloud.hotel.admin.AdminSession
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.admin.AdminSettingsScreen
@@ -60,16 +62,35 @@ fun HotelNavGraph(
     val overlayRouteState = remember { mutableStateOf<String?>(null) }
     var overlayRoute by overlayRouteState
     val onGuestHome = overlayRoute == null
+    /** Bumped on every Staff Settings open/close so PIN/auth ViewModel cannot leak. */
+    var adminSessionEpoch by remember { mutableIntStateOf(0) }
+
+    fun clearStaffAdminSession(reason: String) {
+        AdminSession.clear()
+        adminSessionEpoch += 1
+        Log.d(TAG, "clearStaffAdminSession ($reason) epoch=$adminSessionEpoch")
+    }
 
     fun showOverlay(route: String) {
+        if (overlayRoute == Routes.ADMIN && route != Routes.ADMIN) {
+            clearStaffAdminSession("leave_admin_overlay")
+        }
         overlayRoute = route
         mainActivity?.setSubMenuVisible(true)
         KioskPolicy.setOnGuestHomeScreen(context, false)
         Log.d(TAG, "showOverlay → $route")
     }
 
+    fun openStaffSettings() {
+        clearStaffAdminSession("open_staff_settings")
+        showOverlay(Routes.ADMIN)
+    }
+
     /** Same action as the Top-Left Home / back control — instant reveal of retained Home. */
     fun navigateToHomeView() {
+        if (overlayRouteState.value == Routes.ADMIN) {
+            clearStaffAdminSession("navigate_home_from_admin")
+        }
         if (overlayRouteState.value == null) {
             mainActivity?.setSubMenuVisible(false)
             KioskPolicy.setOnGuestHomeScreen(context, true)
@@ -85,6 +106,10 @@ fun HotelNavGraph(
     // Mutate remembered MutableState so the callback never goes stale across recompositions.
     DisposableEffect(mainActivity) {
         mainActivity?.registerHomeViewNavigator {
+            if (overlayRouteState.value == Routes.ADMIN) {
+                AdminSession.clear()
+                adminSessionEpoch += 1
+            }
             if (overlayRouteState.value != null) {
                 Log.i(TAG, "navigateToHomeView (Activity) — hide overlay=${overlayRouteState.value}")
                 overlayRouteState.value = null
@@ -148,12 +173,13 @@ fun HotelNavGraph(
         ) {
             HomeScreen(
                 viewModelFactory = viewModelFactory,
+                isHomeVisible = onGuestHome,
                 onNavigateToDining = { showOverlay(Routes.DINING) },
                 onNavigateToAlerts = { showOverlay(Routes.ALERTS) },
                 onNavigateToServices = { showOverlay(Routes.SERVICES) },
                 onNavigateToAgenda = { showOverlay(Routes.AGENDA) },
                 onNavigateToEntertainment = { showOverlay(Routes.ENTERTAINMENT) },
-                onNavigateToAdmin = { showOverlay(Routes.ADMIN) },
+                onNavigateToAdmin = { openStaffSettings() },
             )
         }
 
@@ -163,7 +189,7 @@ fun HotelNavGraph(
                 DiningScreen(
                     viewModelFactory = viewModelFactory,
                     onBack = { navigateToHomeView() },
-                    onOpenAdmin = { showOverlay(Routes.ADMIN) },
+                    onOpenAdmin = { openStaffSettings() },
                 )
             }
             Routes.HOTEL_INFO -> {
@@ -175,7 +201,7 @@ fun HotelNavGraph(
                     HotelInfoScreen(
                         viewModelFactory = viewModelFactory,
                         onBack = { navigateToHomeView() },
-                        onOpenAdmin = { showOverlay(Routes.ADMIN) },
+                        onOpenAdmin = { openStaffSettings() },
                     )
                 }
             }
@@ -188,7 +214,7 @@ fun HotelNavGraph(
                     AlertsScreen(
                         viewModelFactory = viewModelFactory,
                         onBack = { navigateToHomeView() },
-                        onOpenAdmin = { showOverlay(Routes.ADMIN) },
+                        onOpenAdmin = { openStaffSettings() },
                     )
                 }
             }
@@ -209,7 +235,7 @@ fun HotelNavGraph(
                     ServicesScreen(
                         viewModelFactory = viewModelFactory,
                         onBack = { navigateToHomeView() },
-                        onOpenAdmin = { showOverlay(Routes.ADMIN) },
+                        onOpenAdmin = { openStaffSettings() },
                         departmentFilter = departmentFilter,
                     )
                 }
@@ -223,7 +249,7 @@ fun HotelNavGraph(
                     AgendaScreen(
                         viewModelFactory = viewModelFactory,
                         onBack = { navigateToHomeView() },
-                        onOpenAdmin = { showOverlay(Routes.ADMIN) },
+                        onOpenAdmin = { openStaffSettings() },
                     )
                 }
             }
@@ -239,7 +265,7 @@ fun HotelNavGraph(
                             KioskPolicy.clearOttLaunchState(context)
                             navigateToHomeView()
                         },
-                        onOpenAdmin = { showOverlay(Routes.ADMIN) },
+                        onOpenAdmin = { openStaffSettings() },
                     )
                 }
             }
@@ -251,6 +277,7 @@ fun HotelNavGraph(
                 ) {
                     AdminSettingsScreen(
                         onExitToHome = { navigateToHomeView() },
+                        sessionEpoch = adminSessionEpoch,
                     )
                 }
             }

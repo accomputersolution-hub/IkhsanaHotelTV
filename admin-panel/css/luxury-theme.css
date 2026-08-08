@@ -507,80 +507,158 @@ body {
 
 /* ── PMS stats & rooms ── */
 .pms-stat-card {
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(15, 23, 42, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-card);
   backdrop-filter: blur(12px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.pms-stat-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.pms-stat-icon {
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 0.7rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(201, 169, 98, 0.1);
+  border: 1px solid rgba(201, 169, 98, 0.24);
+  color: var(--gold);
+}
+
+.pms-stat-icon svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.pms-stat-label {
+  font-family: var(--font-sans);
 }
 
 .pms-stat-value {
   font-family: var(--font-sans);
-  font-size: 2.25rem; /* text-4xl */
+  font-size: 2.25rem;
   font-weight: 800;
   line-height: 1;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
 }
 
-.pms-stat-occupied {
-  border-color: rgba(251, 191, 36, 0.4);
-  box-shadow: inset 0 0 24px rgba(251, 191, 36, 0.08), 0 0 18px rgba(251, 191, 36, 0.08);
+.pms-stat-occupied,
+.pms-stat-vacant,
+.pms-stat-housekeeping {
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
-.pms-stat-occupied .pms-stat-value { color: #FCD34D; }
-
-.pms-stat-vacant {
-  border-color: rgba(52, 211, 153, 0.4);
-  box-shadow: inset 0 0 24px rgba(52, 211, 153, 0.08), 0 0 18px rgba(52, 211, 153, 0.08);
-}
-.pms-stat-vacant .pms-stat-value { color: #6EE7B7; }
+.pms-stat-occupied .pms-stat-value { color: var(--gold-light); }
+.pms-stat-vacant .pms-stat-value { color: #CBD5E1; }
+.pms-stat-housekeeping .pms-stat-value { color: #C4B59A; }
 
 .room-card-item {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: linear-gradient(180deg, rgba(20, 27, 42, 0.94) 0%, rgba(12, 16, 26, 0.97) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-card);
   backdrop-filter: blur(14px);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .room-card-item:hover {
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.32), 0 0 20px rgba(201, 169, 98, 0.08);
+  border-color: rgba(201, 169, 98, 0.28);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-.room-card-occupied {
-  border-left: 3px solid var(--amber);
-  box-shadow: inset 3px 0 18px rgba(251, 191, 36, 0.08);
-}
-
-.room-card-vacant {
-  border-left: 3px solid var(--emerald);
-  box-shadow: inset 3px 0 18px rgba(52, 211, 153, 0.08);
-}
-
+.room-card-occupied,
+.room-card-vacant,
 .room-card-housekeeping,
 .room-card-maintenance {
-  border-left: 3px solid var(--cyan);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .room-card-item .room-num {
   font-family: var(--font-display);
-  font-size: 1.35rem;
+  font-size: 1.55rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--gold-light);
+  letter-spacing: 0.02em;
+}
+
+.room-type-tag,
+.guest-name,
+.room-status-badge,
+.room-action-btn {
+  font-family: var(--font-sans);
 }
 
 .room-status-occupied {
-  background: rgba(251, 191, 36, 0.14);
-  color: #FCD34D;
-  border: 1px solid rgba(251, 191, 36, 0.4);
-  box-shadow: 0 0 12px var(--amber-glow);
+  background: rgba(201, 169, 98, 0.12);
+  color: #DCC89A;
+  border: 1px solid rgba(201, 169, 98, 0.32);
+  box-shadow: none;
 }
 
 .room-status-vacant {
-  background: rgba(52, 211, 153, 0.14);
-  color: #6EE7B7;
-  border: 1px solid rgba(52, 211, 153, 0.4);
-  box-shadow: 0 0 12px var(--emerald-glow);
+  background: rgba(148, 163, 184, 0.12);
+  color: #B8C2D0;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: none;
+}
+
+.room-status-housekeeping,
+.room-status-maintenance {
+  background: rgba(139, 115, 85, 0.16);
+  color: #C4B59A;
+  border: 1px solid rgba(139, 115, 85, 0.35);
+  box-shadow: none;
+}
+
+.room-action-btn {
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid rgba(201, 169, 98, 0.3);
+  color: var(--gold-light);
+  box-shadow: none;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.room-action-btn:hover {
+  background: rgba(201, 169, 98, 0.12);
+  border-color: rgba(201, 169, 98, 0.55);
+  color: #fff;
+  box-shadow: none;
+}
+
+.room-action-primary {
+  background: rgba(201, 169, 98, 0.08);
+  border-color: rgba(201, 169, 98, 0.4);
+  color: var(--gold-light);
+}
+
+.room-action-primary:hover {
+  background: rgba(201, 169, 98, 0.18);
+  box-shadow: none;
+}
+
+.room-action-danger {
+  background: transparent;
+  border-color: rgba(176, 148, 140, 0.38);
+  color: #D4C4BC;
+}
+
+.room-action-danger:hover {
+  background: rgba(120, 78, 70, 0.2);
+  border-color: rgba(196, 150, 140, 0.5);
+  color: #F3E8E4;
+  box-shadow: none;
 }
 
 .room-action-btn,

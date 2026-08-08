@@ -1,13 +1,12 @@
 package `in`.pcncloud.hotel.ui.components
 
+import android.os.SystemClock
 import android.util.Log
-import androidx.compose.foundation.ExperimentalFoundationApi
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -98,6 +98,8 @@ fun BaseScreen(
     onAlerts: () -> Unit = {},
     showAlertBell: Boolean = false,
     alertBellFocus: FocusRequester? = null,
+    roomBadgeFocus: FocusRequester? = null,
+    headerDownFocus: FocusRequester? = null,
     title: String? = null,
     subtitle: String? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -137,6 +139,8 @@ fun BaseScreen(
                 unreadAlerts = unreadAlerts,
                 showAlertBell = showAlertBell,
                 alertBellFocus = alertBellFocus,
+                roomBadgeFocus = roomBadgeFocus,
+                headerDownFocus = headerDownFocus,
                 onOpenAdmin = onOpenAdmin,
                 onAlerts = onAlerts,
             )
@@ -246,6 +250,8 @@ fun AppChromeHeader(
     unreadAlerts: Int = 0,
     showAlertBell: Boolean = false,
     alertBellFocus: FocusRequester? = null,
+    roomBadgeFocus: FocusRequester? = null,
+    headerDownFocus: FocusRequester? = null,
     onOpenAdmin: () -> Unit = {},
     onAlerts: () -> Unit = {},
 ) {
@@ -264,7 +270,8 @@ fun AppChromeHeader(
             horizontalArrangement = Arrangement.spacedBy(24.dp),
             modifier = Modifier
                 .weight(1f)
-                .padding(end = 16.dp),
+                .padding(end = 16.dp)
+                .focusProperties { canFocus = false },
         ) {
             BrandLogo(hotelLogoUrl = hotelLogoUrl)
             Column(
@@ -315,16 +322,23 @@ fun AppChromeHeader(
                             unreadCount = unreadAlerts,
                             focusRequester = bellFocus,
                             onClick = onAlerts,
+                            downFocus = headerDownFocus,
+                            leftFocus = headerDownFocus,
+                            rightFocus = roomBadgeFocus,
                         )
                     }
                     RoomBadge(
                         roomNumber = roomNumber.ifBlank { "101" },
                         onOpenAdmin = onOpenAdmin,
+                        focusRequester = roomBadgeFocus,
+                        downFocus = headerDownFocus,
+                        leftFocus = if (showAlertBell) bellFocus else null,
                     )
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier.focusProperties { canFocus = false },
                 ) {
                     WifiStatusIcon()
                     LiveClockWidget()
@@ -338,6 +352,8 @@ fun AppChromeHeader(
                 RoomBadge(
                     roomNumber = roomNumber.ifBlank { "101" },
                     onOpenAdmin = onOpenAdmin,
+                    focusRequester = roomBadgeFocus,
+                    downFocus = headerDownFocus,
                 )
                 WifiStatusIcon()
                 LiveClockWidget()
@@ -418,36 +434,72 @@ private fun BrandLogo(hotelLogoUrl: String) {
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class, ExperimentalFoundationApi::class)
+private const val STAFF_SETTINGS_EASTER_EGG_CLICKS = 5
+private const val STAFF_SETTINGS_EASTER_EGG_TIMEOUT_MS = 2_000L
+
+@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun RoomBadge(
     roomNumber: String,
     onOpenAdmin: () -> Unit,
+    focusRequester: FocusRequester? = null,
+    downFocus: FocusRequester? = null,
+    leftFocus: FocusRequester? = null,
 ) {
+    val context = LocalContext.current
+    val interactionSource = remember { MutableInteractionSource() }
     var focused by remember { mutableStateOf(false) }
-    var pressStartedAt by remember { mutableLongStateOf(0L) }
-    var selectKeyDown by remember { mutableStateOf(false) }
-    var adminOpenedForThisPress by remember { mutableStateOf(false) }
-    var downCount by remember { mutableIntStateOf(0) }
+    var clickCount by remember { mutableIntStateOf(0) }
+    var lastClickAt by remember { mutableLongStateOf(0L) }
 
-    fun openAdmin(source: String) {
-        Log.e("AdminUI", ">>> Room Badge LONG PRESSED via $source! <<<")
-        onOpenAdmin()
+    LaunchedEffect(clickCount, lastClickAt) {
+        if (clickCount <= 0) return@LaunchedEffect
+        delay(STAFF_SETTINGS_EASTER_EGG_TIMEOUT_MS)
+        if (SystemClock.elapsedRealtime() - lastClickAt >= STAFF_SETTINGS_EASTER_EGG_TIMEOUT_MS) {
+            clickCount = 0
+            lastClickAt = 0L
+        }
     }
 
-    LaunchedEffect(selectKeyDown, downCount) {
-        if (!selectKeyDown || adminOpenedForThisPress) return@LaunchedEffect
-        delay(2_000L)
-        if (selectKeyDown && !adminOpenedForThisPress) {
-            adminOpenedForThisPress = true
-            openAdmin("TV Remote")
+    fun registerStaffEasterEggClick() {
+        val now = SystemClock.elapsedRealtime()
+        // clickable + DPAD_CENTER can both deliver the same physical press.
+        if (lastClickAt > 0L && now - lastClickAt < 80L && clickCount > 0) return
+        val nextCount =
+            if (lastClickAt == 0L || now - lastClickAt > STAFF_SETTINGS_EASTER_EGG_TIMEOUT_MS) {
+                1
+            } else {
+                clickCount + 1
+            }
+        lastClickAt = now
+
+        if (nextCount >= STAFF_SETTINGS_EASTER_EGG_CLICKS) {
+            clickCount = 0
+            lastClickAt = 0L
+            Log.d("AdminUI", "Room badge 5-click easter egg — opening Staff Settings")
+            onOpenAdmin()
+            return
+        }
+
+        clickCount = nextCount
+        val remaining = STAFF_SETTINGS_EASTER_EGG_CLICKS - nextCount
+        if (nextCount >= 3) {
+            Toast.makeText(
+                context,
+                context.resources.getQuantityString(
+                    R.plurals.staff_settings_clicks_remaining,
+                    remaining,
+                    remaining,
+                ),
+                Toast.LENGTH_SHORT,
+            ).show()
         }
     }
 
     Box(
         modifier = Modifier
             .background(
-                if (focused) GoldPrimary.copy(alpha = 0.22f) else GoldPrimary.copy(alpha = 0.12f),
+                if (focused) GoldPrimary.copy(alpha = 0.28f) else GoldPrimary.copy(alpha = 0.12f),
                 RoundedCornerShape(10.dp),
             )
             .border(
@@ -455,49 +507,29 @@ private fun RoomBadge(
                 color = if (focused) GoldPrimary else GoldPrimary.copy(alpha = 0.45f),
                 RoundedCornerShape(10.dp),
             )
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .focusProperties {
+                if (downFocus != null) down = downFocus
+                if (leftFocus != null) left = leftFocus
+                up = FocusRequester.Cancel
+            }
             .onFocusChanged { focused = it.isFocused }
-            .focusable()
-            .combinedClickable(
-                onClick = {
-                    Log.d("AdminUI", "Room Badge short click (ignored) — hold for Admin")
-                },
-                onLongClick = {
-                    openAdmin("Mouse/Touch")
-                },
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = { registerStaffEasterEggClick() },
             )
             .onKeyEvent { event ->
-                val isSelect = event.key == Key.Enter || event.key == Key.DirectionCenter
+                val isSelect = event.key == Key.Enter ||
+                    event.key == Key.DirectionCenter ||
+                    event.key == Key.NumPadEnter
                 if (!isSelect) return@onKeyEvent false
-
                 when (event.type) {
-                    KeyEventType.KeyDown -> {
-                        if (!selectKeyDown) {
-                            selectKeyDown = true
-                            pressStartedAt = System.currentTimeMillis()
-                            adminOpenedForThisPress = false
-                            downCount += 1
-                            Log.d("AdminUI", "Room Badge OK/Enter DOWN (start long-press timer)")
-                        } else if (!adminOpenedForThisPress) {
-                            val held = System.currentTimeMillis() - pressStartedAt
-                            if (held >= 500L) {
-                                adminOpenedForThisPress = true
-                                openAdmin("TV Remote")
-                                return@onKeyEvent true
-                            }
-                        }
-                        adminOpenedForThisPress
-                    }
+                    KeyEventType.KeyDown -> true
                     KeyEventType.KeyUp -> {
-                        val held = System.currentTimeMillis() - pressStartedAt
-                        val opened = adminOpenedForThisPress
-                        selectKeyDown = false
-                        adminOpenedForThisPress = false
-                        if (!opened && pressStartedAt > 0L && held >= 2_000L) {
-                            openAdmin("TV Remote (hold)")
-                            true
-                        } else {
-                            opened
-                        }
+                        registerStaffEasterEggClick()
+                        true
                     }
                     else -> false
                 }
@@ -509,7 +541,7 @@ private fun RoomBadge(
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = SansBody,
-            color = GoldLight,
+            color = if (focused) GoldPrimary else GoldLight,
         )
     }
 }
@@ -571,6 +603,9 @@ private fun CorporateAlertBellButton(
     unreadCount: Int,
     focusRequester: FocusRequester,
     onClick: () -> Unit,
+    downFocus: FocusRequester? = null,
+    leftFocus: FocusRequester? = null,
+    rightFocus: FocusRequester? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
@@ -585,6 +620,12 @@ private fun CorporateAlertBellButton(
         modifier = Modifier
             .size(48.dp)
             .focusRequester(focusRequester)
+            .focusProperties {
+                if (downFocus != null) down = downFocus
+                if (leftFocus != null) left = leftFocus
+                if (rightFocus != null) right = rightFocus
+                up = FocusRequester.Cancel
+            }
             .onFocusChanged { focused = it.isFocused }
             .clickable(
                 interactionSource = interactionSource,

@@ -1,8 +1,6 @@
 /** Sidebar navigation, module switching, clock, search */
 
-import { createTestRequest } from './requests.js';
 import { onAnalyticsShown } from './analytics.js';
-import { toast } from './utils.js';
 import { navigateTo } from './router.js';
 import { isSuperAdmin } from './auth.js';
 import { isCorporateProperty, onHotelMetaChange } from './tenant-context.js';
@@ -155,24 +153,6 @@ function setupClock() {
 }
 
 function setupQuickActions() {
-  document.getElementById('sim-order-btn')?.addEventListener('click', () => {
-    showModule('kds');
-    document.getElementById('new-order-banner')?.classList.remove('hidden');
-    setTimeout(() => document.getElementById('new-order-banner')?.classList.add('hidden'), 4000);
-  });
-
-  document.getElementById('sim-request-btn')?.addEventListener('click', async () => {
-    const dept = activeModule === 'concierge' ? 'concierge' : 'housekeeping';
-    showModule(dept);
-    try {
-      await createTestRequest(dept);
-      toast(`Simulated ${dept} request created`);
-    } catch (err) {
-      toast('Failed to create test request', 'error');
-      console.error(err);
-    }
-  });
-
   document.getElementById('bell-test-btn')?.addEventListener('click', () => {
     showModule('kds');
   });

@@ -21,7 +21,7 @@ object AdminSession {
         unlocked = true
     }
 
-    /** Drop Master PIN + auth flag from memory (call on every admin exit path). */
+    /** Drop Master PIN + auth flag from memory (call on every admin enter/exit path). */
     fun clear() {
         masterPinInMemory = null
         unlocked = false
