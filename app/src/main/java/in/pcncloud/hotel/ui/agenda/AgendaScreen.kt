@@ -3,7 +3,6 @@ package `in`.pcncloud.hotel.ui.agenda
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +33,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -49,11 +49,10 @@ import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.data.model.AgendaItem
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
-import `in`.pcncloud.hotel.ui.components.LuxuryScreenBackground
-import `in`.pcncloud.hotel.ui.components.LuxuryScreenHeader
-import `in`.pcncloud.hotel.ui.components.luxuryBackHandler
-import `in`.pcncloud.hotel.ui.theme.CorporateBlue
-import `in`.pcncloud.hotel.ui.theme.CorporateGlass
+import `in`.pcncloud.hotel.ui.components.BaseScreen
+import `in`.pcncloud.hotel.ui.components.luxuryGoldFocusChrome
+import `in`.pcncloud.hotel.ui.theme.CorpGold
+import `in`.pcncloud.hotel.ui.theme.CorpGoldBright
 import `in`.pcncloud.hotel.ui.theme.TextMuted
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
 
@@ -65,6 +64,7 @@ import `in`.pcncloud.hotel.ui.theme.TextPrimary
 fun AgendaScreen(
     viewModelFactory: HotelViewModelFactory,
     onBack: () -> Unit,
+    onOpenAdmin: () -> Unit = {},
 ) {
     val viewModel: AgendaViewModel = viewModel(factory = viewModelFactory)
     val uiState by viewModel.uiState.collectAsState()
@@ -76,99 +76,75 @@ fun AgendaScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .luxuryBackHandler(onBack),
-    ) {
-        LuxuryScreenBackground(modifier = Modifier.fillMaxSize())
+    val subtitle = if (uiState.isLoading) {
+        stringResource(R.string.agenda_loading_subtitle)
+    } else {
+        stringResource(R.string.agenda_subtitle)
+    }
 
+    BaseScreen(
+        viewModelFactory = viewModelFactory,
+        onBack = onBack,
+        onOpenAdmin = onOpenAdmin,
+        title = stringResource(R.string.agenda_title),
+        subtitle = subtitle,
+    ) {
         when {
             uiState.isLoading -> {
-                Column(
+                Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 36.dp, vertical = 28.dp),
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    LuxuryScreenHeader(
-                        title = stringResource(R.string.agenda_title),
-                        subtitle = stringResource(R.string.agenda_loading_subtitle),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        contentAlignment = Alignment.Center,
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                        ) {
-                            AndroidView(
-                                factory = { context ->
-                                    android.widget.ProgressBar(context).apply {
-                                        isIndeterminate = true
-                                    }
-                                },
-                                modifier = Modifier.size(48.dp),
-                            )
-                            Text(
-                                text = stringResource(R.string.agenda_loading),
-                                fontSize = 18.sp,
-                                fontFamily = FontFamily.SansSerif,
-                                color = TextMuted,
-                            )
-                        }
+                        AndroidView(
+                            factory = { context ->
+                                android.widget.ProgressBar(context).apply {
+                                    isIndeterminate = true
+                                }
+                            },
+                            modifier = Modifier.size(48.dp),
+                        )
+                        Text(
+                            text = stringResource(R.string.agenda_loading),
+                            fontSize = 18.sp,
+                            fontFamily = FontFamily.SansSerif,
+                            color = TextMuted,
+                        )
                     }
                 }
             }
 
             uiState.items.isEmpty() -> {
-                Column(
+                Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 36.dp, vertical = 28.dp),
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    LuxuryScreenHeader(
-                        title = stringResource(R.string.agenda_title),
-                        subtitle = stringResource(R.string.agenda_subtitle),
+                    Text(
+                        text = stringResource(R.string.agenda_empty),
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = FontFamily.SansSerif,
+                        color = TextMuted,
+                        textAlign = TextAlign.Center,
                     )
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.agenda_empty),
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.SansSerif,
-                            color = TextMuted,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
                 }
             }
 
             else -> {
                 LazyColumn(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 36.dp, vertical = 28.dp),
+                        .weight(1f)
+                        .fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp),
+                    contentPadding = PaddingValues(top = 20.dp, bottom = 32.dp),
                 ) {
-                    item {
-                        Column {
-                            LuxuryScreenHeader(
-                                title = stringResource(R.string.agenda_title),
-                                subtitle = stringResource(R.string.agenda_subtitle),
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                        }
-                    }
-
                     itemsIndexed(
                         items = uiState.items,
                         key = { _, item -> item.id.ifBlank { "${item.time}_${item.title}" } },
@@ -201,7 +177,6 @@ private fun AgendaTimelineRow(
         label = "agendaRowScale",
     )
     val shape = RoundedCornerShape(16.dp)
-    val borderColor = if (focused) CorporateBlue else Color.White.copy(alpha = 0.16f)
 
     Row(
         modifier = modifier
@@ -209,15 +184,11 @@ private fun AgendaTimelineRow(
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
+                transformOrigin = TransformOrigin(0.5f, 0.12f)
             }
             .onFocusChanged { focused = it.isFocused }
             .focusable()
-            .background(CorporateGlass, shape)
-            .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = borderColor,
-                shape = shape,
-            )
+            .luxuryGoldFocusChrome(focused = focused, shape = shape)
             .padding(horizontal = 28.dp, vertical = 22.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(28.dp),
@@ -228,7 +199,7 @@ private fun AgendaTimelineRow(
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.SansSerif,
-            color = CorporateBlue,
+            color = if (focused) CorpGoldBright else CorpGold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             lineHeight = 28.sp,
@@ -239,7 +210,7 @@ private fun AgendaTimelineRow(
                 .width(3.dp)
                 .height(48.dp)
                 .background(
-                    if (focused) CorporateBlue else Color.White.copy(alpha = 0.2f),
+                    if (focused) CorpGoldBright else CorpGold.copy(alpha = 0.45f),
                     RoundedCornerShape(2.dp),
                 ),
         )

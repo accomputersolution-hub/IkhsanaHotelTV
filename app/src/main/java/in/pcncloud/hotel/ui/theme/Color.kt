@@ -24,6 +24,13 @@ val CorporateBlue = Color(0xFF0066B3)
 /** Simple frosted dark glass for corporate nav cards. */
 val CorporateGlass = Color(0xCC1A1A1A) // ~80% dark grey/black
 
+/** Home-screen Black & Gold palette — reuse on all sub-menus. */
+val CorpGold = Color(0xFFD4AF37)
+val CorpGoldBright = Color(0xFFFFD700)
+val CorpGoldBorderIdle = Color(0x66D4AF37)
+val CorpCardBg = Color(0xFA111111)
+val CorpSubtitle = Color(0xFFCCCCCC)
+
 val TextPrimary = Color(0xFFF1F5F9)
 val TextMuted = Color(0xFF94A3B8)
 val TextDim = Color(0xFF64748B)

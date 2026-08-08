@@ -16,8 +16,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -28,14 +30,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
-import `in`.pcncloud.hotel.ui.theme.GoldPrimary
+import `in`.pcncloud.hotel.ui.theme.CorpCardBg
+import `in`.pcncloud.hotel.ui.theme.CorpGold
+import `in`.pcncloud.hotel.ui.theme.CorpGoldBorderIdle
+import `in`.pcncloud.hotel.ui.theme.CorpGoldBright
+import `in`.pcncloud.hotel.ui.theme.CorpSubtitle
 import `in`.pcncloud.hotel.ui.theme.NavyDeep
 import `in`.pcncloud.hotel.ui.theme.NavyMain
-import `in`.pcncloud.hotel.ui.theme.NavySurface
 import `in`.pcncloud.hotel.ui.theme.SansBody
 import `in`.pcncloud.hotel.ui.theme.SerifDisplay
-import `in`.pcncloud.hotel.ui.theme.TextMuted
-import `in`.pcncloud.hotel.ui.theme.TextPrimary
 
 @Composable
 fun LuxuryScreenBackground(modifier: Modifier = Modifier) {
@@ -76,12 +79,43 @@ fun Modifier.luxuryBackHandler(onBack: () -> Unit): Modifier = onKeyEvent { even
     }
 }
 
+/**
+ * Same Black & Gold focus chrome as Home Screen [LuxuryNavCard]:
+ * idle gold hairline, focused bright gold glow + 3dp border.
+ */
+fun Modifier.luxuryGoldFocusChrome(
+    focused: Boolean,
+    shape: Shape = RoundedCornerShape(16.dp),
+): Modifier = this
+    .shadow(
+        elevation = if (focused) 24.dp else 4.dp,
+        shape = shape,
+        ambientColor = if (focused) {
+            CorpGoldBright.copy(alpha = 0.7f)
+        } else {
+            Color.Black.copy(alpha = 0.5f)
+        },
+        spotColor = if (focused) {
+            CorpGoldBright.copy(alpha = 0.9f)
+        } else {
+            Color.Black.copy(alpha = 0.4f)
+        },
+        clip = false,
+    )
+    .background(CorpCardBg, shape)
+    .border(
+        width = if (focused) 3.dp else 1.dp,
+        color = if (focused) CorpGoldBright else CorpGoldBorderIdle,
+        shape = shape,
+    )
+
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun LuxuryScreenHeader(
     title: String,
     subtitle: String? = null,
     modifier: Modifier = Modifier,
+    showSeparator: Boolean = true,
 ) {
     Column(modifier = modifier) {
         Text(
@@ -89,7 +123,7 @@ fun LuxuryScreenHeader(
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = SerifDisplay,
-            color = TextPrimary,
+            color = CorpGold,
             letterSpacing = 1.sp,
         )
         if (subtitle != null) {
@@ -98,11 +132,13 @@ fun LuxuryScreenHeader(
                 text = subtitle,
                 fontSize = 15.sp,
                 fontFamily = SansBody,
-                color = TextMuted,
+                color = CorpSubtitle,
             )
         }
-        Spacer(modifier = Modifier.height(16.dp))
-        GoldSeparatorLine()
+        if (showSeparator) {
+            Spacer(modifier = Modifier.height(16.dp))
+            GoldSeparatorLine()
+        }
     }
 }
 
@@ -120,11 +156,11 @@ fun GoldSeparatorLine() {
                     Brush.horizontalGradient(
                         colors = listOf(
                             Color.Transparent,
-                            GoldPrimary.copy(alpha = 0.15f),
-                            GoldPrimary.copy(alpha = 0.55f),
-                            GoldPrimary,
-                            GoldPrimary.copy(alpha = 0.55f),
-                            GoldPrimary.copy(alpha = 0.15f),
+                            CorpGold.copy(alpha = 0.15f),
+                            CorpGold.copy(alpha = 0.55f),
+                            CorpGold,
+                            CorpGold.copy(alpha = 0.55f),
+                            CorpGold.copy(alpha = 0.15f),
                             Color.Transparent,
                         ),
                     ),
@@ -134,7 +170,7 @@ fun GoldSeparatorLine() {
             modifier = Modifier
                 .size(8.dp)
                 .clip(CircleShape)
-                .background(GoldPrimary),
+                .background(CorpGold),
         )
     }
 }
@@ -147,15 +183,10 @@ fun LuxuryGlassPanel(
     Box(
         modifier = modifier
             .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        NavySurface.copy(alpha = 0.85f),
-                        NavyDeep.copy(alpha = 0.75f),
-                    ),
-                ),
+                CorpCardBg,
                 shape = RoundedCornerShape(16.dp),
             )
-            .border(1.dp, GoldPrimary.copy(alpha = 0.25f), RoundedCornerShape(16.dp))
+            .border(1.dp, CorpGoldBorderIdle, RoundedCornerShape(16.dp))
             .padding(20.dp),
     ) {
         content()

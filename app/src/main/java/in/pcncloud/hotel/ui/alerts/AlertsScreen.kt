@@ -1,14 +1,11 @@
 package `in`.pcncloud.hotel.ui.alerts
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,7 +20,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -34,12 +30,10 @@ import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.data.model.HotelAlert
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
-import `in`.pcncloud.hotel.ui.components.LuxuryScreenBackground
-import `in`.pcncloud.hotel.ui.components.LuxuryScreenHeader
-import `in`.pcncloud.hotel.ui.components.luxuryBackHandler
+import `in`.pcncloud.hotel.ui.components.BaseScreen
+import `in`.pcncloud.hotel.ui.components.luxuryGoldFocusChrome
 import `in`.pcncloud.hotel.ui.home.HomeViewModel
-import `in`.pcncloud.hotel.ui.theme.GoldPrimary
-import `in`.pcncloud.hotel.ui.theme.NavyDeep
+import `in`.pcncloud.hotel.ui.theme.CorpGold
 import `in`.pcncloud.hotel.ui.theme.SansBody
 import `in`.pcncloud.hotel.ui.theme.SerifDisplay
 import `in`.pcncloud.hotel.ui.theme.TextMuted
@@ -53,40 +47,33 @@ import java.util.Locale
 fun AlertsScreen(
     viewModelFactory: HotelViewModelFactory,
     onBack: () -> Unit,
+    onOpenAdmin: () -> Unit = {},
 ) {
     val viewModel: HomeViewModel = viewModel(factory = viewModelFactory)
     val uiState by viewModel.uiState.collectAsState()
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .luxuryBackHandler(onBack),
+    BaseScreen(
+        viewModelFactory = viewModelFactory,
+        onBack = onBack,
+        onOpenAdmin = onOpenAdmin,
+        title = stringResource(R.string.alerts_title),
     ) {
-        LuxuryScreenBackground(modifier = Modifier.fillMaxSize())
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(48.dp),
-        ) {
-            LuxuryScreenHeader(title = stringResource(R.string.alerts_title))
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            if (uiState.alerts.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.no_alerts),
-                    fontSize = 18.sp,
-                    fontFamily = SansBody,
-                    color = TextMuted,
-                )
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(uiState.alerts, key = { it.id }) { alert ->
-                        AlertRow(alert = alert)
-                    }
+        if (uiState.alerts.isEmpty()) {
+            Text(
+                text = stringResource(R.string.no_alerts),
+                fontSize = 18.sp,
+                fontFamily = SansBody,
+                color = TextMuted,
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(uiState.alerts, key = { it.id }) { alert ->
+                    AlertRow(alert = alert)
                 }
             }
         }
@@ -99,20 +86,13 @@ private fun AlertRow(alert: HotelAlert) {
     var focused by remember { mutableStateOf(false) }
     val dateFormat = remember { SimpleDateFormat("MMM dd, hh:mm a", Locale.getDefault()) }
 
+    val shape = RoundedCornerShape(12.dp)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .onFocusChanged { focused = it.isFocused }
             .focusable()
-            .background(
-                if (alert.read) NavyDeep.copy(alpha = 0.45f) else GoldPrimary.copy(alpha = 0.12f),
-                RoundedCornerShape(12.dp),
-            )
-            .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = if (focused) GoldPrimary else Color.White.copy(alpha = 0.1f),
-                shape = RoundedCornerShape(12.dp),
-            )
+            .luxuryGoldFocusChrome(focused = focused, shape = shape)
             .padding(20.dp),
     ) {
         Column {
@@ -144,7 +124,7 @@ private fun RowBetween(title: String, timestamp: String, isUnread: Boolean) {
             fontSize = 18.sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = SerifDisplay,
-            color = if (isUnread) GoldPrimary else TextPrimary,
+            color = if (isUnread) CorpGold else TextPrimary,
         )
         if (timestamp.isNotBlank()) {
             Text(

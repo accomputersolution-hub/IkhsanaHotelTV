@@ -55,6 +55,11 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.ui.services.ServiceToastType
+import `in`.pcncloud.hotel.ui.theme.CorpCardBg
+import `in`.pcncloud.hotel.ui.theme.CorpGold
+import `in`.pcncloud.hotel.ui.theme.CorpGoldBorderIdle
+import `in`.pcncloud.hotel.ui.theme.CorpGoldBright
+import `in`.pcncloud.hotel.ui.theme.CorpSubtitle
 import `in`.pcncloud.hotel.ui.theme.GoldGlassBorder
 import `in`.pcncloud.hotel.ui.theme.GoldGlassFill
 import `in`.pcncloud.hotel.ui.theme.GoldLight
@@ -64,13 +69,6 @@ import `in`.pcncloud.hotel.ui.theme.NavyDeep
 import `in`.pcncloud.hotel.ui.theme.SansBody
 import `in`.pcncloud.hotel.ui.theme.TextMuted
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
-
-private val CorpGold = Color(0xFFD4AF37)
-private val CorpGoldBright = Color(0xFFFFD700)
-private val CorpGoldBorderIdle = Color(0x66D4AF37)
-private val CorpCardBg = Color(0xFA111111)
-private val CorpCardBgBottom = Color(0xFF1A1A1A)
-private val CorpSubtitle = Color(0xFFCCCCCC)
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable

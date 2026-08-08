@@ -160,16 +160,11 @@ fun HotelNavGraph(
         // Sub-screens layered above Home — clearing overlayRoute reveals Home with 0ms inflate.
         when (overlayRoute) {
             Routes.DINING -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(NavyDeep),
-                ) {
-                    DiningScreen(
-                        viewModelFactory = viewModelFactory,
-                        onBack = { navigateToHomeView() },
-                    )
-                }
+                DiningScreen(
+                    viewModelFactory = viewModelFactory,
+                    onBack = { navigateToHomeView() },
+                    onOpenAdmin = { showOverlay(Routes.ADMIN) },
+                )
             }
             Routes.HOTEL_INFO -> {
                 Box(
@@ -180,6 +175,7 @@ fun HotelNavGraph(
                     HotelInfoScreen(
                         viewModelFactory = viewModelFactory,
                         onBack = { navigateToHomeView() },
+                        onOpenAdmin = { showOverlay(Routes.ADMIN) },
                     )
                 }
             }
@@ -192,6 +188,7 @@ fun HotelNavGraph(
                     AlertsScreen(
                         viewModelFactory = viewModelFactory,
                         onBack = { navigateToHomeView() },
+                        onOpenAdmin = { showOverlay(Routes.ADMIN) },
                     )
                 }
             }
@@ -212,6 +209,7 @@ fun HotelNavGraph(
                     ServicesScreen(
                         viewModelFactory = viewModelFactory,
                         onBack = { navigateToHomeView() },
+                        onOpenAdmin = { showOverlay(Routes.ADMIN) },
                         departmentFilter = departmentFilter,
                     )
                 }
@@ -225,6 +223,7 @@ fun HotelNavGraph(
                     AgendaScreen(
                         viewModelFactory = viewModelFactory,
                         onBack = { navigateToHomeView() },
+                        onOpenAdmin = { showOverlay(Routes.ADMIN) },
                     )
                 }
             }
@@ -235,10 +234,12 @@ fun HotelNavGraph(
                         .background(NavyDeep),
                 ) {
                     EntertainmentHubScreen(
+                        viewModelFactory = viewModelFactory,
                         onBack = {
                             KioskPolicy.clearOttLaunchState(context)
                             navigateToHomeView()
                         },
+                        onOpenAdmin = { showOverlay(Routes.ADMIN) },
                     )
                 }
             }

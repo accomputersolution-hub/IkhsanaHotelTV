@@ -5,10 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,17 +23,14 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
+import `in`.pcncloud.hotel.ui.components.BaseScreen
 import `in`.pcncloud.hotel.ui.components.LuxuryGlassPanel
-import `in`.pcncloud.hotel.ui.components.LuxuryScreenBackground
-import `in`.pcncloud.hotel.ui.components.LuxuryScreenHeader
-import `in`.pcncloud.hotel.ui.components.luxuryBackHandler
 import `in`.pcncloud.hotel.ui.home.HomeViewModel
-import `in`.pcncloud.hotel.ui.theme.GoldLight
-import `in`.pcncloud.hotel.ui.theme.GoldPrimary
-import `in`.pcncloud.hotel.ui.theme.NavyDeep
+import `in`.pcncloud.hotel.ui.theme.CorpCardBg
+import `in`.pcncloud.hotel.ui.theme.CorpGold
+import `in`.pcncloud.hotel.ui.theme.CorpGoldBorderIdle
 import `in`.pcncloud.hotel.ui.theme.SansBody
 import `in`.pcncloud.hotel.ui.theme.SerifDisplay
-import `in`.pcncloud.hotel.ui.theme.TextMuted
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -44,29 +38,25 @@ import `in`.pcncloud.hotel.ui.theme.TextPrimary
 fun HotelInfoScreen(
     viewModelFactory: HotelViewModelFactory,
     onBack: () -> Unit,
+    onOpenAdmin: () -> Unit = {},
 ) {
     val viewModel: HomeViewModel = viewModel(factory = viewModelFactory)
     val uiState by viewModel.uiState.collectAsState()
     val profile = uiState.guestProfile
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .luxuryBackHandler(onBack),
+    BaseScreen(
+        viewModelFactory = viewModelFactory,
+        onBack = onBack,
+        onOpenAdmin = onOpenAdmin,
+        title = stringResource(R.string.hotel_info_title),
     ) {
-        LuxuryScreenBackground(modifier = Modifier.fillMaxSize())
-
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(48.dp)
+                .weight(1f)
+                .fillMaxWidth()
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            LuxuryScreenHeader(title = stringResource(R.string.hotel_info_title))
-
-            Spacer(modifier = Modifier.height(4.dp))
-
             InfoCard(title = "Hotel", value = profile.hotelName.ifBlank { "Hotel" })
             InfoCard(title = "Guest", value = profile.guestName)
             InfoCard(title = "Room", value = profile.roomNumber)
@@ -77,8 +67,6 @@ fun HotelInfoScreen(
             if (profile.checkOutDate.isNotBlank()) {
                 InfoCard(title = "Check-Out", value = profile.checkOutDate)
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
 
             LuxuryGlassPanel(modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -107,8 +95,8 @@ private fun InfoCard(title: String, value: String) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(NavyDeep.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
-            .border(1.dp, GoldPrimary.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+            .background(CorpCardBg, RoundedCornerShape(12.dp))
+            .border(1.dp, CorpGoldBorderIdle, RoundedCornerShape(12.dp))
             .padding(horizontal = 20.dp, vertical = 14.dp),
     ) {
         Column {
@@ -116,7 +104,7 @@ private fun InfoCard(title: String, value: String) {
                 text = title,
                 fontSize = 13.sp,
                 fontFamily = SansBody,
-                color = GoldLight,
+                color = CorpGold,
             )
             Text(
                 text = value,

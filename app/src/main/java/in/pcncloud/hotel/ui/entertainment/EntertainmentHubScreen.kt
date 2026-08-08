@@ -9,8 +9,6 @@ import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,12 +32,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
@@ -64,12 +61,12 @@ import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.integration.AppLauncherUtils
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
-import `in`.pcncloud.hotel.ui.components.LuxuryScreenBackground
-import `in`.pcncloud.hotel.ui.components.LuxuryScreenHeader
-import `in`.pcncloud.hotel.ui.components.luxuryBackHandler
-import `in`.pcncloud.hotel.ui.theme.GoldLuxury
+import `in`.pcncloud.hotel.ui.HotelViewModelFactory
+import `in`.pcncloud.hotel.ui.components.BaseScreen
+import `in`.pcncloud.hotel.ui.components.luxuryGoldFocusChrome
+import `in`.pcncloud.hotel.ui.theme.CorpGold
+import `in`.pcncloud.hotel.ui.theme.CorpGoldBright
 import `in`.pcncloud.hotel.ui.theme.SansBody
-import `in`.pcncloud.hotel.ui.theme.TextPrimary
 import kotlinx.coroutines.delay
 
 data class EntertainmentApp(
@@ -134,7 +131,9 @@ fun entertainmentCatalog(): List<EntertainmentApp> = listOf(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun EntertainmentHubScreen(
+    viewModelFactory: HotelViewModelFactory,
     onBack: () -> Unit,
+    onOpenAdmin: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val apps = remember { entertainmentCatalog() }
@@ -153,31 +152,24 @@ fun EntertainmentHubScreen(
         runCatching { firstFocus.requestFocus() }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .luxuryBackHandler(onBack),
+    BaseScreen(
+        viewModelFactory = viewModelFactory,
+        onBack = onBack,
+        onOpenAdmin = onOpenAdmin,
+        title = stringResource(R.string.entertainment_title),
+        subtitle = stringResource(R.string.entertainment_subtitle),
     ) {
-        LuxuryScreenBackground(modifier = Modifier.fillMaxSize())
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 48.dp, vertical = 36.dp),
-        ) {
-            LuxuryScreenHeader(
-                title = stringResource(R.string.entertainment_title),
-                subtitle = stringResource(R.string.entertainment_subtitle),
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
             LazyVerticalGrid(
                 columns = GridCells.Fixed(4),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 24.dp),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(
+                    start = 12.dp,
+                    top = 28.dp,
+                    end = 12.dp,
+                    bottom = 32.dp,
+                ),
                 horizontalArrangement = Arrangement.spacedBy(18.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
+                verticalArrangement = Arrangement.spacedBy(22.dp),
             ) {
                 itemsIndexed(apps, key = { _, app -> app.id }) { index, app ->
                     EntertainmentAppTile(
@@ -236,7 +228,6 @@ fun EntertainmentHubScreen(
                     )
                 }
             }
-        }
     }
 }
 
@@ -254,39 +245,19 @@ private fun EntertainmentAppTile(
         animationSpec = tween(durationMillis = 160),
         label = "ottCardScale",
     )
-    val shape = RoundedCornerShape(18.dp)
-    val glassFill = Color(0x33000000)
-    val idleBorder = Color.White.copy(alpha = 0.15f)
-    val focusBorder = GoldLuxury // #D4AF37
+    val shape = RoundedCornerShape(16.dp)
     val installedGreen = Color(0xFF22C55E)
-    val secondaryText = Color.White.copy(alpha = 0.60f)
+    val secondaryText = Color.White.copy(alpha = 0.70f)
 
     Column(
         modifier = modifier
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
+                // Pivot near the top so focus scale grows down, not into the header.
+                transformOrigin = TransformOrigin(0.5f, 0.12f)
             }
-            .then(
-                if (focused) {
-                    Modifier.shadow(
-                        elevation = 20.dp,
-                        shape = shape,
-                        ambientColor = Color.Black.copy(alpha = 0.65f),
-                        spotColor = Color.Black.copy(alpha = 0.80f),
-                        clip = false,
-                    )
-                } else {
-                    Modifier
-                },
-            )
-            .clip(shape)
-            .background(glassFill, shape)
-            .border(
-                width = if (focused) 2.5.dp else 1.dp,
-                color = if (focused) focusBorder else idleBorder,
-                shape = shape,
-            )
+            .luxuryGoldFocusChrome(focused = focused, shape = shape)
             .onFocusChanged { focused = it.isFocused }
             .focusable()
             .onKeyEvent { event ->
@@ -317,7 +288,7 @@ private fun EntertainmentAppTile(
 
         Text(
             text = stringResource(app.labelRes),
-            color = TextPrimary,
+            color = if (focused) CorpGoldBright else CorpGold,
             fontFamily = SansBody,
             fontWeight = FontWeight.Bold,
             fontSize = 15.sp,

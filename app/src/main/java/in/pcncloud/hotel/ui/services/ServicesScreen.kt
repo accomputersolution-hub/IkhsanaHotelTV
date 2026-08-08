@@ -42,6 +42,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -65,12 +66,11 @@ import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.data.model.ServiceRequest
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
-import `in`.pcncloud.hotel.ui.components.LuxuryScreenBackground
-import `in`.pcncloud.hotel.ui.components.LuxuryScreenHeader
+import `in`.pcncloud.hotel.ui.components.BaseScreen
 import `in`.pcncloud.hotel.ui.components.ServiceToast
-import `in`.pcncloud.hotel.ui.components.luxuryBackHandler
-import `in`.pcncloud.hotel.ui.theme.CorporateBlue
-import `in`.pcncloud.hotel.ui.theme.CorporateGlass
+import `in`.pcncloud.hotel.ui.components.luxuryGoldFocusChrome
+import `in`.pcncloud.hotel.ui.theme.CorpGold
+import `in`.pcncloud.hotel.ui.theme.CorpGoldBright
 import `in`.pcncloud.hotel.ui.theme.FocusCyan
 import `in`.pcncloud.hotel.ui.theme.FocusTeal
 import `in`.pcncloud.hotel.ui.theme.GoldGlassBorder
@@ -95,6 +95,7 @@ private val CORPORATE_CONTACT_ICONS = listOf("💻", "☕", "📞", "🛠", "�
 fun ServicesScreen(
     viewModelFactory: HotelViewModelFactory,
     onBack: () -> Unit,
+    onOpenAdmin: () -> Unit = {},
     /** Hotel flavor: "housekeeping" | "concierge" | null (all). Ignored for corporate. */
     departmentFilter: String? = null,
 ) {
@@ -102,11 +103,13 @@ fun ServicesScreen(
         CorporateServicesScreen(
             viewModelFactory = viewModelFactory,
             onBack = onBack,
+            onOpenAdmin = onOpenAdmin,
         )
     } else {
         HotelServicesScreen(
             viewModelFactory = viewModelFactory,
             onBack = onBack,
+            onOpenAdmin = onOpenAdmin,
             departmentFilter = departmentFilter,
         )
     }
@@ -117,6 +120,7 @@ fun ServicesScreen(
 private fun CorporateServicesScreen(
     viewModelFactory: HotelViewModelFactory,
     onBack: () -> Unit,
+    onOpenAdmin: () -> Unit = {},
 ) {
     val viewModel: CorporateServicesViewModel = viewModel(factory = viewModelFactory)
     val uiState by viewModel.uiState.collectAsState()
@@ -128,78 +132,64 @@ private fun CorporateServicesScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .luxuryBackHandler(onBack),
-    ) {
-        LuxuryScreenBackground(modifier = Modifier.fillMaxSize())
+    val subtitle = if (uiState.isLoading) {
+        "Loading contacts…"
+    } else {
+        "Internal extensions for IT, pantry, and front desk"
+    }
 
+    BaseScreen(
+        viewModelFactory = viewModelFactory,
+        onBack = onBack,
+        onOpenAdmin = onOpenAdmin,
+        title = "Emergency Contacts & Helpdesk",
+        subtitle = subtitle,
+    ) {
         when {
             uiState.isLoading -> {
-                Column(
+                Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 36.dp, vertical = 28.dp),
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    LuxuryScreenHeader(
-                        title = "Emergency Contacts & Helpdesk",
-                        subtitle = "Loading contacts…",
-                    )
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        contentAlignment = Alignment.Center,
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                        ) {
-                            AndroidView(
-                                factory = { context ->
-                                    android.widget.ProgressBar(context).apply {
-                                        isIndeterminate = true
-                                    }
-                                },
-                                modifier = Modifier.size(48.dp),
-                            )
-                            Text(
-                                text = "Loading emergency contacts…",
-                                fontSize = 18.sp,
-                                fontFamily = FontFamily.SansSerif,
-                                color = TextMuted,
-                            )
-                        }
+                        AndroidView(
+                            factory = { context ->
+                                android.widget.ProgressBar(context).apply {
+                                    isIndeterminate = true
+                                }
+                            },
+                            modifier = Modifier.size(48.dp),
+                        )
+                        Text(
+                            text = "Loading emergency contacts…",
+                            fontSize = 18.sp,
+                            fontFamily = FontFamily.SansSerif,
+                            color = TextMuted,
+                        )
                     }
                 }
             }
 
             uiState.contacts.isEmpty() -> {
-                Column(
+                Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 36.dp, vertical = 28.dp),
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    LuxuryScreenHeader(
-                        title = "Emergency Contacts & Helpdesk",
-                        subtitle = "Internal extensions for IT, pantry, and front desk",
+                    Text(
+                        text = "No emergency contacts configured",
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = FontFamily.SansSerif,
+                        color = TextMuted,
+                        textAlign = TextAlign.Center,
                     )
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = "No emergency contacts configured",
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.SansSerif,
-                            color = TextMuted,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
                 }
             }
 
@@ -207,22 +197,17 @@ private fun CorporateServicesScreen(
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 36.dp, vertical = 28.dp),
+                        .weight(1f)
+                        .fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(18.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp),
+                    contentPadding = PaddingValues(
+                        start = 12.dp,
+                        top = 28.dp,
+                        end = 12.dp,
+                        bottom = 32.dp,
+                    ),
                 ) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        Column {
-                            LuxuryScreenHeader(
-                                title = "Emergency Contacts & Helpdesk",
-                                subtitle = "Internal extensions for IT, pantry, and front desk",
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                        }
-                    }
-
                     itemsIndexed(
                         items = uiState.contacts,
                         key = { _, contact -> contact.id.ifBlank { contact.title } },
@@ -259,7 +244,6 @@ private fun CorporateSupportCard(
         label = "corporateContactScale",
     )
     val shape = RoundedCornerShape(16.dp)
-    val borderColor = if (focused) CorporateBlue else Color.White.copy(alpha = 0.16f)
 
     Column(
         modifier = modifier
@@ -268,15 +252,11 @@ private fun CorporateSupportCard(
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
+                transformOrigin = TransformOrigin(0.5f, 0.12f)
             }
             .onFocusChanged { focused = it.isFocused }
             .focusable()
-            .background(CorporateGlass, shape)
-            .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = borderColor,
-                shape = shape,
-            )
+            .luxuryGoldFocusChrome(focused = focused, shape = shape)
             .padding(horizontal = 22.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -296,7 +276,7 @@ private fun CorporateSupportCard(
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.SansSerif,
-            color = if (focused) Color.White else TextPrimary,
+            color = if (focused) CorpGoldBright else CorpGold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             lineHeight = 24.sp,
@@ -308,7 +288,7 @@ private fun CorporateSupportCard(
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.SansSerif,
-            color = Color.White,
+            color = if (focused) CorpGoldBright else Color.White,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
@@ -323,6 +303,7 @@ private fun CorporateSupportCard(
 private fun HotelServicesScreen(
     viewModelFactory: HotelViewModelFactory,
     onBack: () -> Unit,
+    onOpenAdmin: () -> Unit = {},
     departmentFilter: String? = null,
 ) {
     val viewModel: ServicesViewModel = viewModel(factory = viewModelFactory)
@@ -353,32 +334,28 @@ private fun HotelServicesScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .luxuryBackHandler(onBack),
-    ) {
-        LuxuryScreenBackground(modifier = Modifier.fillMaxSize())
-
+    Box(modifier = Modifier.fillMaxSize()) {
+        BaseScreen(
+            viewModelFactory = viewModelFactory,
+            onBack = onBack,
+            onOpenAdmin = onOpenAdmin,
+            title = screenTitle,
+            subtitle = screenSubtitle,
+        ) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 36.dp, vertical = 28.dp),
+                .weight(1f)
+                .fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(18.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
-            contentPadding = PaddingValues(bottom = 24.dp),
+            contentPadding = PaddingValues(
+                start = 12.dp,
+                top = 28.dp,
+                end = 12.dp,
+                bottom = 32.dp,
+            ),
         ) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Column {
-                    LuxuryScreenHeader(
-                        title = screenTitle,
-                        subtitle = screenSubtitle,
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-            }
-
             itemsIndexed(
                 items = options,
                 key = { _, option -> option.serviceType },
@@ -416,6 +393,7 @@ private fun HotelServicesScreen(
                     ActiveRequestRow(request = request)
                 }
             }
+        }
         }
 
         uiState.toastMessage?.let { message ->
