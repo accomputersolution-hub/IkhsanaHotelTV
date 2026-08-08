@@ -496,8 +496,6 @@ body {
 }
 
 .pms-stat-card:hover,
-.room-card-item:hover,
-.menu-card:hover,
 .order-card:hover,
 .service-card:hover,
 .cleaning-room-card:hover,
@@ -567,23 +565,30 @@ body {
 
 .room-card-item {
   background: linear-gradient(180deg, rgba(20, 27, 42, 0.94) 0%, rgba(12, 16, 26, 0.97) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-card);
   backdrop-filter: blur(14px);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.room-card-item:hover {
-  border-color: rgba(201, 169, 98, 0.28);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+.room-card-item:hover,
+.room-card-item:focus-visible,
+.room-card-item:focus-within,
+.room-card-item:active {
+  transform: none;
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 0 0 1.5px #D4AF37;
 }
 
 .room-card-occupied,
 .room-card-vacant,
 .room-card-housekeeping,
 .room-card-maintenance {
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 1.5px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
@@ -784,7 +789,7 @@ body {
 /* ── Menu ── */
 .menu-card {
   background: rgba(15, 23, 42, 0.62);
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-card);
   backdrop-filter: blur(14px);
 }
@@ -1347,13 +1352,31 @@ body {
 }
 
 .order-card:hover,
-.menu-card:hover,
 .service-card:hover,
 .broadcast-row:hover,
 .analytics-kpi-card:hover,
 .analytics-widget:hover {
   border-color: rgba(201, 169, 98, 0.28);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.room-grid,
+.menu-card-grid {
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.menu-card:hover,
+.menu-card:focus-visible,
+.menu-card:focus-within,
+.menu-card:active {
+  transform: none;
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 0 1.5px #D4AF37;
 }
 
 .pms-badge {
