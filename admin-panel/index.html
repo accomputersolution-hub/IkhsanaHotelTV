@@ -532,7 +532,6 @@
       <div class="flex items-center justify-between mb-5">
         <div>
           <h3 class="text-lg font-bold">Bulk Menu Upload</h3>
-          <p class="text-xs mt-0.5 opacity-70">Import CSV / XLSX → Hotels/{hotelId}/Menu</p>
         </div>
         <button id="bulk-upload-close" type="button" class="modal-close-btn">&times;</button>
       </div>
@@ -615,7 +614,6 @@
       <div class="flex items-center justify-between mb-5">
         <div>
           <h3 id="check-in-modal-title" class="text-lg font-bold">Check-In Guest</h3>
-          <p class="text-xs mt-0.5 opacity-70">Guest details sync to TV greeting &amp; room services</p>
         </div>
         <button id="check-in-close" type="button" class="modal-close-btn">&times;</button>
       </div>
@@ -744,11 +742,11 @@
           <span class="nav-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><rect x="3.5" y="5" width="17" height="15" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 3.5v3M16 3.5v3M3.5 10h17" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span>
           <span class="nav-label">Daily Agenda</span>
         </button>
-        <button class="nav-item" data-module="concierge">
+        <button id="nav-concierge" class="nav-item" data-module="concierge">
           <span class="nav-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M3 13h18l-1.5 5H4.5L3 13z" stroke="currentColor" stroke-width="1.7"/><path d="M5 13 7 7h10l2 6M7 18.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM17 18.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" stroke="currentColor" stroke-width="1.7"/></svg></span>
           <span class="nav-label">Travel &amp; Concierge</span>
         </button>
-        <button class="nav-item" data-module="analytics">
+        <button id="nav-analytics" class="nav-item" data-module="analytics">
           <span class="nav-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M4 19h16M7 16V9M12 16V5M17 16v-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
           <span class="nav-label">Executive Analytics</span>
         </button>
@@ -878,7 +876,6 @@
             <div class="module-card-header">
               <div>
                 <h2 id="kds-page-title" class="text-base font-bold">Kitchen Display System</h2>
-                <p id="kds-page-subtitle" class="text-xs mt-0.5">Live_Orders · Bell on new order · real-time ticket board</p>
               </div>
               <div class="flex items-center gap-3">
                 <div class="filter-tabs">
@@ -904,7 +901,6 @@
             <div class="module-card-header">
               <div>
                 <h2 class="text-base font-bold">Digital Menu Configuration</h2>
-                <p class="text-xs mt-0.5">Live sync to guest TV · Hotels/{hotelId}/Menu</p>
               </div>
               <div class="flex items-center gap-2 flex-wrap">
                 <span id="menu-count" class="count-badge">0</span>
@@ -930,7 +926,6 @@
               <div class="module-card-header">
                 <div>
                   <h2 class="text-base font-bold">TV Mass Messaging</h2>
-                  <p class="text-xs mt-0.5">Compose overlays for guest TVs · Hotels/{hotelId}/Alerts</p>
                 </div>
                 <button id="clear-active-broadcast-btn" type="button" class="btn-gold btn-danger-outline">Clear Active Message</button>
               </div>
@@ -1007,7 +1002,6 @@
               <div class="module-card-header">
                 <div>
                   <h2 class="text-base font-bold">Sent Messages Log</h2>
-                  <p class="text-xs mt-0.5">Recent mass broadcasts · live delivery status</p>
                 </div>
                 <span id="broadcast-count" class="count-badge">0</span>
               </div>
@@ -1027,7 +1021,6 @@
             <div class="module-card-header">
               <div>
                 <h2 class="text-base font-bold">Housekeeping Queue</h2>
-                <p class="text-xs mt-0.5">Guest requests &amp; checked-out room turnover · live sync</p>
               </div>
               <span id="housekeeping-count" class="count-badge">0</span>
             </div>
@@ -1049,7 +1042,7 @@
                   </div>
                   <div class="pms-stat-card">
                     <span class="pms-stat-label">In Progress</span>
-                    <span id="hk-stat-progress" class="pms-stat-value" style="color:#93C5FD">0</span>
+                    <span id="hk-stat-progress" class="pms-stat-value">0</span>
                   </div>
                   <div class="pms-stat-card pms-stat-vacant">
                     <span class="pms-stat-label">Completed</span>
@@ -1070,7 +1063,7 @@
                   </div>
                   <div class="pms-stat-card">
                     <span class="pms-stat-label">Maintenance</span>
-                    <span id="hk-stat-maintenance" class="pms-stat-value" style="color:#FCD34D">0</span>
+                    <span id="hk-stat-maintenance" class="pms-stat-value">0</span>
                   </div>
                   <div class="pms-stat-card pms-stat-vacant">
                     <span class="pms-stat-label">Ready Today</span>
@@ -1089,10 +1082,6 @@
             <div class="module-card-header">
               <div>
                 <h2 class="text-base font-bold">Helpdesk Config</h2>
-                <p class="text-xs mt-0.5">
-                  Manage emergency contacts shown on TV ·
-                  <code>Hotels/{id}.emergency_contacts</code>
-                </p>
               </div>
               <span id="helpdesk-contact-count" class="count-badge">0</span>
             </div>
@@ -1142,10 +1131,6 @@
             <div class="module-card-header">
               <div>
                 <h2 class="text-base font-bold">Today’s Agenda</h2>
-                <p class="text-xs mt-0.5">
-                  Manage the daily schedule shown on TV ·
-                  <code>Hotels/{id}.daily_agenda</code>
-                </p>
               </div>
               <div class="agenda-header-actions">
                 <span id="agenda-item-count" class="count-badge">0</span>
@@ -1211,7 +1196,6 @@
             <div class="module-card-header">
               <div>
                 <h2 class="text-base font-bold">Travel &amp; Concierge</h2>
-                <p class="text-xs mt-0.5">Cab bookings, tours &amp; guest concierge · live sync</p>
               </div>
               <span id="concierge-count" class="count-badge">0</span>
             </div>
@@ -1223,7 +1207,7 @@
                 </div>
                 <div class="pms-stat-card">
                   <span class="pms-stat-label">In Progress</span>
-                  <span id="con-stat-progress" class="pms-stat-value" style="color:#93C5FD">0</span>
+                  <span id="con-stat-progress" class="pms-stat-value">0</span>
                 </div>
                 <div class="pms-stat-card pms-stat-vacant">
                   <span class="pms-stat-label">Completed</span>
@@ -1244,7 +1228,6 @@
             <div class="module-card-header">
               <div>
                 <h2 class="text-base font-bold">Executive Analytics</h2>
-                <p class="text-xs mt-0.5">Revenue, occupancy &amp; F&amp;B performance · live Firestore sync</p>
               </div>
               <span id="ana-last-updated" class="ana-live-badge">Live · syncing…</span>
             </div>

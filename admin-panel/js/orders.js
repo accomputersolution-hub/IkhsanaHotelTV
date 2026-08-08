@@ -106,18 +106,12 @@ function roomLabel(roomNumber) {
 function applyKdsChrome() {
   const corporate = isCorporateProperty();
   const titleEl = document.getElementById('kds-page-title');
-  const subtitleEl = document.getElementById('kds-page-subtitle');
   const moduleTitleEl = document.getElementById('module-title');
   const kdsView = document.querySelector('[data-module-view="kds"]');
   const kdsNav = document.querySelector('[data-module="kds"] .nav-label');
 
   if (titleEl) {
     titleEl.textContent = corporate ? 'Pantry Requests' : 'Kitchen Display System';
-  }
-  if (subtitleEl) {
-    subtitleEl.textContent = corporate
-      ? 'Live pantry tickets · Bell on new request · real-time board'
-      : 'Live_Orders · Bell on new order · real-time ticket board';
   }
   if (kdsNav) {
     kdsNav.textContent = corporate ? 'Pantry Requests' : 'Kitchen KDS';

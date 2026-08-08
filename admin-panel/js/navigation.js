@@ -46,9 +46,13 @@ export function initNavigation() {
   } catch (err) {
     console.error('[nav] agenda chrome failed', err);
   }
+  applyCorporateNavChrome();
 
   try {
     if (activeModule === 'agenda' && !isCorporateProperty()) {
+      activeModule = 'pms';
+    }
+    if (isCorporateProperty() && (activeModule === 'concierge' || activeModule === 'analytics')) {
       activeModule = 'pms';
     }
     showModule(activeModule);
@@ -73,8 +77,14 @@ export function initNavigation() {
     } catch (err) {
       console.error('[nav] agenda chrome failed', err);
     }
+    applyCorporateNavChrome();
     try {
       if (activeModule === 'agenda' && !isCorporateProperty()) {
+        showModule('pms');
+        navigateTo('/pms/pms');
+        return;
+      }
+      if (isCorporateProperty() && (activeModule === 'concierge' || activeModule === 'analytics')) {
         showModule('pms');
         navigateTo('/pms/pms');
         return;
@@ -103,8 +113,18 @@ function setupSidebarNav() {
   });
 }
 
+/** Corporate flavor: hide hotel-only sidebar items (Concierge + Analytics). */
+export function applyCorporateNavChrome() {
+  const corporate = isCorporateProperty();
+  document.getElementById('nav-concierge')?.classList.toggle('hidden', corporate);
+  document.getElementById('nav-analytics')?.classList.toggle('hidden', corporate);
+}
+
 export function showModule(id) {
   if (id === 'agenda' && !isCorporateProperty()) {
+    id = 'pms';
+  }
+  if (isCorporateProperty() && (id === 'concierge' || id === 'analytics')) {
     id = 'pms';
   }
   if (!MODULES[id]) return;
