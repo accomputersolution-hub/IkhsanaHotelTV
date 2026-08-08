@@ -119,14 +119,17 @@ function listenContacts() {
   contactsUnsub = onSnapshot(
     contactsCol(hotelId),
     (snapshot) => {
-      contacts = snapshot.docs
-        .map((d) => ({
-          id: d.id,
-          title: String(d.data()?.title || '').trim(),
-          extension: String(d.data()?.extension || '').trim(),
-        }))
-        .filter((c) => c.title || c.extension)
-        .sort((a, b) => a.title.localeCompare(b.title));
+      contacts = [];
+      if (snapshot && !snapshot.empty) {
+        contacts = snapshot.docs
+          .map((d) => ({
+            id: d.id,
+            title: String(d.data()?.title || '').trim(),
+            extension: String(d.data()?.extension || '').trim(),
+          }))
+          .filter((c) => c.title || c.extension)
+          .sort((a, b) => a.title.localeCompare(b.title));
+      }
       renderContacts();
     },
     (err) => {
@@ -142,12 +145,23 @@ async function migrateLegacyContacts(hotelId) {
   migratedHotels.add(hotelId);
 
   try {
-    const existing = await getDocs(contactsCol(hotelId));
-    if (!existing.empty) return;
+    const hotelRef = doc(db, 'Hotels', hotelId);
+    const hotelSnap = await getDoc(hotelRef);
+    if (hotelSnap.exists() && hotelSnap.data()?.emergency_contacts_migrated) return;
 
-    const hotelSnap = await getDoc(doc(db, 'Hotels', hotelId));
+    const existing = await getDocs(contactsCol(hotelId));
+    if (!existing.empty) {
+      await updateDoc(hotelRef, { emergency_contacts_migrated: true });
+      return;
+    }
+
     const raw = hotelSnap.exists() ? hotelSnap.data()?.emergency_contacts : null;
-    if (!Array.isArray(raw) || !raw.length) return;
+    if (!Array.isArray(raw) || !raw.length) {
+      if (hotelSnap.exists()) {
+        await updateDoc(hotelRef, { emergency_contacts_migrated: true });
+      }
+      return;
+    }
 
     const batch = writeBatch(db);
     raw.forEach((c, index) => {
@@ -162,6 +176,7 @@ async function migrateLegacyContacts(hotelId) {
         updatedAt: serverTimestamp(),
       });
     });
+    batch.update(hotelRef, { emergency_contacts_migrated: true });
     await batch.commit();
     logFirestoreWrite('Emergency Contacts Migrate', `Hotels/${hotelId}/Emergency_Contacts`, {
       count: raw.length,
@@ -274,6 +289,8 @@ async function deleteContact(id) {
   try {
     await deleteDoc(contactDoc(hotelId, id));
     logFirestoreWrite('Emergency Contact Delete', `Hotels/${hotelId}/Emergency_Contacts/${id}`, { id });
+    contacts = contacts.filter((c) => c.id !== id);
+    renderContacts();
     if (editingId === id) resetForm();
     toast('Contact deleted');
   } catch (err) {

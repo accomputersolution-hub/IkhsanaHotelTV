@@ -29,9 +29,9 @@ class AgendaViewModel(
         viewModelScope.launch {
             repository.observeDailyAgenda().collect { items ->
                 _uiState.update {
-                    AgendaUiState(
+                    it.copy(
                         isLoading = false,
-                        items = items,
+                        items = items, // always replace, including empty after last delete
                     )
                 }
             }

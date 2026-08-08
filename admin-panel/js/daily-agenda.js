@@ -95,14 +95,17 @@ function listenAgenda() {
   agendaUnsub = onSnapshot(
     agendaCol(hotelId),
     (snapshot) => {
-      agendaItems = snapshot.docs
-        .map((d) => ({
-          id: d.id,
-          time: String(d.data()?.time || '').trim(),
-          title: String(d.data()?.title || '').trim(),
-          location: String(d.data()?.location || '').trim(),
-        }))
-        .filter((item) => item.time || item.title || item.location);
+      agendaItems = [];
+      if (snapshot && !snapshot.empty) {
+        agendaItems = snapshot.docs
+          .map((d) => ({
+            id: d.id,
+            time: String(d.data()?.time || '').trim(),
+            title: String(d.data()?.title || '').trim(),
+            location: String(d.data()?.location || '').trim(),
+          }))
+          .filter((item) => item.time || item.title || item.location);
+      }
       renderAgenda();
     },
     (err) => {

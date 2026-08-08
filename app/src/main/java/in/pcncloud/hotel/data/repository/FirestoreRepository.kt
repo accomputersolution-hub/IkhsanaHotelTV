@@ -272,17 +272,19 @@ class FirestoreRepository(
 
     /**
      * Hotels/{hotelId}/Emergency_Contacts — live helpdesk list.
-     * Falls back to Hotels/{hotelId}.emergency_contacts[] until the admin migrates.
+     * Falls back to Hotels/{hotelId}.emergency_contacts[] only until the first
+     * subcollection snapshot arrives (including an empty list after last delete).
      */
     fun observeEmergencyContacts(): Flow<List<EmergencyContact>> = callbackFlow {
         val path = FirestorePaths.emergencyContactsCollection(hotelId)
         Log.d(TAG, "LISTEN Emergency Contacts → $path")
 
+        var subReady = false
         var subItems: List<EmergencyContact> = emptyList()
         var legacyItems: List<EmergencyContact> = emptyList()
 
         fun emitMerged() {
-            trySend(if (subItems.isNotEmpty()) subItems else legacyItems)
+            trySend(if (subReady) subItems else legacyItems)
         }
 
         val subReg = firestore
@@ -293,12 +295,17 @@ class FirestoreRepository(
                 if (error != null) {
                     Log.e(TAG, "FAIL Emergency Contacts listener at $path: ${error.message}", error)
                     subItems = emptyList()
+                    subReady = true
                     emitMerged()
                     return@addSnapshotListener
                 }
-                subItems = snapshot?.documents.orEmpty().mapNotNull { doc ->
-                    parseEmergencyContactMap(doc.id, doc.data)
+                subItems = emptyList()
+                if (snapshot != null && !snapshot.isEmpty) {
+                    subItems = snapshot.documents.mapNotNull { doc ->
+                        parseEmergencyContactMap(doc.id, doc.data)
+                    }
                 }
+                subReady = true
                 Log.d(TAG, "OK Emergency Contacts snapshot → ${subItems.size} at $path")
                 emitMerged()
             }
@@ -325,17 +332,19 @@ class FirestoreRepository(
 
     /**
      * Hotels/{hotelId}/Daily_Agenda — live corporate agenda.
-     * Falls back to Hotels/{hotelId}.daily_agenda[] until the admin migrates.
+     * Falls back to Hotels/{hotelId}.daily_agenda[] only until the first
+     * subcollection snapshot arrives (including an empty list after last delete).
      */
     fun observeDailyAgenda(): Flow<List<AgendaItem>> = callbackFlow {
         val path = FirestorePaths.dailyAgendaCollection(hotelId)
         Log.d(TAG, "LISTEN Daily Agenda → $path")
 
+        var subReady = false
         var subItems: List<AgendaItem> = emptyList()
         var legacyItems: List<AgendaItem> = emptyList()
 
         fun emitMerged() {
-            trySend(if (subItems.isNotEmpty()) subItems else legacyItems)
+            trySend(if (subReady) subItems else legacyItems)
         }
 
         val subReg = firestore
@@ -346,15 +355,20 @@ class FirestoreRepository(
                 if (error != null) {
                     Log.e(TAG, "FAIL Daily Agenda listener at $path: ${error.message}", error)
                     subItems = emptyList()
+                    subReady = true
                     emitMerged()
                     return@addSnapshotListener
                 }
-                subItems = snapshot?.documents.orEmpty()
-                    .mapNotNull { doc -> parseAgendaItemMap(doc.id, doc.data) }
-                    .sortedWith(
-                        compareBy<AgendaItem> { agendaTimeSortKey(it.time) }
-                            .thenBy { it.time },
-                    )
+                subItems = emptyList()
+                if (snapshot != null && !snapshot.isEmpty) {
+                    subItems = snapshot.documents
+                        .mapNotNull { doc -> parseAgendaItemMap(doc.id, doc.data) }
+                        .sortedWith(
+                            compareBy<AgendaItem> { agendaTimeSortKey(it.time) }
+                                .thenBy { it.time },
+                        )
+                }
+                subReady = true
                 Log.d(TAG, "OK Daily Agenda snapshot → ${subItems.size} at $path")
                 emitMerged()
             }

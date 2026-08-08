@@ -29,9 +29,9 @@ class CorporateServicesViewModel(
         viewModelScope.launch {
             repository.observeEmergencyContacts().collect { contacts ->
                 _uiState.update {
-                    CorporateServicesUiState(
+                    it.copy(
                         isLoading = false,
-                        contacts = contacts,
+                        contacts = contacts, // always replace, including empty after last delete
                     )
                 }
             }
