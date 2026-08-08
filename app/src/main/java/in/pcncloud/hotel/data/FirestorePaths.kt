@@ -17,6 +17,8 @@ object FirestorePaths {
     const val REQUESTS = "Requests"
     const val BROADCASTS = "Broadcasts"
     const val CONFIG = "Config"
+    const val EMERGENCY_CONTACTS = "Emergency_Contacts"
+    const val DAILY_AGENDA = "Daily_Agenda"
     const val LIVE_ORDERS = "Live_Orders"
 
     /** Trim, lowercase, hyphens → underscores (same rules as HotelConfig). */
@@ -45,6 +47,12 @@ object FirestorePaths {
 
     fun broadcastsCollection(hotelId: String): String =
         "$HOTELS/${normalizeHotelId(hotelId)}/$BROADCASTS"
+
+    fun emergencyContactsCollection(hotelId: String): String =
+        "$HOTELS/${normalizeHotelId(hotelId)}/$EMERGENCY_CONTACTS"
+
+    fun dailyAgendaCollection(hotelId: String): String =
+        "$HOTELS/${normalizeHotelId(hotelId)}/$DAILY_AGENDA"
 
     fun normalizeRoom(roomNumber: String): String =
         roomNumber.trim()

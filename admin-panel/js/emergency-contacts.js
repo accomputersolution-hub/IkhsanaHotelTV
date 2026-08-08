@@ -1,17 +1,26 @@
 /**
- * Corporate Helpdesk Config — CRUD for Hotels/{id}.emergency_contacts
+ * Corporate Helpdesk Config — CRUD for Hotels/{id}/Emergency_Contacts/{contactId}
  * Shown in place of Housekeeping Queue when property_type === 'corporate'.
+ *
+ * Each contact is its own Firestore document so tablet / desktop / TV stay in sync
+ * without overwriting the full list from a stale local cache.
  */
 
 import { db } from './firebase-config.js';
 import {
+  collection,
   doc,
-  onSnapshot,
+  addDoc,
   updateDoc,
+  deleteDoc,
+  getDoc,
+  getDocs,
+  onSnapshot,
   serverTimestamp,
+  writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 import { escapeHtml, toast } from './utils.js';
-import { logFirestoreWrite } from './paths.js';
+import { logFirestoreWrite, logFirestoreListen } from './paths.js';
 import {
   getHotelId,
   onHotelChange,
@@ -24,6 +33,10 @@ let contacts = [];
 /** @type {(() => void) | null} */
 let contactsUnsub = null;
 let editingId = null;
+/** @type {boolean | null} */
+let lastCorporateListen = null;
+/** @type {Set<string>} */
+const migratedHotels = new Set();
 
 const HK_ICON_HOTEL = `<svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M4 20h16M6 20V9l6-4 6 4v11" stroke="currentColor" stroke-width="1.7"/><path d="M9 13h6M9 16h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
 const HK_ICON_CORPORATE = `<svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M6.6 3.8h2.6l1.2 3.6-2 1.2a12.5 12.5 0 005.8 5.8l1.2-2 3.6 1.2v2.6A2.2 2.2 0 0117.6 19 14.8 14.8 0 015 6.4a2.2 2.2 0 011.6-2.6z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`;
@@ -39,6 +52,8 @@ export function initEmergencyContacts() {
   });
   onHotelMetaChange(() => {
     applyHelpdeskChrome();
+    const corporate = isCorporateProperty();
+    if (corporate !== lastCorporateListen) listenContacts();
   });
 }
 
@@ -75,6 +90,14 @@ export function applyHelpdeskChrome() {
   }
 }
 
+function contactsCol(hotelId) {
+  return collection(db, 'Hotels', hotelId, 'Emergency_Contacts');
+}
+
+function contactDoc(hotelId, id) {
+  return doc(db, 'Hotels', hotelId, 'Emergency_Contacts', id);
+}
+
 function listenContacts() {
   if (contactsUnsub) {
     contactsUnsub();
@@ -82,24 +105,28 @@ function listenContacts() {
   }
 
   const hotelId = getHotelId();
-  if (!hotelId || !isCorporateProperty()) {
+  const corporate = isCorporateProperty();
+  lastCorporateListen = corporate;
+  if (!hotelId || !corporate) {
     contacts = [];
     renderContacts();
     return;
   }
 
+  logFirestoreListen('Emergency Contacts', `Hotels/${hotelId}/Emergency_Contacts`);
+  migrateLegacyContacts(hotelId);
+
   contactsUnsub = onSnapshot(
-    doc(db, 'Hotels', hotelId),
-    (snap) => {
-      const data = snap.exists() ? snap.data() || {} : {};
-      const raw = Array.isArray(data.emergency_contacts) ? data.emergency_contacts : [];
-      contacts = raw
-        .map((c, index) => ({
-          id: String(c?.id || `contact_${index}`),
-          title: String(c?.title || '').trim(),
-          extension: String(c?.extension || '').trim(),
+    contactsCol(hotelId),
+    (snapshot) => {
+      contacts = snapshot.docs
+        .map((d) => ({
+          id: d.id,
+          title: String(d.data()?.title || '').trim(),
+          extension: String(d.data()?.extension || '').trim(),
         }))
-        .filter((c) => c.title || c.extension);
+        .filter((c) => c.title || c.extension)
+        .sort((a, b) => a.title.localeCompare(b.title));
       renderContacts();
     },
     (err) => {
@@ -107,6 +134,42 @@ function listenContacts() {
       toast('Could not load emergency contacts', 'error');
     },
   );
+}
+
+/** One-time copy of Hotels/{id}.emergency_contacts[] into the subcollection. */
+async function migrateLegacyContacts(hotelId) {
+  if (!hotelId || migratedHotels.has(hotelId)) return;
+  migratedHotels.add(hotelId);
+
+  try {
+    const existing = await getDocs(contactsCol(hotelId));
+    if (!existing.empty) return;
+
+    const hotelSnap = await getDoc(doc(db, 'Hotels', hotelId));
+    const raw = hotelSnap.exists() ? hotelSnap.data()?.emergency_contacts : null;
+    if (!Array.isArray(raw) || !raw.length) return;
+
+    const batch = writeBatch(db);
+    raw.forEach((c, index) => {
+      const title = String(c?.title || c?.name || '').trim();
+      const extension = String(c?.extension || c?.ext || '').trim();
+      if (!title && !extension) return;
+      const id = String(c?.id || `contact_${index}`).trim() || `contact_${index}`;
+      batch.set(contactDoc(hotelId, id), {
+        title,
+        extension,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    });
+    await batch.commit();
+    logFirestoreWrite('Emergency Contacts Migrate', `Hotels/${hotelId}/Emergency_Contacts`, {
+      count: raw.length,
+    });
+  } catch (err) {
+    migratedHotels.delete(hotelId);
+    console.warn('[helpdesk] legacy migrate skipped', err);
+  }
 }
 
 function setupForm() {
@@ -149,13 +212,6 @@ function startEdit(contact) {
   titleEl?.focus();
 }
 
-function newContactId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
 async function saveContact() {
   const hotelId = getHotelId();
   if (!hotelId) {
@@ -171,23 +227,31 @@ async function saveContact() {
   }
 
   const saveBtn = document.getElementById('helpdesk-save-btn');
+  const wasEditing = Boolean(editingId);
   if (saveBtn) {
     saveBtn.disabled = true;
-    saveBtn.textContent = editingId ? 'Saving…' : 'Adding…';
+    saveBtn.textContent = wasEditing ? 'Saving…' : 'Adding…';
   }
 
   try {
-    let next;
-    if (editingId) {
-      next = contacts.map((c) =>
-        c.id === editingId ? { id: c.id, title, extension } : c,
-      );
-    } else {
-      next = [...contacts, { id: newContactId(), title, extension }];
-    }
+    const payload = {
+      title,
+      extension,
+      updatedAt: serverTimestamp(),
+    };
 
-    await persistContacts(hotelId, next);
-    toast(editingId ? 'Contact updated' : 'Contact added');
+    if (wasEditing) {
+      await updateDoc(contactDoc(hotelId, editingId), payload);
+      logFirestoreWrite('Emergency Contact Update', `Hotels/${hotelId}/Emergency_Contacts/${editingId}`, payload);
+      toast('Contact updated');
+    } else {
+      const ref = await addDoc(contactsCol(hotelId), {
+        ...payload,
+        createdAt: serverTimestamp(),
+      });
+      logFirestoreWrite('Emergency Contact Add', `Hotels/${hotelId}/Emergency_Contacts/${ref.id}`, payload);
+      toast('Contact added');
+    }
     resetForm();
   } catch (err) {
     console.error('[helpdesk] save failed', err);
@@ -202,38 +266,20 @@ async function saveContact() {
 
 async function deleteContact(id) {
   const hotelId = getHotelId();
-  if (!hotelId) return;
+  if (!hotelId || !id) return;
   const contact = contacts.find((c) => c.id === id);
   if (!contact) return;
   if (!confirm(`Delete “${contact.title}”?`)) return;
 
   try {
-    const next = contacts.filter((c) => c.id !== id);
-    await persistContacts(hotelId, next);
+    await deleteDoc(contactDoc(hotelId, id));
+    logFirestoreWrite('Emergency Contact Delete', `Hotels/${hotelId}/Emergency_Contacts/${id}`, { id });
     if (editingId === id) resetForm();
     toast('Contact deleted');
   } catch (err) {
     console.error('[helpdesk] delete failed', err);
     toast(err.message || 'Failed to delete contact', 'error');
   }
-}
-
-async function persistContacts(hotelId, nextContacts) {
-  const payload = {
-    emergency_contacts: nextContacts.map((c) => ({
-      id: c.id,
-      title: c.title,
-      extension: c.extension,
-    })),
-    updatedAt: serverTimestamp(),
-  };
-  await updateDoc(doc(db, 'Hotels', hotelId), payload);
-  logFirestoreWrite('Emergency Contacts', `Hotels/${hotelId}`, {
-    emergency_contacts: payload.emergency_contacts,
-  });
-  // Optimistic local update; snapshot will reconcile.
-  contacts = nextContacts;
-  renderContacts();
 }
 
 function renderContacts() {

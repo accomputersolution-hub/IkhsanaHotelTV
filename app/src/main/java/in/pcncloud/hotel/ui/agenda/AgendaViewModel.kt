@@ -16,7 +16,7 @@ data class AgendaUiState(
 )
 
 /**
- * Live [daily_agenda] from Hotels/{pairedHotelId} for corporate Today's Agenda TV UI.
+ * Live daily agenda from Hotels/{pairedHotelId}/Daily_Agenda.
  */
 class AgendaViewModel(
     private val repository: FirestoreRepository,
@@ -27,11 +27,11 @@ class AgendaViewModel(
 
     init {
         viewModelScope.launch {
-            repository.observeHotelBranding().collect { branding ->
+            repository.observeDailyAgenda().collect { items ->
                 _uiState.update {
                     AgendaUiState(
                         isLoading = false,
-                        items = branding.dailyAgenda,
+                        items = items,
                     )
                 }
             }

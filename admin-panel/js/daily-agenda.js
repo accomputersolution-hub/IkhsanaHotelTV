@@ -1,17 +1,26 @@
 /**
- * Corporate Daily Agenda — CRUD for Hotels/{id}.daily_agenda
+ * Corporate Daily Agenda — CRUD for Hotels/{id}/Daily_Agenda/{itemId}
  * Sidebar + module visible only when property_type === 'corporate'.
+ *
+ * Each agenda row is its own Firestore document so tablet / desktop / TV stay in
+ * sync without overwriting the full schedule from a stale local cache.
  */
 
 import { db } from './firebase-config.js';
 import {
+  collection,
   doc,
-  onSnapshot,
+  addDoc,
   updateDoc,
+  deleteDoc,
+  getDoc,
+  getDocs,
+  onSnapshot,
   serverTimestamp,
+  writeBatch,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 import { escapeHtml, toast } from './utils.js';
-import { logFirestoreWrite } from './paths.js';
+import { logFirestoreWrite, logFirestoreListen } from './paths.js';
 import {
   getHotelId,
   onHotelChange,
@@ -24,6 +33,10 @@ let agendaItems = [];
 /** @type {(() => void) | null} */
 let agendaUnsub = null;
 let editingId = null;
+/** @type {boolean | null} */
+let lastCorporateListen = null;
+/** @type {Set<string>} */
+const migratedHotels = new Set();
 
 export function initDailyAgenda() {
   setupForm();
@@ -36,6 +49,8 @@ export function initDailyAgenda() {
   });
   onHotelMetaChange(() => {
     applyAgendaChrome();
+    const corporate = isCorporateProperty();
+    if (corporate !== lastCorporateListen) listenAgenda();
   });
 }
 
@@ -51,6 +66,14 @@ export function applyAgendaChrome() {
   }
 }
 
+function agendaCol(hotelId) {
+  return collection(db, 'Hotels', hotelId, 'Daily_Agenda');
+}
+
+function agendaDoc(hotelId, id) {
+  return doc(db, 'Hotels', hotelId, 'Daily_Agenda', id);
+}
+
 function listenAgenda() {
   if (agendaUnsub) {
     agendaUnsub();
@@ -58,23 +81,26 @@ function listenAgenda() {
   }
 
   const hotelId = getHotelId();
-  if (!hotelId || !isCorporateProperty()) {
+  const corporate = isCorporateProperty();
+  lastCorporateListen = corporate;
+  if (!hotelId || !corporate) {
     agendaItems = [];
     renderAgenda();
     return;
   }
 
+  logFirestoreListen('Daily Agenda', `Hotels/${hotelId}/Daily_Agenda`);
+  migrateLegacyAgenda(hotelId);
+
   agendaUnsub = onSnapshot(
-    doc(db, 'Hotels', hotelId),
-    (snap) => {
-      const data = snap.exists() ? snap.data() || {} : {};
-      const raw = Array.isArray(data.daily_agenda) ? data.daily_agenda : [];
-      agendaItems = raw
-        .map((item, index) => ({
-          id: String(item?.id || `agenda_${index}`),
-          time: String(item?.time || '').trim(),
-          title: String(item?.title || '').trim(),
-          location: String(item?.location || '').trim(),
+    agendaCol(hotelId),
+    (snapshot) => {
+      agendaItems = snapshot.docs
+        .map((d) => ({
+          id: d.id,
+          time: String(d.data()?.time || '').trim(),
+          title: String(d.data()?.title || '').trim(),
+          location: String(d.data()?.location || '').trim(),
         }))
         .filter((item) => item.time || item.title || item.location);
       renderAgenda();
@@ -84,6 +110,44 @@ function listenAgenda() {
       toast('Could not load daily agenda', 'error');
     },
   );
+}
+
+/** One-time copy of Hotels/{id}.daily_agenda[] into the subcollection. */
+async function migrateLegacyAgenda(hotelId) {
+  if (!hotelId || migratedHotels.has(hotelId)) return;
+  migratedHotels.add(hotelId);
+
+  try {
+    const existing = await getDocs(agendaCol(hotelId));
+    if (!existing.empty) return;
+
+    const hotelSnap = await getDoc(doc(db, 'Hotels', hotelId));
+    const raw = hotelSnap.exists() ? hotelSnap.data()?.daily_agenda : null;
+    if (!Array.isArray(raw) || !raw.length) return;
+
+    const batch = writeBatch(db);
+    raw.forEach((item, index) => {
+      const time = String(item?.time || '').trim();
+      const title = String(item?.title || item?.name || '').trim();
+      const location = String(item?.location || item?.place || item?.venue || '').trim();
+      if (!time && !title && !location) return;
+      const id = String(item?.id || `agenda_${index}`).trim() || `agenda_${index}`;
+      batch.set(agendaDoc(hotelId, id), {
+        time,
+        title,
+        location,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    });
+    await batch.commit();
+    logFirestoreWrite('Daily Agenda Migrate', `Hotels/${hotelId}/Daily_Agenda`, {
+      count: raw.length,
+    });
+  } catch (err) {
+    migratedHotels.delete(hotelId);
+    console.warn('[agenda] legacy migrate skipped', err);
+  }
 }
 
 function setupForm() {
@@ -132,13 +196,6 @@ function startEdit(item) {
   timeEl?.focus();
 }
 
-function newItemId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return `a_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
 /**
  * Parse start of a time range string for chronological sorting.
  * Supports "09:00 AM - 10:30 AM", "9:00am", "09:00", etc.
@@ -179,23 +236,32 @@ async function saveItem() {
   }
 
   const saveBtn = document.getElementById('agenda-save-btn');
+  const wasEditing = Boolean(editingId);
   if (saveBtn) {
     saveBtn.disabled = true;
-    saveBtn.textContent = editingId ? 'Saving…' : 'Adding…';
+    saveBtn.textContent = wasEditing ? 'Saving…' : 'Adding…';
   }
 
   try {
-    let next;
-    if (editingId) {
-      next = agendaItems.map((item) =>
-        item.id === editingId ? { id: item.id, time, title, location } : item,
-      );
-    } else {
-      next = [...agendaItems, { id: newItemId(), time, title, location }];
-    }
+    const payload = {
+      time,
+      title,
+      location,
+      updatedAt: serverTimestamp(),
+    };
 
-    await persistAgenda(hotelId, next);
-    toast(editingId ? 'Agenda item updated' : 'Agenda item added');
+    if (wasEditing) {
+      await updateDoc(agendaDoc(hotelId, editingId), payload);
+      logFirestoreWrite('Daily Agenda Update', `Hotels/${hotelId}/Daily_Agenda/${editingId}`, payload);
+      toast('Agenda item updated');
+    } else {
+      const ref = await addDoc(agendaCol(hotelId), {
+        ...payload,
+        createdAt: serverTimestamp(),
+      });
+      logFirestoreWrite('Daily Agenda Add', `Hotels/${hotelId}/Daily_Agenda/${ref.id}`, payload);
+      toast('Agenda item added');
+    }
     resetForm();
   } catch (err) {
     console.error('[agenda] save failed', err);
@@ -210,14 +276,14 @@ async function saveItem() {
 
 async function deleteItem(id) {
   const hotelId = getHotelId();
-  if (!hotelId) return;
+  if (!hotelId || !id) return;
   const item = agendaItems.find((a) => a.id === id);
   if (!item) return;
   if (!confirm(`Delete “${item.title}”?`)) return;
 
   try {
-    const next = agendaItems.filter((a) => a.id !== id);
-    await persistAgenda(hotelId, next);
+    await deleteDoc(agendaDoc(hotelId, id));
+    logFirestoreWrite('Daily Agenda Delete', `Hotels/${hotelId}/Daily_Agenda/${id}`, { id });
     if (editingId === id) resetForm();
     toast('Agenda item deleted');
   } catch (err) {
@@ -236,31 +302,17 @@ async function clearAll() {
   if (!confirm('Clear the entire daily agenda? This cannot be undone.')) return;
 
   try {
-    await persistAgenda(hotelId, []);
+    const snap = await getDocs(agendaCol(hotelId));
+    const batch = writeBatch(db);
+    snap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    logFirestoreWrite('Daily Agenda Clear', `Hotels/${hotelId}/Daily_Agenda`, { count: snap.size });
     resetForm();
     toast('Daily agenda cleared');
   } catch (err) {
     console.error('[agenda] clear all failed', err);
     toast(err.message || 'Failed to clear agenda', 'error');
   }
-}
-
-async function persistAgenda(hotelId, nextItems) {
-  const payload = {
-    daily_agenda: nextItems.map((item) => ({
-      id: item.id,
-      time: item.time,
-      title: item.title,
-      location: item.location,
-    })),
-    updatedAt: serverTimestamp(),
-  };
-  await updateDoc(doc(db, 'Hotels', hotelId), payload);
-  logFirestoreWrite('Daily Agenda', `Hotels/${hotelId}`, {
-    daily_agenda: payload.daily_agenda,
-  });
-  agendaItems = nextItems;
-  renderAgenda();
 }
 
 function renderAgenda() {

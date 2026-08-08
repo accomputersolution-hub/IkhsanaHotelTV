@@ -20,7 +20,16 @@ import { escapeHtml, toast, openModal, closeModal, setupModalClose } from './uti
 import { navigateTo } from './router.js';
 import { normalizeHotelId } from './firebase-config.js';
 
-const HOTEL_SUBCOLLECTIONS = ['Rooms', 'Menu', 'Alerts', 'Broadcasts', 'Requests', 'Config'];
+const HOTEL_SUBCOLLECTIONS = [
+  'Rooms',
+  'Menu',
+  'Alerts',
+  'Broadcasts',
+  'Requests',
+  'Config',
+  'Emergency_Contacts',
+  'Daily_Agenda',
+];
 const BATCH_LIMIT = 400;
 
 let hotelsUnsub = null;

@@ -16,7 +16,7 @@ data class CorporateServicesUiState(
 )
 
 /**
- * Live [emergency_contacts] from Hotels/{pairedHotelId} for corporate Helpdesk TV UI.
+ * Live helpdesk contacts from Hotels/{pairedHotelId}/Emergency_Contacts.
  */
 class CorporateServicesViewModel(
     private val repository: FirestoreRepository,
@@ -27,11 +27,11 @@ class CorporateServicesViewModel(
 
     init {
         viewModelScope.launch {
-            repository.observeHotelBranding().collect { branding ->
+            repository.observeEmergencyContacts().collect { contacts ->
                 _uiState.update {
                     CorporateServicesUiState(
                         isLoading = false,
-                        contacts = branding.emergencyContacts,
+                        contacts = contacts,
                     )
                 }
             }

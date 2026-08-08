@@ -39,6 +39,12 @@ service cloud.firestore {
       match /Config/{docId} {
         allow read, write: if true;
       }
+      match /Emergency_Contacts/{id} {
+        allow read, write: if true;
+      }
+      match /Daily_Agenda/{id} {
+        allow read, write: if true;
+      }
     }
   }
 }

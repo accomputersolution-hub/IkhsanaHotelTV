@@ -26,7 +26,7 @@ import kotlinx.coroutines.tasks.await
  * All multi-tenant reads/writes go through [FirestorePaths.HOTELS] ("Hotels") + [hotelId].
  *
  * [hotelId] comes from SharedPreferences after pairing (`HotelConfig.getHotelId()`).
- * Paths: Hotels/{hotelId}/Requests|Alerts|Rooms|Menu
+ * Paths: Hotels/{hotelId}/Requests|Alerts|Rooms|Menu|Emergency_Contacts|Daily_Agenda
  */
 class FirestoreRepository(
     private val config: HotelConfig,
@@ -267,6 +267,115 @@ class FirestoreRepository(
         awaitClose {
             Log.d(TAG, "UNLISTEN Hotel branding → $docPath")
             listener.remove()
+        }
+    }
+
+    /**
+     * Hotels/{hotelId}/Emergency_Contacts — live helpdesk list.
+     * Falls back to Hotels/{hotelId}.emergency_contacts[] until the admin migrates.
+     */
+    fun observeEmergencyContacts(): Flow<List<EmergencyContact>> = callbackFlow {
+        val path = FirestorePaths.emergencyContactsCollection(hotelId)
+        Log.d(TAG, "LISTEN Emergency Contacts → $path")
+
+        var subItems: List<EmergencyContact> = emptyList()
+        var legacyItems: List<EmergencyContact> = emptyList()
+
+        fun emitMerged() {
+            trySend(if (subItems.isNotEmpty()) subItems else legacyItems)
+        }
+
+        val subReg = firestore
+            .collection(FirestorePaths.HOTELS)
+            .document(hotelId)
+            .collection(FirestorePaths.EMERGENCY_CONTACTS)
+            .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "FAIL Emergency Contacts listener at $path: ${error.message}", error)
+                    subItems = emptyList()
+                    emitMerged()
+                    return@addSnapshotListener
+                }
+                subItems = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                    parseEmergencyContactMap(doc.id, doc.data)
+                }
+                Log.d(TAG, "OK Emergency Contacts snapshot → ${subItems.size} at $path")
+                emitMerged()
+            }
+
+        val hotelReg = firestore
+            .collection(FirestorePaths.HOTELS)
+            .document(hotelId)
+            .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
+                if (error != null) {
+                    legacyItems = emptyList()
+                    emitMerged()
+                    return@addSnapshotListener
+                }
+                legacyItems = parseEmergencyContacts(snapshot?.data?.get("emergency_contacts"))
+                emitMerged()
+            }
+
+        awaitClose {
+            Log.d(TAG, "UNLISTEN Emergency Contacts → $path")
+            subReg.remove()
+            hotelReg.remove()
+        }
+    }
+
+    /**
+     * Hotels/{hotelId}/Daily_Agenda — live corporate agenda.
+     * Falls back to Hotels/{hotelId}.daily_agenda[] until the admin migrates.
+     */
+    fun observeDailyAgenda(): Flow<List<AgendaItem>> = callbackFlow {
+        val path = FirestorePaths.dailyAgendaCollection(hotelId)
+        Log.d(TAG, "LISTEN Daily Agenda → $path")
+
+        var subItems: List<AgendaItem> = emptyList()
+        var legacyItems: List<AgendaItem> = emptyList()
+
+        fun emitMerged() {
+            trySend(if (subItems.isNotEmpty()) subItems else legacyItems)
+        }
+
+        val subReg = firestore
+            .collection(FirestorePaths.HOTELS)
+            .document(hotelId)
+            .collection(FirestorePaths.DAILY_AGENDA)
+            .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "FAIL Daily Agenda listener at $path: ${error.message}", error)
+                    subItems = emptyList()
+                    emitMerged()
+                    return@addSnapshotListener
+                }
+                subItems = snapshot?.documents.orEmpty()
+                    .mapNotNull { doc -> parseAgendaItemMap(doc.id, doc.data) }
+                    .sortedWith(
+                        compareBy<AgendaItem> { agendaTimeSortKey(it.time) }
+                            .thenBy { it.time },
+                    )
+                Log.d(TAG, "OK Daily Agenda snapshot → ${subItems.size} at $path")
+                emitMerged()
+            }
+
+        val hotelReg = firestore
+            .collection(FirestorePaths.HOTELS)
+            .document(hotelId)
+            .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
+                if (error != null) {
+                    legacyItems = emptyList()
+                    emitMerged()
+                    return@addSnapshotListener
+                }
+                legacyItems = parseDailyAgenda(snapshot?.data?.get("daily_agenda"))
+                emitMerged()
+            }
+
+        awaitClose {
+            Log.d(TAG, "UNLISTEN Daily Agenda → $path")
+            subReg.remove()
+            hotelReg.remove()
         }
     }
 
@@ -742,57 +851,60 @@ class FirestoreRepository(
         )
     }
 
-    @Suppress("UNCHECKED_CAST")
     private fun parseEmergencyContacts(raw: Any?): List<EmergencyContact> {
         val list = raw as? List<*> ?: return emptyList()
         return list.mapIndexedNotNull { index, item ->
             val map = item as? Map<*, *> ?: return@mapIndexedNotNull null
-            val title = firstNonBlank(
-                map["title"] as? String,
-                map["name"] as? String,
-            )
-            val extension = firstNonBlank(
-                map["extension"] as? String,
-                map["ext"] as? String,
-                map["subtitle"] as? String,
-            )
-            if (title.isBlank() && extension.isBlank()) return@mapIndexedNotNull null
-            EmergencyContact(
-                id = firstNonBlank(map["id"] as? String, "contact_$index"),
-                title = title,
-                extension = extension,
+            parseEmergencyContactMap(
+                firstNonBlank(map["id"] as? String, "contact_$index"),
+                map,
             )
         }
     }
 
-    @Suppress("UNCHECKED_CAST")
+    private fun parseEmergencyContactMap(id: String, data: Map<*, *>?): EmergencyContact? {
+        if (data == null) return null
+        val title = firstNonBlank(
+            data["title"] as? String,
+            data["name"] as? String,
+        )
+        val extension = firstNonBlank(
+            data["extension"] as? String,
+            data["ext"] as? String,
+            data["subtitle"] as? String,
+        )
+        if (title.isBlank() && extension.isBlank()) return null
+        return EmergencyContact(id = id, title = title, extension = extension)
+    }
+
     private fun parseDailyAgenda(raw: Any?): List<AgendaItem> {
         val list = raw as? List<*> ?: return emptyList()
         return list.mapIndexedNotNull { index, item ->
             val map = item as? Map<*, *> ?: return@mapIndexedNotNull null
-            val time = firstNonBlank(map["time"] as? String)
-            val title = firstNonBlank(
-                map["title"] as? String,
-                map["name"] as? String,
-            )
-            val location = firstNonBlank(
-                map["location"] as? String,
-                map["place"] as? String,
-                map["venue"] as? String,
-            )
-            if (time.isBlank() && title.isBlank() && location.isBlank()) {
-                return@mapIndexedNotNull null
-            }
-            AgendaItem(
-                id = firstNonBlank(map["id"] as? String, "agenda_$index"),
-                time = time,
-                title = title,
-                location = location,
+            parseAgendaItemMap(
+                firstNonBlank(map["id"] as? String, "agenda_$index"),
+                map,
             )
         }.sortedWith(
             compareBy<AgendaItem> { agendaTimeSortKey(it.time) }
                 .thenBy { it.time },
         )
+    }
+
+    private fun parseAgendaItemMap(id: String, data: Map<*, *>?): AgendaItem? {
+        if (data == null) return null
+        val time = firstNonBlank(data["time"] as? String)
+        val title = firstNonBlank(
+            data["title"] as? String,
+            data["name"] as? String,
+        )
+        val location = firstNonBlank(
+            data["location"] as? String,
+            data["place"] as? String,
+            data["venue"] as? String,
+        )
+        if (time.isBlank() && title.isBlank() && location.isBlank()) return null
+        return AgendaItem(id = id, time = time, title = title, location = location)
     }
 
     /** Parse start of a time range for chronological sort (e.g. "09:00 AM - 10:30 AM"). */
