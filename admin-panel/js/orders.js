@@ -70,6 +70,8 @@ let ordersInitialized = false;
 let currentFilter = 'all';
 let allOrders = [];
 let ordersUnsub = null;
+/** Pending pantry / KDS tickets for the active hotel (sidebar badge). */
+let pendingPantryCount = 0;
 
 export function initOrders() {
   setupFilterTabs();
@@ -136,6 +138,7 @@ function listenOrders() {
   const hotelId = getHotelId();
   if (!hotelId) {
     allOrders = [];
+    updatePantryNavBadge();
     renderOrders();
     return;
   }
@@ -177,6 +180,7 @@ function listenOrders() {
       knownOrderIds = new Set([...knownOrderIds].filter((id) => hotelOrderIds.has(id)));
 
       ordersInitialized = true;
+      updatePantryNavBadge();
       renderOrders();
     },
     (err) => {
@@ -218,7 +222,34 @@ async function sendOrderStatusAlert(order, newStatus) {
   });
 }
 
+function isPendingOrder(order) {
+  const status = String(order?.status || 'pending').toLowerCase().trim();
+  return status === 'pending';
+}
+
+function updatePantryNavBadge() {
+  pendingPantryCount = allOrders.filter(isPendingOrder).length;
+  const badge = document.getElementById('nav-kds-badge');
+  if (!badge) return;
+
+  if (pendingPantryCount > 0) {
+    badge.textContent = pendingPantryCount > 99 ? '99+' : String(pendingPantryCount);
+    badge.hidden = false;
+    badge.classList.remove('hidden');
+    badge.setAttribute(
+      'aria-label',
+      `${pendingPantryCount} pending ${isCorporateProperty() ? 'pantry requests' : 'kitchen orders'}`,
+    );
+  } else {
+    badge.textContent = '0';
+    badge.hidden = true;
+    badge.classList.add('hidden');
+    badge.removeAttribute('aria-label');
+  }
+}
+
 function renderOrders() {
+  updatePantryNavBadge();
   const container = document.getElementById('orders-list');
   const badge = document.getElementById('orders-count');
   if (!container || !badge) return;
