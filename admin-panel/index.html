@@ -822,6 +822,21 @@
               <button id="add-room-btn" type="button" class="btn-gold">+ Add Room</button>
             </div>
             <div class="module-card-body flex flex-col gap-5 min-h-0">
+              <div class="announcement-admin-row">
+                <div class="announcement-admin-copy">
+                  <label for="global-announcement-input" class="announcement-admin-label">TV Home ticker</label>
+                  <p id="global-announcement-path" class="announcement-admin-path">hotel_settings/{hotelId}/global_announcement</p>
+                </div>
+                <input
+                  id="global-announcement-input"
+                  type="text"
+                  maxlength="240"
+                  autocomplete="off"
+                  placeholder="Announcement shown on all paired TVs…"
+                  class="announcement-admin-input"
+                />
+                <button id="global-announcement-save" type="button" class="btn-gold">Publish to TVs</button>
+              </div>
               <div class="pms-summary-grid">
                 <div class="pms-stat-card">
                   <div class="pms-stat-head">

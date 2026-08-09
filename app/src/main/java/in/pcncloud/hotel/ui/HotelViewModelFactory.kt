@@ -18,7 +18,7 @@ class HotelViewModelFactory(
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T = when {
         modelClass.isAssignableFrom(HomeViewModel::class.java) ->
-            HomeViewModel(repository) as T
+            HomeViewModel(repository, config) as T
         modelClass.isAssignableFrom(DiningViewModel::class.java) ->
             DiningViewModel(repository, config) as T
         modelClass.isAssignableFrom(ServicesViewModel::class.java) ->

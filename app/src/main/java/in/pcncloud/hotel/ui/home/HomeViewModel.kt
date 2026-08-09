@@ -3,11 +3,13 @@ package `in`.pcncloud.hotel.ui.home
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.model.GuestProfile
 import `in`.pcncloud.hotel.data.model.HotelAlert
 import `in`.pcncloud.hotel.data.model.HotelBranding
 import `in`.pcncloud.hotel.data.model.RoomStatus
 import `in`.pcncloud.hotel.data.repository.FirestoreRepository
+import `in`.pcncloud.hotel.rtdb.GlobalAnnouncementRtdb
 import `in`.pcncloud.hotel.ui.services.ServiceToastType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +29,8 @@ data class HomeUiState(
     val isLoading: Boolean = true,
     val serviceToastMessage: String? = null,
     val serviceToastType: ServiceToastType = ServiceToastType.STATUS,
+    /** Live RTDB `hotel_settings/{hotelId}/global_announcement`. */
+    val rtdbAnnouncement: String = "",
 ) {
     /** True when Hotels/{hotelId}.status is explicitly "inactive". */
     val isHotelInactive: Boolean
@@ -35,10 +39,15 @@ data class HomeUiState(
     /** Home UI may render only after initial Firestore sync (avoids generic placeholder flash). */
     val isContentReady: Boolean
         get() = !isLoading
+
+    /** RTDB announcement wins; Firestore announcement / tagline are fallbacks. */
+    val tickerMessage: String
+        get() = rtdbAnnouncement.ifBlank { branding.announcement }.ifBlank { branding.tagline }
 }
 
 class HomeViewModel(
     private val repository: FirestoreRepository,
+    private val config: HotelConfig,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -115,6 +124,11 @@ class HomeViewModel(
                 _uiState.update { state ->
                     state.copy(alerts = alerts, activePopupAlert = nextPopup)
                 }
+            }
+        }
+        viewModelScope.launch {
+            GlobalAnnouncementRtdb.observe(config.getHotelId()).collect { text ->
+                _uiState.update { it.copy(rtdbAnnouncement = text) }
             }
         }
         viewModelScope.launch {

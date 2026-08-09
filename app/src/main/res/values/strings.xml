@@ -3,6 +3,7 @@
     <string name="brand_name">Your Hotel</string>
     <string name="brand_subtitle"></string>
     <string name="brand_tagline"></string>
+    <string name="home_announcement_ticker_cd">Hotel announcements</string>
     <string name="welcome_label">W E L C O M E ,</string>
     <string name="welcome_subtitle">We are delighted to have you with us. Enjoy a comfortable and memorable stay.</string>
     <string name="room_badge">( Room %1$s )</string>

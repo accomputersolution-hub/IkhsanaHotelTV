@@ -28,6 +28,8 @@ data class HotelBranding(
     val themeColor: String = "",
     val tagline: String = "",
     val welcomeMessage: String = "",
+    /** Bottom home ticker from Hotels/{id}.announcement / ticker_text. */
+    val announcement: String = "",
     val status: String = "active",
     /** Corporate helpdesk contacts from Hotels/{id}/Emergency_Contacts (legacy: .emergency_contacts). */
     val emergencyContacts: List<EmergencyContact> = emptyList(),

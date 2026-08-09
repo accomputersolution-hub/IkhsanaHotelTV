@@ -34,6 +34,9 @@ export const paths = {
   usersCollection: () => 'users',
   /** Helper matching TenantManager.pathFor */
   tenantPath: (sub) => TenantManager.pathFor(sub),
+  /** RTDB TV ticker — hotel_settings/{hotelId}/global_announcement */
+  rtdbAnnouncement: (hotelId = getHotelId()) =>
+    `hotel_settings/${normalizeHotelId(hotelId)}/global_announcement`,
 };
 
 export function logFirestoreWrite(label, docPath, payload) {

@@ -263,18 +263,37 @@ fun HomeScreen(
                             onNavigateToAlerts()
                         },
                     )
+                    val tickerMessage = uiState.tickerMessage
+                    if (tickerMessage.isNotBlank()) {
+                        Spacer(
+                            modifier = Modifier
+                                .height(52.dp)
+                                .focusProperties { canFocus = false },
+                        )
+                    }
                 }
             }
         }
 
         if (contentReady) {
+            val tickerMessage = uiState.tickerMessage
+            if (tickerMessage.isNotBlank()) {
+                HomeAnnouncementTicker(
+                    message = tickerMessage,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
+
             uiState.serviceToastMessage?.let { message ->
                 ServiceToast(
                     message = message,
                     type = uiState.serviceToastType,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = 36.dp, bottom = 36.dp),
+                        .padding(
+                            end = 36.dp,
+                            bottom = if (tickerMessage.isNotBlank()) 88.dp else 36.dp,
+                        ),
                 )
             }
 

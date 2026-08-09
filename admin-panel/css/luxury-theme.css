@@ -1438,3 +1438,58 @@ body {
   color: #fff;
   box-shadow: none;
 }
+
+.announcement-admin-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(12, 18, 32, 0.72);
+  border: 1px solid rgba(201, 169, 98, 0.18);
+}
+
+.announcement-admin-copy {
+  min-width: 180px;
+  flex: 0 1 auto;
+}
+
+.announcement-admin-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gold-light);
+}
+
+.announcement-admin-path {
+  margin: 4px 0 0;
+  font-size: 0.68rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-dim);
+  word-break: break-all;
+}
+
+.announcement-admin-input {
+  flex: 1 1 280px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(7, 11, 20, 0.85);
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  outline: none;
+}
+
+.announcement-admin-input:focus {
+  border-color: rgba(201, 169, 98, 0.55);
+  box-shadow: 0 0 0 3px rgba(201, 169, 98, 0.14);
+}
+
+.announcement-admin-row .btn-gold {
+  flex: 0 0 auto;
+  min-height: 44px;
+}
