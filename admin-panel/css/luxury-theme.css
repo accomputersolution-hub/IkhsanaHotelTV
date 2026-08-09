@@ -1439,15 +1439,29 @@ body {
   box-shadow: none;
 }
 
+.announcement-admin-card {
+  margin-bottom: 1.25rem;
+  padding: 14px 16px 16px;
+  border-radius: 14px;
+  background: rgba(12, 18, 32, 0.72);
+  border: 1px solid rgba(201, 169, 98, 0.22);
+}
+
+.announcement-admin-head {
+  margin-bottom: 12px;
+}
+
+.announcement-admin-hint {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
 .announcement-admin-row {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px 14px;
-  padding: 14px 16px;
-  border-radius: 14px;
-  background: rgba(12, 18, 32, 0.72);
-  border: 1px solid rgba(201, 169, 98, 0.18);
+  align-items: stretch;
+  gap: 10px 12px;
 }
 
 .announcement-admin-copy {
@@ -1489,7 +1503,8 @@ body {
   box-shadow: 0 0 0 3px rgba(201, 169, 98, 0.14);
 }
 
-.announcement-admin-row .btn-gold {
+.announcement-admin-row .btn-gold,
+.announcement-admin-row .quick-btn {
   flex: 0 0 auto;
   min-height: 44px;
 }

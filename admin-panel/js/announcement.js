@@ -27,9 +27,14 @@ export function announcementPath(hotelId = getHotelId()) {
 export function initAnnouncement() {
   const input = document.getElementById('global-announcement-input');
   const btn = document.getElementById('global-announcement-save');
+  const clearBtn = document.getElementById('global-announcement-clear');
   if (!input || !btn) return;
 
   btn.addEventListener('click', () => publishAnnouncement());
+  clearBtn?.addEventListener('click', () => {
+    input.value = '';
+    publishAnnouncement();
+  });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -106,7 +111,7 @@ async function publishAnnouncement() {
     publishing = false;
     if (btn) {
       btn.disabled = false;
-      btn.textContent = 'Publish to TVs';
+      btn.textContent = 'Set Ticker';
     }
   }
 }

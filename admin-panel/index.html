@@ -822,21 +822,6 @@
               <button id="add-room-btn" type="button" class="btn-gold">+ Add Room</button>
             </div>
             <div class="module-card-body flex flex-col gap-5 min-h-0">
-              <div class="announcement-admin-row">
-                <div class="announcement-admin-copy">
-                  <label for="global-announcement-input" class="announcement-admin-label">TV Home ticker</label>
-                  <p id="global-announcement-path" class="announcement-admin-path">hotel_settings/{hotelId}/global_announcement</p>
-                </div>
-                <input
-                  id="global-announcement-input"
-                  type="text"
-                  maxlength="240"
-                  autocomplete="off"
-                  placeholder="Announcement shown on all paired TVs…"
-                  class="announcement-admin-input"
-                />
-                <button id="global-announcement-save" type="button" class="btn-gold">Publish to TVs</button>
-              </div>
               <div class="pms-summary-grid">
                 <div class="pms-stat-card">
                   <div class="pms-stat-head">
@@ -945,6 +930,27 @@
                 <button id="clear-active-broadcast-btn" type="button" class="btn-gold btn-danger-outline">Clear Active Message</button>
               </div>
               <div class="module-card-body">
+                <div class="announcement-admin-card">
+                  <div class="announcement-admin-head">
+                    <div>
+                      <p class="announcement-admin-label">Home Screen Ticker</p>
+                      <p class="announcement-admin-hint">Scrolling bar at the bottom of every TV Home screen. This is not the popup broadcast.</p>
+                      <p id="global-announcement-path" class="announcement-admin-path">hotel_settings/{hotelId}/global_announcement</p>
+                    </div>
+                  </div>
+                  <div class="announcement-admin-row">
+                    <input
+                      id="global-announcement-input"
+                      type="text"
+                      maxlength="240"
+                      autocomplete="off"
+                      placeholder="e.g. Welcome to L&amp;T Academy — Dinner buffet open till 10 PM"
+                      class="announcement-admin-input"
+                    />
+                    <button id="global-announcement-save" type="button" class="btn-gold">Set Ticker</button>
+                    <button id="global-announcement-clear" type="button" class="quick-btn">Clear Ticker</button>
+                  </div>
+                </div>
                 <form id="broadcast-form" class="broadcast-form space-y-4">
                   <div>
                     <label class="section-label block mb-2">Alert Preset</label>
