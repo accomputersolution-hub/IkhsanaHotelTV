@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -267,7 +268,7 @@ fun AppChromeHeader(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(24.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier
                 .weight(1f)
                 .padding(end = 16.dp)
@@ -275,9 +276,7 @@ fun AppChromeHeader(
         ) {
             BrandLogo(hotelLogoUrl = hotelLogoUrl)
             Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 4.dp),
+                modifier = Modifier.weight(1f),
             ) {
                 if (displayName.isNotBlank()) {
                     Text(
@@ -387,9 +386,9 @@ private fun BrandLogo(hotelLogoUrl: String) {
 
     Box(
         modifier = Modifier
-            .width(110.dp)
-            .height(80.dp)
-            .padding(end = 8.dp),
+            .height(72.dp)
+            .widthIn(max = 88.dp)
+            .wrapContentWidth(Alignment.Start),
         contentAlignment = Alignment.CenterStart,
     ) {
         if (remoteUrl != null) {
@@ -413,8 +412,8 @@ private fun BrandLogo(hotelLogoUrl: String) {
                     .build(),
                 contentDescription = "Hotel Logo",
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(6.dp),
+                    .fillMaxHeight()
+                    .wrapContentWidth(),
                 contentScale = ContentScale.Fit,
                 alignment = Alignment.CenterStart,
                 error = localLogo,
@@ -425,8 +424,8 @@ private fun BrandLogo(hotelLogoUrl: String) {
                 painter = localLogo,
                 contentDescription = "Hotel Logo",
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(6.dp),
+                    .fillMaxHeight()
+                    .wrapContentWidth(),
                 contentScale = ContentScale.Fit,
                 alignment = Alignment.CenterStart,
             )
