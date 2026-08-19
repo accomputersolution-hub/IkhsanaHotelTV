@@ -42,7 +42,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -607,7 +606,9 @@ private fun OrderSummaryPanel(
 ) {
     LuxuryGlassPanel(modifier = modifier) {
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
@@ -618,71 +619,45 @@ private fun OrderSummaryPanel(
                 color = CorpGold,
             )
 
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .heightIn(min = 120.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            Text(
+                text = stringResource(R.string.order_review),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = SansBody,
+                color = TextMuted,
+            )
+
+            if (cart.isEmpty()) {
                 Text(
-                    text = stringResource(R.string.order_review),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    text = stringResource(R.string.cart_empty),
+                    fontSize = 15.sp,
                     fontFamily = SansBody,
                     color = TextMuted,
                 )
-                if (cart.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.cart_empty),
-                        fontSize = 14.sp,
-                        fontFamily = SansBody,
-                        color = TextMuted,
-                    )
-                } else {
-                    cart.forEach { cartItem ->
-                        key(cartItem.menuItem.id) {
-                            CartLineRow(cartItem = cartItem)
-                        }
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 2.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.order_total),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = SansBody,
-                            color = TextPrimary,
-                        )
-                        Text(
-                            text = "₹${cartTotal.toInt()}",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = GoldLuxury,
-                        )
+            } else {
+                cart.forEach { cartItem ->
+                    key(cartItem.menuItem.id) {
+                        CartLineRow(cartItem = cartItem)
                     }
                 }
-
-                if (roomOrders.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
-                        text = stringResource(R.string.order_history),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = SerifDisplay,
+                        text = stringResource(R.string.order_total),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = SansBody,
                         color = TextPrimary,
                     )
-                    roomOrders.take(3).forEach { order ->
-                        key(order.id.ifBlank { "${order.timestamp}-${order.roomNumber}" }) {
-                            OrderHistoryCard(order = order)
-                        }
-                    }
+                    Text(
+                        text = "₹${cartTotal.toInt()}",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = GoldLuxury,
+                    )
                 }
             }
 
@@ -723,6 +698,21 @@ private fun OrderSummaryPanel(
                 modifier = Modifier.focusRequester(orderFocus),
                 onClick = onPlaceOrder,
             )
+
+            if (roomOrders.isNotEmpty()) {
+                Text(
+                    text = stringResource(R.string.order_history),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = SerifDisplay,
+                    color = TextPrimary,
+                )
+                roomOrders.take(3).forEach { order ->
+                    key(order.id.ifBlank { "${order.timestamp}-${order.roomNumber}" }) {
+                        OrderHistoryCard(order = order)
+                    }
+                }
+            }
         }
     }
 }
@@ -743,23 +733,24 @@ private fun CartLineRow(cartItem: CartItem) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = cartItem.menuItem.name,
-                fontSize = 13.sp,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
                 fontFamily = SansBody,
-                color = TextPrimary.copy(alpha = 0.9f),
-                maxLines = 1,
+                color = TextPrimary,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = "× ${cartItem.quantity}",
-                fontSize = 12.sp,
+                fontSize = 14.sp,
                 fontFamily = SansBody,
-                color = TextMuted,
+                color = GoldLuxury,
             )
         }
         Text(
             text = "₹${cartItem.lineTotal.toInt()}",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
             color = GoldLuxury,
         )
     }
