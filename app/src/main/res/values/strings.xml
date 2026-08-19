@@ -78,6 +78,7 @@
     <string name="status_completed">Completed</string>
     <string name="dining_title">In-Room Dining</string>
     <string name="dining_subtitle">Curated room service · press OK to add</string>
+    <string name="dining_subtitle_corporate">Today\'s cafeteria selection</string>
     <string name="place_order">Place Order</string>
     <string name="order_placed">Order sent to kitchen!</string>
     <string name="order_failed">Could not place order. Please try again.</string>

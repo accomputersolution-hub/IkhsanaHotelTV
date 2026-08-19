@@ -2,6 +2,7 @@ package `in`.pcncloud.hotel.ui.dining
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.model.CartItem
 import `in`.pcncloud.hotel.data.model.GuestProfile
@@ -139,6 +140,8 @@ class DiningViewModel(
      */
     fun requestPlaceOrder() {
         try {
+            // Corporate Today's Menu is browse-only; hotel in-room dining places Live_Orders.
+            if (BuildConfig.IS_CORPORATE) return
             val state = _uiState.value
             if (state.cart.isEmpty() || state.isPlacingOrder) return
 
@@ -177,6 +180,7 @@ class DiningViewModel(
     }
 
     private fun submitOrder(state: DiningUiState) {
+        if (BuildConfig.IS_CORPORATE) return
         if (!state.roomOccupied) {
             _uiState.update { it.copy(showVacantRoomDialog = true, isPlacingOrder = false) }
             return

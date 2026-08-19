@@ -139,7 +139,11 @@ fun DiningScreen(
             } else {
                 stringResource(R.string.dining_title)
             },
-            subtitle = stringResource(R.string.dining_subtitle),
+            subtitle = if (BuildConfig.IS_CORPORATE) {
+                stringResource(R.string.dining_subtitle_corporate)
+            } else {
+                stringResource(R.string.dining_subtitle)
+            },
         ) {
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
@@ -174,7 +178,7 @@ fun DiningScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .weight(0.70f)
+                        .weight(if (BuildConfig.IS_CORPORATE) 1f else 0.70f)
                         .fillMaxHeight(),
                 ) {
                     LazyVerticalGrid(
@@ -208,6 +212,7 @@ fun DiningScreen(
                                 MenuItemCard(
                                     item = item,
                                     quantity = qty,
+                                    canOrder = !BuildConfig.IS_CORPORATE,
                                     onAdd = { viewModel.addToCart(item) },
                                     onRemove = { viewModel.removeFromCart(item) },
                                 )
@@ -223,35 +228,34 @@ fun DiningScreen(
                     )
                 }
 
-                OrderSummaryPanel(
-                    cart = uiState.cart,
-                    cartTotal = uiState.cartTotal,
-                    roomOrders = uiState.roomOrders,
-                    orderMessage = uiState.orderMessage,
-                    isPlacingOrder = uiState.isPlacingOrder,
-                    roomOccupied = uiState.roomOccupied,
-                    selectedPayment = uiState.selectedPayment,
-                    onSelectPayment = viewModel::selectPayment,
-                    onPayNow = {
-                        // ONLY open QR placeholder — no Home navigation, no intents.
-                        viewModel.selectPayment(PaymentMethod.PAID_ONLINE)
-                        showQrDialog = true
-                    },
-                    orderFocus = orderFocus,
-                    onPlaceOrder = {
-                        if (BuildConfig.IS_CORPORATE) {
-                            viewModel.requestPlaceOrder()
-                        } else {
+                // Hotel in-room dining keeps cart + place-order. Corporate is browse-only.
+                if (!BuildConfig.IS_CORPORATE) {
+                    OrderSummaryPanel(
+                        cart = uiState.cart,
+                        cartTotal = uiState.cartTotal,
+                        roomOrders = uiState.roomOrders,
+                        orderMessage = uiState.orderMessage,
+                        isPlacingOrder = uiState.isPlacingOrder,
+                        roomOccupied = uiState.roomOccupied,
+                        selectedPayment = uiState.selectedPayment,
+                        onSelectPayment = viewModel::selectPayment,
+                        onPayNow = {
+                            // ONLY open QR placeholder — no Home navigation, no intents.
+                            viewModel.selectPayment(PaymentMethod.PAID_ONLINE)
+                            showQrDialog = true
+                        },
+                        orderFocus = orderFocus,
+                        onPlaceOrder = {
                             when (uiState.selectedPayment) {
                                 PaymentMethod.PAID_ONLINE -> showQrDialog = true
                                 PaymentMethod.PAY_AT_CHECKOUT -> viewModel.requestPlaceOrder()
                             }
-                        }
-                    },
-                    modifier = Modifier
-                        .weight(0.30f)
-                        .fillMaxHeight(),
-                )
+                        },
+                        modifier = Modifier
+                            .weight(0.30f)
+                            .fillMaxHeight(),
+                    )
+                }
             }
         }
 
@@ -408,6 +412,7 @@ private fun GoldMenuScrollbar(
 private fun MenuItemCard(
     item: MenuItem,
     quantity: Int,
+    canOrder: Boolean,
     onAdd: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -418,7 +423,7 @@ private fun MenuItemCard(
         label = "cardScale",
     )
     val shape = RoundedCornerShape(14.dp)
-    val subtitle = if (!BuildConfig.IS_CORPORATE) {
+    val subtitle = if (canOrder) {
         "₹${item.price.toInt()}"
     } else {
         item.description.trim()
@@ -435,6 +440,17 @@ private fun MenuItemCard(
             }
             .onFocusChanged { rowFocused = it.isFocused }
             .focusable()
+            .onKeyEvent { event ->
+                if (!canOrder) return@onKeyEvent false
+                if (event.type == KeyEventType.KeyDown &&
+                    (event.key == Key.Enter || event.key == Key.DirectionCenter)
+                ) {
+                    onAdd()
+                    true
+                } else {
+                    false
+                }
+            }
             .luxuryGoldFocusChrome(focused = rowFocused, shape = shape)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
@@ -464,9 +480,9 @@ private fun MenuItemCard(
             Text(
                 text = subtitle,
                 fontSize = 13.sp,
-                fontWeight = if (!BuildConfig.IS_CORPORATE) FontWeight.Bold else FontWeight.Normal,
+                fontWeight = if (canOrder) FontWeight.Bold else FontWeight.Normal,
                 fontFamily = SansBody,
-                color = if (!BuildConfig.IS_CORPORATE) CorpGold else TextMuted,
+                color = if (canOrder) CorpGold else TextMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -474,16 +490,18 @@ private fun MenuItemCard(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            QuantityStepper(
-                quantity = quantity,
-                onAdd = onAdd,
-                onRemove = onRemove,
-                compact = true,
-            )
+        if (canOrder) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                QuantityStepper(
+                    quantity = quantity,
+                    onAdd = onAdd,
+                    onRemove = onRemove,
+                    compact = true,
+                )
+            }
         }
     }
 }
@@ -674,28 +692,26 @@ private fun OrderSummaryPanel(
                         ) { index ->
                             CartLineRow(cartItem = cart[index])
                         }
-                        if (!BuildConfig.IS_CORPORATE) {
-                            item(key = "cart_total") {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.order_total),
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontFamily = SansBody,
-                                        color = TextPrimary,
-                                    )
-                                    Text(
-                                        text = "₹${cartTotal.toInt()}",
-                                        fontSize = 18.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = GoldLuxury,
-                                    )
-                                }
+                        item(key = "cart_total") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.order_total),
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFamily = SansBody,
+                                    color = TextPrimary,
+                                )
+                                Text(
+                                    text = "₹${cartTotal.toInt()}",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = GoldLuxury,
+                                )
                             }
                         }
                     }
@@ -741,14 +757,11 @@ private fun OrderSummaryPanel(
                 )
             }
 
-            // ── Payment method toggle (hotel only) ────────────────────
-            if (!BuildConfig.IS_CORPORATE) {
-                PaymentToggle(
-                    selected = selectedPayment,
-                    onSelectCheckout = { onSelectPayment(PaymentMethod.PAY_AT_CHECKOUT) },
-                    onPayNow = onPayNow,
-                )
-            }
+            PaymentToggle(
+                selected = selectedPayment,
+                onSelectCheckout = { onSelectPayment(PaymentMethod.PAY_AT_CHECKOUT) },
+                onPayNow = onPayNow,
+            )
 
             if (orderMessage == "success") {
                 Text(
@@ -769,7 +782,6 @@ private fun OrderSummaryPanel(
                 !roomOccupied -> stringResource(R.string.vacant_room_cta_hint)
                 isPlacingOrder -> stringResource(R.string.loading)
                 !hasItems -> stringResource(R.string.cart_add_items_cta)
-                BuildConfig.IS_CORPORATE -> "Place Request"
                 selectedPayment == PaymentMethod.PAID_ONLINE ->
                     stringResource(R.string.pay_now) + " · ₹${cartTotal.toInt()}"
                 else -> stringResource(R.string.cart_confirm_cta, cartTotal)
@@ -822,14 +834,12 @@ private fun CartLineRow(cartItem: CartItem) {
                 color = TextMuted,
             )
         }
-        if (!BuildConfig.IS_CORPORATE) {
-            Text(
-                text = "₹${cartItem.lineTotal.toInt()}",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = GoldLuxury,
-            )
-        }
+        Text(
+            text = "₹${cartItem.lineTotal.toInt()}",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = GoldLuxury,
+        )
     }
 }
 
