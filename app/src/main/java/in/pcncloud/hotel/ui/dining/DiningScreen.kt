@@ -26,7 +26,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed as menuGridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -208,7 +207,10 @@ fun DiningScreen(
                                 )
                             }
                         } else {
-                            menuGridItems(uiState.filteredItems, key = { it.id }) { index, item ->
+                            menuGridItems(
+                                items = uiState.filteredItems,
+                                key = { _, item -> item.id },
+                            ) { index, item ->
                                 val qty = uiState.cart.find { it.menuItem.id == item.id }?.quantity ?: 0
                                 MenuItemCard(
                                     item = item,
