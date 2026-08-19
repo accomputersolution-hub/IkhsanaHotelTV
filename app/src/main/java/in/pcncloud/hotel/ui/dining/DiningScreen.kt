@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed as menuGridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -43,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
@@ -153,11 +155,11 @@ fun DiningScreen(
                 itemsIndexed(
                     items = MenuCategory.entries.toList(),
                     key = { _, category -> category.name },
-                ) { index, category ->
+                ) { _, category ->
                     CategoryTab(
                         label = category.displayName,
                         isSelected = uiState.selectedCategory == category,
-                        modifier = if (index == 0) {
+                        modifier = if (category == uiState.selectedCategory) {
                             Modifier.focusRequester(categoryFocus)
                         } else {
                             Modifier
@@ -206,12 +208,13 @@ fun DiningScreen(
                                 )
                             }
                         } else {
-                            items(uiState.filteredItems, key = { it.id }) { item ->
+                            menuGridItems(uiState.filteredItems, key = { it.id }) { index, item ->
                                 val qty = uiState.cart.find { it.menuItem.id == item.id }?.quantity ?: 0
                                 MenuItemCard(
                                     item = item,
                                     quantity = qty,
                                     canOrder = !BuildConfig.IS_CORPORATE,
+                                    upFocus = if (index < 2) categoryFocus else null,
                                     onAdd = { viewModel.addToCart(item) },
                                     onRemove = { viewModel.removeFromCart(item) },
                                 )
@@ -370,6 +373,7 @@ private fun MenuItemCard(
     item: MenuItem,
     quantity: Int,
     canOrder: Boolean,
+    upFocus: FocusRequester? = null,
     onAdd: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -446,6 +450,7 @@ private fun MenuItemCard(
                     onAdd = onAdd,
                     onRemove = onRemove,
                     compact = false,
+                    upFocus = upFocus,
                 )
             }
         }
@@ -481,6 +486,7 @@ private fun QuantityStepper(
     onAdd: () -> Unit,
     onRemove: () -> Unit,
     compact: Boolean = false,
+    upFocus: FocusRequester? = null,
 ) {
     val shape = RoundedCornerShape(if (compact) 8.dp else 12.dp)
     val qtyWidth = if (compact) 22.dp else 28.dp
@@ -501,6 +507,7 @@ private fun QuantityStepper(
             onClick = onRemove,
             enabled = quantity > 0,
             compact = compact,
+            upFocus = upFocus,
         )
         Text(
             text = quantity.toString(),
@@ -518,6 +525,7 @@ private fun QuantityStepper(
             label = "+",
             onClick = onAdd,
             compact = compact,
+            upFocus = upFocus,
         )
     }
 }
@@ -529,6 +537,7 @@ private fun QuantityButton(
     onClick: () -> Unit,
     enabled: Boolean = true,
     compact: Boolean = false,
+    upFocus: FocusRequester? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(if (compact) 6.dp else 8.dp)
@@ -537,6 +546,13 @@ private fun QuantityButton(
     Box(
         modifier = Modifier
             .size(buttonSize)
+            .then(
+                if (upFocus != null) {
+                    Modifier.focusProperties { up = upFocus }
+                } else {
+                    Modifier
+                },
+            )
             .onFocusChanged { focused = it.isFocused }
             .focusable(enabled)
             .onKeyEvent { event ->
@@ -621,8 +637,8 @@ private fun OrderSummaryPanel(
 
             Column(
                 modifier = Modifier
-                    .weight(1f)
                     .fillMaxWidth()
+                    .heightIn(min = 88.dp, max = 150.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
