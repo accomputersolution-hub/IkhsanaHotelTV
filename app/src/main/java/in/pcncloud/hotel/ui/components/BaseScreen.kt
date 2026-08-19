@@ -558,20 +558,14 @@ private fun RoomBadge(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun WifiStatusIcon() {
-    if (BuildConfig.IS_CORPORATE) {
-        Image(
-            painter = painterResource(R.drawable.ic_wifi),
-            contentDescription = stringResource(R.string.wifi_status),
-            modifier = Modifier.size(22.dp),
-            colorFilter = ColorFilter.tint(TextPrimary.copy(alpha = 0.92f)),
-        )
-    } else {
-        Text(
-            text = "📶",
-            fontSize = 22.sp,
-            color = TextPrimary,
-        )
-    }
+    Image(
+        painter = painterResource(R.drawable.ic_wifi),
+        contentDescription = stringResource(R.string.wifi_status),
+        modifier = Modifier.size(22.dp),
+        colorFilter = ColorFilter.tint(
+            if (BuildConfig.IS_CORPORATE) TextPrimary.copy(alpha = 0.92f) else GoldPrimary,
+        ),
+    )
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
