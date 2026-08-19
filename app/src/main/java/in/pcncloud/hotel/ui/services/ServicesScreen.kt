@@ -41,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -656,6 +657,8 @@ private fun SubServiceDialog(
     onDismiss: () -> Unit,
 ) {
     val firstFocus = remember { FocusRequester() }
+    val cancelFocus = remember { FocusRequester() }
+    val submitFocus = remember { FocusRequester() }
     val usesQuantitySteppers = category.subItems.any { it.kind == SubItemKind.QUANTITY }
     val subtitle = if (usesQuantitySteppers) {
         stringResource(R.string.service_sub_hint_qty)
@@ -670,6 +673,7 @@ private fun SubServiceDialog(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.7f))
+            .padding(horizontal = 22.dp, vertical = 18.dp)
             .onKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown && event.key == Key.Back) {
                     onDismiss()
@@ -686,7 +690,7 @@ private fun SubServiceDialog(
                     .fillMaxWidth(0.92f)
                     .background(NavySurface, RoundedCornerShape(22.dp))
                     .border(2.dp, GoldLuxury.copy(alpha = 0.45f), RoundedCornerShape(22.dp))
-                    .padding(horizontal = 28.dp, vertical = 24.dp),
+                    .padding(horizontal = 30.dp, vertical = 26.dp),
             ) {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -740,6 +744,8 @@ private fun SubServiceDialog(
                                 onIncrement = { onIncrement(item.id) },
                                 onDecrement = { onDecrement(item.id) },
                                 onToggle = { onToggle(item.id) },
+                                cancelFocus = cancelFocus,
+                                submitFocus = submitFocus,
                                 onSelectChoice = { choice -> onSelectChoice(item.id, choice) },
                             )
                         }
@@ -766,6 +772,7 @@ private fun SubServiceDialog(
                             enabled = !isSubmitting,
                             modifier = Modifier
                                 .weight(1f)
+                                .focusRequester(cancelFocus)
                                 .then(
                                     if (category.subItems.isEmpty()) {
                                         Modifier.focusRequester(firstFocus)
@@ -773,6 +780,7 @@ private fun SubServiceDialog(
                                         Modifier
                                     },
                                 ),
+                            rightFocus = submitFocus,
                             onClick = onDismiss,
                         )
                         SubDialogButton(
@@ -783,7 +791,10 @@ private fun SubServiceDialog(
                             },
                             highlighted = true,
                             enabled = canSubmit,
-                            modifier = Modifier.weight(1.35f),
+                            modifier = Modifier
+                                .weight(1.35f)
+                                .focusRequester(submitFocus),
+                            leftFocus = cancelFocus,
                             onClick = onSubmit,
                         )
                     }
@@ -806,6 +817,8 @@ private fun SubOptionRow(
     onIncrement: () -> Unit,
     onDecrement: () -> Unit,
     onToggle: () -> Unit,
+    cancelFocus: FocusRequester,
+    submitFocus: FocusRequester,
     onSelectChoice: (String) -> Unit,
 ) {
     var rowFocused by remember { mutableStateOf(false) }
@@ -922,6 +935,7 @@ private fun SubOptionRow(
                         ChoiceChip(
                             label = choice,
                             selected = chosen,
+                            downFocus = cancelFocus,
                             onClick = { onSelectChoice(choice) },
                         )
                     }
@@ -983,12 +997,18 @@ private fun SubToggleRow(
 private fun ChoiceChip(
     label: String,
     selected: Boolean,
+    downFocus: FocusRequester? = null,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(999.dp)
     Box(
         modifier = Modifier
+            .then(
+                Modifier.focusProperties {
+                    if (downFocus != null) down = downFocus
+                },
+            )
             .onFocusChanged { focused = it.isFocused }
             .focusable()
             .onKeyEvent { event ->
@@ -1001,14 +1021,14 @@ private fun ChoiceChip(
             .background(
                 when {
                     selected -> GoldLuxury.copy(alpha = 0.28f)
-                    focused -> GoldLuxury.copy(alpha = 0.14f)
+                    focused -> Color.White.copy(alpha = 0.16f)
                     else -> Color.White.copy(alpha = 0.06f)
                 },
                 shape,
             )
             .border(
                 if (focused || selected) 2.dp else 1.dp,
-                if (selected || focused) GoldLuxury else Color.White.copy(alpha = 0.14f),
+                if (selected) GoldLuxury else if (focused) GoldLight else Color.White.copy(alpha = 0.14f),
                 shape,
             )
             .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -1110,6 +1130,8 @@ private fun SubDialogButton(
     text: String,
     highlighted: Boolean,
     enabled: Boolean,
+    leftFocus: FocusRequester? = null,
+    rightFocus: FocusRequester? = null,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -1121,6 +1143,9 @@ private fun SubDialogButton(
         label = "subDlgBtnScale",
     )
     val bgBrush = when {
+        focused && !highlighted && enabled -> Brush.verticalGradient(
+            listOf(Color.White.copy(0.18f), Color.White.copy(0.10f)),
+        )
         !highlighted -> Brush.verticalGradient(
             listOf(Color.White.copy(0.08f), Color.White.copy(0.04f)),
         )
@@ -1134,17 +1159,23 @@ private fun SubDialogButton(
     }
     val borderColor = when {
         focused && highlighted && enabled -> GoldLight
+        focused && enabled -> Color.White.copy(alpha = 0.88f)
         highlighted && enabled -> GoldLuxury.copy(0.7f)
         else -> Color.White.copy(0.15f)
     }
     val textColor = when {
         highlighted && enabled -> NavyDeep
+        focused && enabled -> TextPrimary
         else -> TextMuted
     }
 
     Box(
         modifier = modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
+            .focusProperties {
+                if (leftFocus != null) left = leftFocus
+                if (rightFocus != null) right = rightFocus
+            }
             .background(brush = bgBrush, shape = shape)
             .border(if (focused) 2.dp else 1.dp, borderColor, shape)
             .onFocusChanged { focused = it.isFocused }
