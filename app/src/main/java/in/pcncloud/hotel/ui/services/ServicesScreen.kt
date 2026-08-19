@@ -352,7 +352,14 @@ private fun HotelServicesScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         BaseScreen(
             viewModelFactory = viewModelFactory,
-            onBack = onBack,
+            onBack = {
+                when {
+                    showActiveRequests -> showActiveRequests = false
+                    uiState.activeCategory != null -> viewModel.dismissSubDialog()
+                    uiState.showVacantRoomDialog -> viewModel.dismissVacantRoomDialog()
+                    else -> onBack()
+                }
+            },
             onOpenAdmin = onOpenAdmin,
             title = screenTitle,
             subtitle = screenSubtitle,
