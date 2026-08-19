@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -178,7 +179,7 @@ fun DiningScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .weight(if (BuildConfig.IS_CORPORATE) 1f else 0.62f)
+                        .weight(if (BuildConfig.IS_CORPORATE) 1f else 0.54f)
                         .fillMaxHeight(),
                 ) {
                     LazyVerticalGrid(
@@ -256,7 +257,7 @@ fun DiningScreen(
                             }
                         },
                         modifier = Modifier
-                            .weight(0.38f)
+                            .weight(0.46f)
                             .fillMaxHeight(),
                     )
                 }
@@ -617,13 +618,10 @@ private fun OrderSummaryPanel(
             .border(1.dp, CorpGoldBorderIdle, RoundedCornerShape(16.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val cartHeight = (maxHeight * 0.48f).coerceIn(140.dp, 280.dp)
+
+            Column(modifier = Modifier.fillMaxSize()) {
                 Text(
                     text = stringResource(R.string.your_order),
                     fontSize = 18.sp,
@@ -637,11 +635,13 @@ private fun OrderSummaryPanel(
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = SansBody,
                     color = TextMuted,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
                 )
+
                 Column(
                     modifier = Modifier
-                        .weight(1f)
                         .fillMaxWidth()
+                        .height(cartHeight)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -660,12 +660,9 @@ private fun OrderSummaryPanel(
                         }
                     }
                 }
-            }
 
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
+                Spacer(modifier = Modifier.height(8.dp))
+
                 if (cart.isNotEmpty()) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -686,6 +683,7 @@ private fun OrderSummaryPanel(
                             color = GoldLuxury,
                         )
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
 
                 PaymentToggle(
@@ -699,12 +697,14 @@ private fun OrderSummaryPanel(
                         text = stringResource(R.string.order_placed),
                         fontSize = 13.sp,
                         color = VegGreen,
+                        modifier = Modifier.padding(top = 6.dp),
                     )
                 } else if (orderMessage == "error") {
                     Text(
                         text = stringResource(R.string.order_failed),
                         fontSize = 13.sp,
                         color = NonVegRed,
+                        modifier = Modifier.padding(top = 6.dp),
                     )
                 }
 
@@ -718,6 +718,7 @@ private fun OrderSummaryPanel(
                     else -> stringResource(R.string.cart_confirm_cta, cartTotal)
                 }
 
+                Spacer(modifier = Modifier.height(8.dp))
                 PlaceOrderCta(
                     text = ctaText,
                     enabled = hasItems && !isPlacingOrder && roomOccupied,
