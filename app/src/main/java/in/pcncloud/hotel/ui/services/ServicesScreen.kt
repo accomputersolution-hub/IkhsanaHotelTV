@@ -635,24 +635,11 @@ private fun ActiveRequestsCard(
             .padding(horizontal = 18.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(76.dp)
-                .background(GoldLuxury.copy(alpha = if (focused) 0.22f else 0.12f), CircleShape)
-                .border(
-                    1.dp,
-                    if (focused) GoldLight else GoldGlassBorder,
-                    CircleShape,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Image(
-                painter = painterResource(R.drawable.ic_service_history),
-                contentDescription = null,
-                modifier = Modifier.size(32.dp),
-                colorFilter = ColorFilter.tint(if (focused) GoldLight else GoldLuxury),
-            )
-        }
+        Image(
+            painter = painterResource(R.drawable.ic_service_active_requests_3d),
+            contentDescription = null,
+            modifier = Modifier.size(76.dp),
+        )
         Text(
             text = stringResource(R.string.my_active_requests),
             fontSize = 18.sp,
@@ -1361,10 +1348,9 @@ private fun ActiveRequestsOverlay(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Image(
-                    painter = painterResource(R.drawable.ic_service_history),
+                    painter = painterResource(R.drawable.ic_service_active_requests_3d),
                     contentDescription = null,
-                    modifier = Modifier.size(32.dp),
-                    colorFilter = ColorFilter.tint(GoldLuxury),
+                    modifier = Modifier.size(54.dp),
                 )
                 Column {
                     Text(
