@@ -552,7 +552,7 @@ private fun NavigationCardsRow(
                 } else {
                     stringResource(R.string.feature_alerts_subtitle)
                 },
-                iconRes = R.drawable.ic_nav_alerts,
+                iconRes = NavCardIcons.alerts,
                 focusGlowColor = GoldLuxury,
                 modifier = cardMod(alertsFocus, HomeNavCard.Alerts),
                 onClick = onAlerts,
