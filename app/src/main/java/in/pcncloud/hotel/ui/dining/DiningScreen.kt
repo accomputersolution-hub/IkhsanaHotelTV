@@ -182,7 +182,7 @@ fun DiningScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .weight(if (BuildConfig.IS_CORPORATE) 1f else 0.54f)
+                        .weight(if (BuildConfig.IS_CORPORATE) 1f else 0.65f)
                         .fillMaxHeight(),
                 ) {
                     LazyVerticalGrid(
@@ -260,7 +260,7 @@ fun DiningScreen(
                             }
                         },
                         modifier = Modifier
-                            .weight(0.46f)
+                            .weight(0.35f)
                             .fillMaxHeight(),
                     )
                 }
@@ -715,6 +715,7 @@ private fun OrderSummaryPanel(
                 selected = selectedPayment,
                 onSelectCheckout = { onSelectPayment(PaymentMethod.PAY_AT_CHECKOUT) },
                 onPayNow = onPayNow,
+                stacked = true,
             )
 
             if (orderMessage == "success") {
@@ -1010,6 +1011,7 @@ private fun PaymentToggle(
     selected: PaymentMethod,
     onSelectCheckout: () -> Unit,
     onPayNow: () -> Unit,
+    stacked: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1020,27 +1022,53 @@ private fun PaymentToggle(
             fontFamily = SansBody,
             color = TextMuted,
         )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            PaymentCard(
-                icon = "🛏",
-                title = stringResource(R.string.pay_at_checkout),
-                subtitle = stringResource(R.string.pay_at_checkout_sub),
-                isSelected = selected == PaymentMethod.PAY_AT_CHECKOUT,
-                modifier = Modifier.weight(1f),
-                onClick = onSelectCheckout,
-            )
-            PaymentCard(
-                icon = "📲",
-                title = stringResource(R.string.pay_now),
-                subtitle = stringResource(R.string.pay_now_sub),
-                isSelected = selected == PaymentMethod.PAID_ONLINE,
-                modifier = Modifier.weight(1f),
-                // ONLY showQrDialog via parent — never navigate Home.
-                onClick = onPayNow,
-            )
+        val optionsModifier = Modifier.fillMaxWidth()
+        if (stacked) {
+            Column(
+                modifier = optionsModifier,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                PaymentCard(
+                    icon = "🛏",
+                    title = stringResource(R.string.pay_at_checkout),
+                    subtitle = stringResource(R.string.pay_at_checkout_sub),
+                    isSelected = selected == PaymentMethod.PAY_AT_CHECKOUT,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onSelectCheckout,
+                )
+                PaymentCard(
+                    icon = "📲",
+                    title = stringResource(R.string.pay_now),
+                    subtitle = stringResource(R.string.pay_now_sub),
+                    isSelected = selected == PaymentMethod.PAID_ONLINE,
+                    modifier = Modifier.fillMaxWidth(),
+                    // ONLY showQrDialog via parent — never navigate Home.
+                    onClick = onPayNow,
+                )
+            }
+        } else {
+            Row(
+                modifier = optionsModifier,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                PaymentCard(
+                    icon = "🛏",
+                    title = stringResource(R.string.pay_at_checkout),
+                    subtitle = stringResource(R.string.pay_at_checkout_sub),
+                    isSelected = selected == PaymentMethod.PAY_AT_CHECKOUT,
+                    modifier = Modifier.weight(1f),
+                    onClick = onSelectCheckout,
+                )
+                PaymentCard(
+                    icon = "📲",
+                    title = stringResource(R.string.pay_now),
+                    subtitle = stringResource(R.string.pay_now_sub),
+                    isSelected = selected == PaymentMethod.PAID_ONLINE,
+                    modifier = Modifier.weight(1f),
+                    // ONLY showQrDialog via parent — never navigate Home.
+                    onClick = onPayNow,
+                )
+            }
         }
     }
 }
@@ -1102,7 +1130,7 @@ private fun PaymentCard(
                     fontWeight = FontWeight.Bold,
                     fontFamily = SansBody,
                     color = if (isSelected) GoldLuxury else TextPrimary,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
@@ -1110,7 +1138,7 @@ private fun PaymentCard(
                     fontSize = 9.sp,
                     fontFamily = SansBody,
                     color = TextMuted,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
