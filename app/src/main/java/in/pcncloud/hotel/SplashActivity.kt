@@ -17,7 +17,9 @@ import androidx.core.view.isVisible
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
+import `in`.pcncloud.hotel.ui.components.hotelImageRequest
 import `in`.pcncloud.hotel.ui.home.BrandAssets
+import coil.load
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -25,7 +27,7 @@ import com.google.firebase.firestore.MetadataChanges
 
 /**
  * Dedicated cold-start splash (3–4s minimum):
- * - Compact local flavor logo ([BrandAssets] / `@drawable/lt_logo` on corporate)
+ * - Default local flavor logo first, then hotel Firestore logo when available
  * - Welcome tagline + circular progress
  * - Waits for Hotels/{id} + Rooms/{room} snapshots (or timeout) before [MainActivity]
  */
@@ -81,7 +83,7 @@ class SplashActivity : AppCompatActivity() {
         splashProgress = findViewById(R.id.splash_progress)
         startedAtMs = SystemClock.elapsedRealtime()
 
-        // Compact local mark only — never Coil / Firebase on splash.
+        // Show the local mark immediately; swap to hotel branding once Firestore arrives.
         splashLogo?.setImageResource(BrandAssets.logoRes)
         splashLogo?.isVisible = true
         splashWelcome.text = getString(R.string.splash_welcome_loading)
@@ -269,10 +271,20 @@ class SplashActivity : AppCompatActivity() {
                 }
 
                 val data = snapshot.data ?: emptyMap()
+                @Suppress("UNCHECKED_CAST")
+                val branding = (data["branding"] as? Map<String, Any?>) ?: emptyMap()
                 val hotelName = firstNonBlank(
                     data["name"] as? String,
                     data["hotel_name"] as? String,
                     data["hotelName"] as? String,
+                )
+                val logoUrl = firstNonBlank(
+                    asTrimmedString(branding["logo_url"]),
+                    asTrimmedString(branding["logoUrl"]),
+                    asTrimmedString(branding["logo"]),
+                    asTrimmedString(data["logo_url"]),
+                    asTrimmedString(data["logoUrl"]),
+                    asTrimmedString(data["logo"]),
                 )
 
                 // Keep corporate welcome tagline stable; hotel may refine with name.
@@ -281,9 +293,10 @@ class SplashActivity : AppCompatActivity() {
                 } else if (splashWelcome.text.isNullOrBlank()) {
                     splashWelcome.text = getString(R.string.splash_welcome_loading)
                 }
+                loadSplashLogo(logoUrl)
 
                 brandingReady = true
-                Log.i(TAG, "Splash hotel config ready → name=$hotelName")
+                Log.i(TAG, "Splash hotel config ready → name=$hotelName logo=${logoUrl.take(120)}")
                 tryScheduleMainWhenReady()
             }
     }
@@ -414,6 +427,49 @@ class SplashActivity : AppCompatActivity() {
 
     private fun firstNonBlank(vararg values: String?): String =
         values.firstOrNull { !it.isNullOrBlank() }.orEmpty()
+
+    private fun asTrimmedString(value: Any?): String? = when (value) {
+        null -> null
+        is String -> value.trim().takeIf { it.isNotEmpty() }
+        is Number, is Boolean -> value.toString()
+        else -> value.toString().trim().takeIf { it.isNotEmpty() }
+    }
+
+    private fun loadSplashLogo(rawUrl: String) {
+        val logoView = splashLogo ?: return
+        val remoteUrl = normalizeRemoteImageUrl(rawUrl)
+        if (BuildConfig.IS_CORPORATE || remoteUrl.isNullOrBlank()) {
+            logoView.setImageResource(BrandAssets.logoRes)
+            return
+        }
+        logoView.load(
+            hotelImageRequest(
+                context = this,
+                url = remoteUrl,
+                logTag = "SplashLogo",
+            ),
+        ) {
+            placeholder(BrandAssets.logoRes)
+            error(BrandAssets.logoRes)
+            fallback(BrandAssets.logoRes)
+        }
+    }
+
+    private fun normalizeRemoteImageUrl(url: String): String? {
+        var cleaned = url.trim().trim('"', '\'').trim()
+        if (cleaned.isBlank()) return null
+        if (cleaned.startsWith("data:image/svg", ignoreCase = true)) return null
+
+        val wikiFilePage = Regex(
+            pattern = """^https?://(?:commons\.wikimedia\.org|(?:[a-z]+\.)?wikipedia\.org)/wiki/File:(.+)$""",
+            option = RegexOption.IGNORE_CASE,
+        ).matchEntire(cleaned)
+        if (wikiFilePage != null) {
+            val fileName = wikiFilePage.groupValues[1]
+            cleaned = "https://commons.wikimedia.org/wiki/Special:FilePath/$fileName"
+        }
+        return cleaned
+    }
 
     companion object {
         private const val TAG = "SplashActivity"
