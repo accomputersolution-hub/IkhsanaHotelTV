@@ -431,7 +431,11 @@ function showRequestBanner(department, data) {
   const banner = document.getElementById('new-order-banner');
   if (!banner) return;
   const deptLabel = department === 'concierge' ? 'Concierge' : 'Housekeeping';
-  banner.innerHTML = `New ${deptLabel} request — Room <strong>${escapeHtml(String(data.roomNumber || '?'))}</strong> · ${escapeHtml(data.serviceLabel || 'Service')}`;
+  const details = requestDetailsLine(data);
+  const scheduledFor = extractScheduledTime(data);
+  const scheduleSuffix = scheduledFor ? ` · Scheduled for ${scheduledFor}` : '';
+  const detailSuffix = details ? ` · ${details}` : scheduleSuffix;
+  banner.innerHTML = `New ${deptLabel} request — Room <strong>${escapeHtml(String(data.roomNumber || '?'))}</strong> · ${escapeHtml(data.serviceLabel || 'Service')}${escapeHtml(detailSuffix || scheduleSuffix)}`;
   banner.classList.remove('hidden');
   setTimeout(() => banner.classList.add('hidden'), 6000);
 }
@@ -483,10 +487,72 @@ function renderRequests(state) {
   bindRequestActions(container, state.department);
 }
 
+function normalizeRequestItems(items) {
+  if (!items) return [];
+  if (Array.isArray(items)) return items;
+  if (typeof items === 'object') return Object.values(items);
+  return [items];
+}
+
+function formatRequestItems(items) {
+  const normalized = normalizeRequestItems(items);
+  if (!normalized.length) return '';
+  return normalized
+    .map((item) => {
+      if (typeof item === 'string') return item.trim();
+      if (item && typeof item === 'object') {
+        const qty = item.quantity || 1;
+        const name = item.name || item.label || 'Item';
+        return qty > 1 ? `${qty}× ${name}` : name;
+      }
+      return String(item || '').trim();
+    })
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function extractScheduledTime(req) {
+  for (const key of ['scheduledTime', 'scheduled_time', 'scheduleTime', 'scheduledFor']) {
+    const value = String(req[key] || '').trim();
+    if (value) return value;
+  }
+
+  const blob = [
+    req.details,
+    req.notes,
+    formatRequestItems(req.items),
+    req.serviceLabel,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const match = blob.match(
+    /(?:Scheduled Time\s*[—–-]\s*|Scheduled(?:\s+for)?:\s*)(\d{1,2}:\d{2}\s*[AP]M)/i,
+  );
+  return match ? match[1].trim() : '';
+}
+
+function requestDetailsLine(req) {
+  const scheduled = extractScheduledTime(req);
+  const details =
+    String(req.details || '').trim() ||
+    String(req.notes || '').trim() ||
+    formatRequestItems(req.items);
+  if (details) {
+    if (scheduled && !details.includes(scheduled)) {
+      return `${details} · Scheduled: ${scheduled}`;
+    }
+    return details;
+  }
+  if (scheduled) return `Scheduled: ${scheduled}`;
+  return '';
+}
 function renderRequestCard(req, department) {
   const status = req.status || 'pending';
   const badge = STATUS_BADGES[status] || STATUS_BADGES.pending;
   const icon = department === 'concierge' ? '🚖' : '🧹';
+  const scheduledFor = extractScheduledTime(req);
+  const details = requestDetailsLine(req);
 
   let actions = '';
   if (status === 'pending') {
@@ -509,6 +575,8 @@ function renderRequestCard(req, department) {
             <span class="req-status-badge ${badge}">${STATUS_LABELS[status] || status}</span>
           </div>
           <p class="service-type">${escapeHtml(req.serviceLabel || req.serviceType || 'Service Request')}</p>
+          ${scheduledFor ? `<p class="service-schedule">Scheduled for <strong>${escapeHtml(scheduledFor)}</strong></p>` : ''}
+          ${details ? `<p class="service-details">${escapeHtml(details)}</p>` : ''}
           <p class="service-meta">${escapeHtml(req.guestName || 'Guest')} · ${formatTime(req.timestamp)}</p>
         </div>
       </div>

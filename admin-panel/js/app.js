@@ -3,7 +3,7 @@ import { initOrders } from './orders.js';
 import { initAlerts } from './alerts.js';
 import { initMenu } from './menu.js';
 import { initGuests } from './guests.js';
-import { initHousekeeping, initConcierge } from './requests.js';
+import { initHousekeeping, initConcierge } from './requests.js?v=20260819';
 import { initEmergencyContacts } from './emergency-contacts.js';
 import { initDailyAgenda } from './daily-agenda.js';
 import { initAnnouncement } from './announcement.js';
