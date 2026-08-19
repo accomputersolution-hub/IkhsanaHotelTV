@@ -679,7 +679,7 @@ private fun OrderSummaryPanel(
 
         Column(
             modifier = Modifier
-                .align(Alignment.Bottom)
+                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .background(CorpCardBg)
                 .padding(top = 8.dp)
