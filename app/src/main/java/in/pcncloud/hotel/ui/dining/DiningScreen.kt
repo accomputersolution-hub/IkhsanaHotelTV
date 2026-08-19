@@ -679,7 +679,9 @@ private fun OrderSummaryPanel(
                         color = TextPrimary,
                     )
                     roomOrders.take(3).forEach { order ->
-                        OrderHistoryCard(order = order)
+                        key(order.id.ifBlank { "${order.timestamp}-${order.roomNumber}" }) {
+                            OrderHistoryCard(order = order)
+                        }
                     }
                 }
             }
