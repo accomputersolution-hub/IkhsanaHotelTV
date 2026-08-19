@@ -408,14 +408,10 @@ private fun BrandLogo(hotelLogoUrl: String) {
 
     Box(
         modifier = Modifier
-            .height(84.dp)
-            .widthIn(min = 88.dp, max = 112.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(Color(0xCCFFFFFF))
-            .border(1.dp, GoldLight.copy(alpha = 0.55f), RoundedCornerShape(18.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .height(72.dp)
+            .widthIn(max = 88.dp)
             .wrapContentWidth(Alignment.Start),
-        contentAlignment = Alignment.Center,
+        contentAlignment = Alignment.CenterStart,
     ) {
         if (remoteUrl != null) {
             AsyncImage(
@@ -427,9 +423,9 @@ private fun BrandLogo(hotelLogoUrl: String) {
                 contentDescription = "Hotel Logo",
                 modifier = Modifier
                     .fillMaxHeight()
-                    .fillMaxWidth(),
+                    .wrapContentWidth(),
                 contentScale = ContentScale.Fit,
-                alignment = Alignment.Center,
+                alignment = Alignment.CenterStart,
                 error = localLogo,
                 fallback = localLogo,
             )
@@ -439,9 +435,9 @@ private fun BrandLogo(hotelLogoUrl: String) {
                 contentDescription = "Hotel Logo",
                 modifier = Modifier
                     .fillMaxHeight()
-                    .fillMaxWidth(),
+                    .wrapContentWidth(),
                 contentScale = ContentScale.Fit,
-                alignment = Alignment.Center,
+                alignment = Alignment.CenterStart,
             )
         }
     }
