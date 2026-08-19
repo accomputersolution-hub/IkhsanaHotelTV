@@ -342,13 +342,16 @@
                 <label for="edit-hotel-logo-url" class="block text-sm font-medium mb-1">Logo URL</label>
                 <input
                   id="edit-hotel-logo-url"
-                  type="url"
+                  type="text"
                   spellcheck="false"
                   autocomplete="off"
-                  placeholder="https://…"
+                  placeholder="https://i.ibb.co/…/logo.png"
                   class="sa-field w-full outline-none"
                 />
-                <p class="text-xs mt-1" style="color:var(--text-dim)">Direct image link · field <code>branding.logoUrl</code>.</p>
+                <p class="text-xs mt-1" style="color:var(--text-dim)">
+                  Direct image link (<code>i.ibb.co/…</code>), not the ImgBB page.
+                  <strong>Save Changes</strong> ke baad TV 2–3 seconds mein fetch karti hai — preview yahan save nahi karta.
+                </p>
                 <div class="sa-media-preview mt-2 max-h-32">
                   <img id="edit-hotel-logo-preview" alt="Logo preview" class="sa-preview-img sa-preview-logo max-h-32 object-contain hidden" />
                   <span id="edit-hotel-logo-placeholder" class="sa-preview-placeholder">Logo preview</span>
@@ -358,12 +361,13 @@
                 <label for="edit-hotel-wallpaper-url" class="block text-sm font-medium mb-1">Wallpaper / Background Image URL</label>
                 <input
                   id="edit-hotel-wallpaper-url"
-                  type="url"
+                  type="text"
                   spellcheck="false"
                   autocomplete="off"
-                  placeholder="https://…"
+                  placeholder="https://i.ibb.co/…/wallpaper.jpg"
                   class="sa-field w-full outline-none"
                 />
+                <p class="text-xs mt-1" style="color:var(--text-dim)">Direct image link. Page URL (<code>ibb.co/…</code>) TV pe load nahi hota.</p>
                 <div class="sa-media-preview sa-media-preview-wide mt-2 max-h-32">
                   <img id="edit-hotel-wallpaper-preview" alt="Wallpaper preview" class="sa-preview-img sa-preview-wallpaper max-h-32 object-contain hidden" />
                   <span id="edit-hotel-wallpaper-placeholder" class="sa-preview-placeholder">Wallpaper preview</span>

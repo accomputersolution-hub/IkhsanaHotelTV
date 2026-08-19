@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -244,7 +245,11 @@ private fun ScreensaverBackground(
     Box(modifier = Modifier.fillMaxSize()) {
         if (useRemote) {
             AsyncImage(
-                model = wallpaperUrl,
+                model = hotelImageRequest(
+                    context = LocalContext.current,
+                    url = wallpaperUrl,
+                    logTag = "ScreensaverWallpaper",
+                ),
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
@@ -321,7 +326,11 @@ private fun ScreensaverLogo(
     ) {
         if (remoteUrl != null) {
             AsyncImage(
-                model = remoteUrl,
+                model = hotelImageRequest(
+                    context = LocalContext.current,
+                    url = remoteUrl,
+                    logTag = "ScreensaverLogo",
+                ),
                 contentDescription = stringResource(R.string.screensaver_logo_cd),
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,

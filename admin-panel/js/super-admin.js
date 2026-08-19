@@ -137,6 +137,47 @@ function brandingOf(hotel) {
   };
 }
 
+/** Encode spaces so Android Coil can fetch ImgBB / CDN paths. */
+function sanitizeImageUrl(raw) {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return '';
+  try {
+    const url = new URL(trimmed);
+    url.pathname = url.pathname
+      .split('/')
+      .map((segment) => {
+        try {
+          return encodeURIComponent(decodeURIComponent(segment));
+        } catch {
+          return encodeURIComponent(segment);
+        }
+      })
+      .join('/');
+    return url.toString();
+  } catch {
+    return trimmed.replace(/ /g, '%20');
+  }
+}
+
+/** ImgBB viewer pages (`ibb.co/…`) are HTML — TV needs `i.ibb.co/…` image bytes. */
+function assertDirectImageUrl(url, label) {
+  if (!url) return true;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host === 'ibb.co' || host === 'www.ibb.co') {
+      toast(
+        `${label}: ImgBB page link TV pe nahi chalta. Image pe right-click → Copy image address (i.ibb.co)`,
+        'error',
+      );
+      return false;
+    }
+  } catch {
+    toast(`${label}: valid https image link lagao`, 'error');
+    return false;
+  }
+  return true;
+}
+
 function normalizePropertyType(value) {
   return String(value || 'hotel').trim().toLowerCase() === 'corporate'
     ? 'corporate'
@@ -312,9 +353,9 @@ function setupAddHotelModal() {
     let hotelId = normalizeHotelId(document.getElementById('hotel-slug')?.value);
     const adminEmail = document.getElementById('hotel-admin-email')?.value?.trim();
     const password = document.getElementById('hotel-admin-password')?.value || '';
-    const logoUrl = document.getElementById('hotel-logo-url')?.value?.trim() || '';
+    const logoUrl = sanitizeImageUrl(document.getElementById('hotel-logo-url')?.value || '');
     const themeColor = document.getElementById('hotel-theme-color')?.value?.trim() || '#C9A962';
-    const bgWallpaper = document.getElementById('hotel-bg-wallpaper')?.value?.trim() || '';
+    const bgWallpaper = sanitizeImageUrl(document.getElementById('hotel-bg-wallpaper')?.value || '');
     const propertyType = normalizePropertyType(
       document.getElementById('hotel-property-type')?.value,
     );
@@ -325,6 +366,9 @@ function setupAddHotelModal() {
     }
     if (!/^[a-z0-9][a-z0-9_]{1,62}$/.test(hotelId)) {
       toast('Hotel ID must be lowercase letters, numbers, underscores (e.g. ikhsana_001)', 'error');
+      return;
+    }
+    if (!assertDirectImageUrl(logoUrl, 'Logo') || !assertDirectImageUrl(bgWallpaper, 'Wallpaper')) {
       return;
     }
 
@@ -364,8 +408,10 @@ function setupAddHotelModal() {
         ],
         branding: {
           logoUrl,
+          logo_url: logoUrl,
           themeColor,
           bgWallpaper,
+          bg_wallpaper: bgWallpaper,
         },
         createdAt: serverTimestamp(),
       });
@@ -453,9 +499,12 @@ function setupEditHotelModal() {
     const tagline = document.getElementById('edit-hotel-tagline')?.value?.trim() || '';
     const welcomeMessage =
       document.getElementById('edit-hotel-welcome-message')?.value?.trim() || '';
-    const logoUrl = document.getElementById('edit-hotel-logo-url')?.value?.trim() || '';
-    const bgWallpaper =
-      document.getElementById('edit-hotel-wallpaper-url')?.value?.trim() || '';
+    const logoUrl = sanitizeImageUrl(
+      document.getElementById('edit-hotel-logo-url')?.value || '',
+    );
+    const bgWallpaper = sanitizeImageUrl(
+      document.getElementById('edit-hotel-wallpaper-url')?.value || '',
+    );
     const isActive = Boolean(document.getElementById('edit-hotel-active')?.checked);
     const propertyType = normalizePropertyType(
       document.getElementById('edit-hotel-property-type')?.value,
@@ -465,6 +514,9 @@ function setupEditHotelModal() {
 
     if (!name || !adminEmail) {
       toast('Hotel name and admin email are required', 'error');
+      return;
+    }
+    if (!assertDirectImageUrl(logoUrl, 'Logo') || !assertDirectImageUrl(bgWallpaper, 'Wallpaper')) {
       return;
     }
 
@@ -486,13 +538,17 @@ function setupEditHotelModal() {
         status: isActive ? 'active' : 'inactive',
         branding: {
           logoUrl,
+          logo_url: logoUrl,
           themeColor: brand.themeColor || '#C9A962',
           bgWallpaper,
+          bg_wallpaper: bgWallpaper,
           tagline,
           welcomeMessage,
         },
         logoUrl,
+        logo_url: logoUrl,
         bgWallpaper,
+        bg_wallpaper: bgWallpaper,
         updatedAt: serverTimestamp(),
       });
       closeModal('edit-hotel-modal');

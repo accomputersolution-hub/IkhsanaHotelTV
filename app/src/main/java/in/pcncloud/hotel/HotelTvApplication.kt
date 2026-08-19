@@ -41,9 +41,11 @@ class HotelTvApplication : Application(), ImageLoaderFactory {
 
     /**
      * App-wide Coil loader.
-     * Wikimedia / many CDNs reject bare OkHttp User-Agents (403) — that previously
-     * made Hotels/{id}.logoUrl fall back to the yellow local flower while wallpaper
-     * (different host) still loaded.
+     *
+     * ImgBB (`i.ibb.co`) and Wikimedia 403 a bare OkHttp / custom app User-Agent,
+     * so the TV kept the local gold flower even after Super Admin saved a logo URL.
+     * Send a Chrome-on-Android-TV UA (and an ibb.co Referer) so those CDNs serve
+     * the actual image bytes.
      */
     override fun newImageLoader(): ImageLoader {
         val client = OkHttpClient.Builder()
@@ -52,14 +54,29 @@ class HotelTvApplication : Application(), ImageLoaderFactory {
             .followRedirects(true)
             .followSslRedirects(true)
             .addInterceptor { chain ->
-                val request = chain.request().newBuilder()
+                val original = chain.request()
+                val host = original.url.host.lowercase()
+                val builder = original.newBuilder()
+                    .header("User-Agent", CHROME_ANDROID_TV_UA)
                     .header(
-                        "User-Agent",
-                        "IkhsanaHotelTV/1.0 (Android TV; PCN Cloud IPTV; +https://pcncloud.in)",
+                        "Accept",
+                        "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
                     )
-                    .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
-                    .build()
-                chain.proceed(request)
+                    .header("Accept-Language", "en-US,en;q=0.9")
+                if (host == "i.ibb.co" || host == "ibb.co" || host.endsWith(".ibb.co")) {
+                    builder.header("Referer", "https://ibb.co/")
+                }
+                chain.proceed(builder.build())
+            }
+            .addNetworkInterceptor { chain ->
+                val response = chain.proceed(chain.request())
+                if (!response.isSuccessful) {
+                    Log.w(
+                        TAG,
+                        "Image HTTP ${response.code} ${chain.request().url}",
+                    )
+                }
+                response
             }
             .build()
 
@@ -113,5 +130,9 @@ class HotelTvApplication : Application(), ImageLoaderFactory {
 
     companion object {
         private const val TAG = "HotelTvApplication"
+        private const val CHROME_ANDROID_TV_UA =
+            "Mozilla/5.0 (Linux; Android 13; SHIELD Android TV) " +
+                "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/122.0.6261.64 Safari/537.36"
     }
 }

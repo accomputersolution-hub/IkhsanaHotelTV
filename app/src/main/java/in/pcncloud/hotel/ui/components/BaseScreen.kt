@@ -66,7 +66,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
@@ -188,7 +187,11 @@ fun HotelWallpaperBackground(
     ) {
         if (wallpaperUrl.isNotBlank() && !isLegacyUnsafeImageUrl(wallpaperUrl)) {
             AsyncImage(
-                model = wallpaperUrl,
+                model = hotelImageRequest(
+                    context = LocalContext.current,
+                    url = wallpaperUrl,
+                    logTag = "HotelWallpaper",
+                ),
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
@@ -400,23 +403,11 @@ private fun BrandLogo(hotelLogoUrl: String) {
     ) {
         if (remoteUrl != null) {
             AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(remoteUrl)
-                    .crossfade(true)
-                    .allowHardware(false)
-                    .listener(
-                        onSuccess = { _, _ ->
-                            Log.i("BrandLogo", "Hotel logo loaded OK")
-                        },
-                        onError = { _, result ->
-                            Log.e(
-                                "BrandLogo",
-                                "Hotel logo FAILED url=${remoteUrl.take(120)}: ${result.throwable.message}",
-                                result.throwable,
-                            )
-                        },
-                    )
-                    .build(),
+                model = hotelImageRequest(
+                    context = context,
+                    url = remoteUrl,
+                    logTag = "BrandLogo",
+                ),
                 contentDescription = "Hotel Logo",
                 modifier = Modifier
                     .fillMaxHeight()
