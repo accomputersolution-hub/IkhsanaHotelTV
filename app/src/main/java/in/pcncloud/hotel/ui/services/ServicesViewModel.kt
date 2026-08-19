@@ -199,8 +199,9 @@ class ServicesViewModel(
     private suspend fun handleRequestUpdates(requests: List<ServiceRequest>) {
         requests.forEach { request ->
             val previous = knownRequestStatuses[request.id]
-            if (requestsInitialized && previous != null && previous != request.status) {
-                when (request.status) {
+            val status = request.status.trim().lowercase()
+            if (requestsInitialized && previous != null && previous != status) {
+                when (status) {
                     "in_progress" -> showToast(
                         "Your ${request.serviceLabel} request is In Progress",
                         ServiceToastType.STATUS,
@@ -215,10 +216,10 @@ class ServicesViewModel(
                     )
                 }
             }
-            knownRequestStatuses[request.id] = request.status
+            knownRequestStatuses[request.id] = status
         }
         requestsInitialized = true
-        _uiState.update { it.copy(activeRequests = requests.filter { it.status != "cancelled" }) }
+        _uiState.update { it.copy(activeRequests = requests.filter { it.status.lowercase() != "cancelled" }) }
     }
 
     fun dismissVacantRoomDialog() {

@@ -62,6 +62,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
+import kotlinx.coroutines.delay
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.data.model.ServiceRequest
@@ -328,10 +329,17 @@ private fun HotelServicesScreen(
         else -> stringResource(R.string.services_subtitle)
     }
 
-    LaunchedEffect(options.size) {
-        if (options.isNotEmpty()) {
-            runCatching { firstItemFocus.requestFocus() }
+    val visibleRequests = remember(uiState.activeRequests, departmentFilter) {
+        val filter = departmentFilter?.trim()?.lowercase().orEmpty()
+        uiState.activeRequests.filter { request ->
+            filter.isBlank() || request.department.equals(filter, ignoreCase = true)
         }
+    }
+
+    LaunchedEffect(options.size, uiState.roomOccupied) {
+        if (options.isEmpty()) return@LaunchedEffect
+        delay(50)
+        runCatching { firstItemFocus.requestFocus() }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -358,7 +366,7 @@ private fun HotelServicesScreen(
         ) {
             itemsIndexed(
                 items = options,
-                key = { _, option -> option.serviceType },
+                key = { index, option -> "option-${option.serviceType}-$index" },
             ) { index, option ->
                 ServiceCard(
                     option = option,
@@ -369,8 +377,11 @@ private fun HotelServicesScreen(
                 )
             }
 
-            if (uiState.activeRequests.isNotEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
+            if (visibleRequests.isNotEmpty()) {
+                item(
+                    key = "active-requests-header",
+                    span = { GridItemSpan(maxLineSpan) },
+                ) {
                     Column {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
@@ -383,11 +394,11 @@ private fun HotelServicesScreen(
                     }
                 }
                 itemsIndexed(
-                    items = uiState.activeRequests.filter { request ->
-                        val filter = departmentFilter?.trim()?.lowercase().orEmpty()
-                        filter.isBlank() || request.department.equals(filter, ignoreCase = true)
+                    items = visibleRequests,
+                    key = { index, request ->
+                        val id = request.id.trim().ifBlank { "empty" }
+                        "request-$id-$index"
                     },
-                    key = { _, request -> request.id },
                     span = { _, _ -> GridItemSpan(maxLineSpan) },
                 ) { _, request ->
                     ActiveRequestRow(request = request)
@@ -627,10 +638,6 @@ private fun SubServiceDialog(
     onDismiss: () -> Unit,
 ) {
     val firstFocus = remember { FocusRequester() }
-    LaunchedEffect(category.serviceType) {
-        firstFocus.requestFocus()
-    }
-
     val usesQuantitySteppers = category.subItems.any { it.kind == SubItemKind.QUANTITY }
     val subtitle = if (usesQuantitySteppers) {
         stringResource(R.string.service_sub_hint_qty)
@@ -732,7 +739,15 @@ private fun SubServiceDialog(
                             text = stringResource(R.string.service_cancel),
                             highlighted = false,
                             enabled = !isSubmitting,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .then(
+                                    if (category.subItems.isEmpty()) {
+                                        Modifier.focusRequester(firstFocus)
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
                             onClick = onDismiss,
                         )
                         SubDialogButton(
@@ -746,6 +761,11 @@ private fun SubServiceDialog(
                             modifier = Modifier.weight(1.35f),
                             onClick = onSubmit,
                         )
+                    }
+
+                    LaunchedEffect(category.serviceType) {
+                        delay(50)
+                        runCatching { firstFocus.requestFocus() }
                     }
                 }
             }
@@ -1131,12 +1151,13 @@ private fun SubDialogButton(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun ActiveRequestRow(request: ServiceRequest) {
-    val statusColor = when (request.status) {
+    val status = request.status.trim().lowercase()
+    val statusColor = when (status) {
         "in_progress" -> FocusCyan
         "completed" -> FocusTeal
         else -> Color(0xFFFBBF24)
     }
-    val statusLabel = when (request.status) {
+    val statusLabel = when (status) {
         "in_progress" -> stringResource(R.string.status_in_progress)
         "completed" -> stringResource(R.string.status_completed)
         else -> stringResource(R.string.status_pending)
@@ -1171,7 +1192,6 @@ private fun ActiveRequestRow(request: ServiceRequest) {
 @Composable
 private fun VacantRoomDialog(onDismiss: () -> Unit) {
     val dismissFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { dismissFocus.requestFocus() }
 
     Dialog(onDismissRequest = onDismiss) {
         Box(
@@ -1247,6 +1267,10 @@ private fun VacantRoomDialog(onDismiss: () -> Unit) {
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                }
+                LaunchedEffect(Unit) {
+                    delay(50)
+                    runCatching { dismissFocus.requestFocus() }
                 }
             }
         }

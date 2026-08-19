@@ -692,26 +692,22 @@ class FirestoreRepository(
                     return@addSnapshotListener
                 }
 
-                val requests = snapshot?.documents?.mapNotNull { doc ->
-                    val data = doc.data ?: return@mapNotNull null
-                    ServiceRequest(
-                        id = doc.id,
-                        roomNumber = data["roomNumber"] as? String ?: "",
-                        guestName = data["guestName"] as? String ?: "",
-                        department = data["department"] as? String ?: "",
-                        serviceType = data["serviceType"] as? String ?: "",
-                        serviceLabel = data["serviceLabel"] as? String ?: "",
-                        status = data["status"] as? String ?: "pending",
-                        timestamp = (data["timestamp"] as? Number)?.toLong() ?: 0L,
-                        sessionKey = data["sessionKey"] as? String ?: "",
-                        archived = data["archived"] as? Boolean ?: false,
-                    )
-                }?.filter { request ->
-                    !request.archived && belongsToCurrentSession(request.sessionKey)
-                }?.sortedByDescending { it.timestamp } ?: emptyList()
+                try {
+                    val requests = snapshot?.documents?.mapNotNull { doc ->
+                        val data = doc.data ?: return@mapNotNull null
+                        runCatching { parseServiceRequest(doc.id, data) }
+                            .onFailure { Log.e(TAG, "FAIL parse Request ${doc.id}", it) }
+                            .getOrNull()
+                    }?.filter { request ->
+                        !request.archived && belongsToCurrentSession(request.sessionKey)
+                    }?.sortedByDescending { it.timestamp } ?: emptyList()
 
-                Log.d(TAG, "OK Requests → ${requests.size} for room $roomNumber")
-                trySend(requests)
+                    Log.d(TAG, "OK Requests → ${requests.size} for room $roomNumber")
+                    trySend(requests)
+                } catch (t: Throwable) {
+                    Log.e(TAG, "FAIL Requests snapshot parse at $path", t)
+                    trySend(emptyList())
+                }
             }
         awaitClose {
             Log.d(TAG, "UNLISTEN Requests → $path")
@@ -724,6 +720,52 @@ class FirestoreRepository(
         if (activeSession.isBlank()) return itemSessionKey.isBlank()
         return itemSessionKey.isBlank() || itemSessionKey == activeSession
     }
+
+    private fun parseServiceRequest(docId: String, data: Map<String, Any>): ServiceRequest {
+        val statusRaw = firstNonBlank(
+            asTrimmedString(data["status"]),
+            asTrimmedString(data["STATUS"]),
+        )
+        val timestamp = parseEpochMillis(data["timestamp"]).takeIf { it > 0L }
+            ?: parseEpochMillis(data["createdAt"])
+
+        return ServiceRequest(
+            id = docId,
+            roomNumber = firstNonBlank(
+                asTrimmedString(data["roomNumber"]),
+                asTrimmedString(data["room_number"]),
+            ),
+            guestName = asTrimmedString(data["guestName"]).orEmpty(),
+            department = firstNonBlank(asTrimmedString(data["department"])).lowercase(),
+            serviceType = firstNonBlank(
+                asTrimmedString(data["serviceType"]),
+                asTrimmedString(data["request_type"]),
+            ),
+            serviceLabel = firstNonBlank(
+                asTrimmedString(data["serviceLabel"]),
+                asTrimmedString(data["serviceType"]),
+                asTrimmedString(data["request_type"]),
+            ),
+            status = normalizeRequestStatus(statusRaw),
+            timestamp = timestamp,
+            sessionKey = asTrimmedString(data["sessionKey"]).orEmpty(),
+            archived = data["archived"] as? Boolean ?: false,
+        )
+    }
+
+    private fun parseEpochMillis(value: Any?): Long = when (value) {
+        is Number -> value.toLong()
+        is com.google.firebase.Timestamp -> value.toDate().time
+        else -> 0L
+    }
+
+    private fun normalizeRequestStatus(raw: String): String =
+        when (raw.trim().lowercase().replace(' ', '_')) {
+            "in_progress", "progress", "accepted", "assigned" -> "in_progress"
+            "completed", "complete", "done" -> "completed"
+            "cancelled", "canceled" -> "cancelled"
+            else -> "pending"
+        }
 
     private fun firstNonBlank(vararg values: String?): String =
         values.mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }.firstOrNull().orEmpty()
