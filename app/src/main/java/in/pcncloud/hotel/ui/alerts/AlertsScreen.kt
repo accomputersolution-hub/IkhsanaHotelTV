@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
+import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.data.model.HotelAlert
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
@@ -57,6 +58,7 @@ fun AlertsScreen(
         onBack = onBack,
         onOpenAdmin = onOpenAdmin,
         title = stringResource(R.string.alerts_title),
+        showChromeHeader = BuildConfig.IS_CORPORATE,
     ) {
         if (uiState.alerts.isEmpty()) {
             Text(

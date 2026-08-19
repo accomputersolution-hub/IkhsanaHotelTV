@@ -103,6 +103,8 @@ fun BaseScreen(
     headerDownFocus: FocusRequester? = null,
     title: String? = null,
     subtitle: String? = null,
+    /** Home chrome (logo, clock, room). Hotel sub-screens hide this for vertical space. */
+    showChromeHeader: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val chromeViewModel: HomeViewModel = viewModel(factory = viewModelFactory)
@@ -130,33 +132,38 @@ fun BaseScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 40.dp, vertical = 28.dp),
+                .padding(
+                    horizontal = 40.dp,
+                    vertical = if (showChromeHeader) 28.dp else 16.dp,
+                ),
         ) {
-            AppChromeHeader(
-                roomNumber = roomNumber,
-                hotelLogoUrl = hotelLogoUrl,
-                hotelName = hotelName,
-                tagline = tagline,
-                unreadAlerts = unreadAlerts,
-                showAlertBell = showAlertBell,
-                alertBellFocus = alertBellFocus,
-                roomBadgeFocus = roomBadgeFocus,
-                headerDownFocus = headerDownFocus,
-                onOpenAdmin = onOpenAdmin,
-                onAlerts = onAlerts,
-            )
+            if (showChromeHeader) {
+                AppChromeHeader(
+                    roomNumber = roomNumber,
+                    hotelLogoUrl = hotelLogoUrl,
+                    hotelName = hotelName,
+                    tagline = tagline,
+                    unreadAlerts = unreadAlerts,
+                    showAlertBell = showAlertBell,
+                    alertBellFocus = alertBellFocus,
+                    roomBadgeFocus = roomBadgeFocus,
+                    headerDownFocus = headerDownFocus,
+                    onOpenAdmin = onOpenAdmin,
+                    onAlerts = onAlerts,
+                )
 
-            Spacer(modifier = Modifier.height(16.dp))
-            GoldSeparatorLine()
+                Spacer(modifier = Modifier.height(16.dp))
+                GoldSeparatorLine()
+            }
 
             if (!title.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(if (showChromeHeader) 18.dp else 8.dp))
                 LuxuryScreenHeader(
                     title = title,
                     subtitle = subtitle,
                     showSeparator = false,
                 )
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(if (showChromeHeader) 24.dp else 16.dp))
             }
 
             content()

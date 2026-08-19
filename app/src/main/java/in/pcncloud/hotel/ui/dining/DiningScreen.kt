@@ -147,6 +147,7 @@ fun DiningScreen(
             } else {
                 stringResource(R.string.dining_subtitle)
             },
+            showChromeHeader = BuildConfig.IS_CORPORATE,
         ) {
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),

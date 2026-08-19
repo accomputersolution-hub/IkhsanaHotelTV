@@ -352,6 +352,7 @@ private fun HotelServicesScreen(
             onOpenAdmin = onOpenAdmin,
             title = screenTitle,
             subtitle = screenSubtitle,
+            showChromeHeader = false,
         ) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),

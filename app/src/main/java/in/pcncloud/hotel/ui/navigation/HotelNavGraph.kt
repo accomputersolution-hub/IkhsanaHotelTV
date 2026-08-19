@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.LocalContext
+import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.admin.AdminSession
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
@@ -135,13 +136,21 @@ fun HotelNavGraph(
     }
 
     /**
-     * Kiosk ON + Home → block Back.
-     * Kiosk ON + submenu → same as Home icon (hide overlay).
-     * Kiosk OFF → leave task.
+     * Hotel flavor: Back never leaves the guest app — sub-menu → dashboard, Home → stay.
+     * Corporate + kiosk paths below are unchanged.
      */
     BackHandler(enabled = true) {
         val kioskEnabled = KioskPolicy.isKioskModeEnabled(context)
+        val isHotel = !BuildConfig.IS_CORPORATE
         when {
+            isHotel && onGuestHome -> {
+                Log.d(TAG, "Hotel flavor @ Home — Back consumed (no exit)")
+            }
+            isHotel && !onGuestHome -> {
+                Log.d(TAG, "Hotel flavor @ $overlayRoute — navigateToHomeView")
+                KioskPolicy.clearOttLaunchState(context)
+                navigateToHomeView()
+            }
             kioskEnabled && onGuestHome -> {
                 Log.d(TAG, "Kiosk ON @ Home — Back consumed")
             }
