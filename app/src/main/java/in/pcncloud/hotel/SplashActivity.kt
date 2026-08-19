@@ -83,9 +83,14 @@ class SplashActivity : AppCompatActivity() {
         splashProgress = findViewById(R.id.splash_progress)
         startedAtMs = SystemClock.elapsedRealtime()
 
-        // Show the local mark immediately; swap to hotel branding once Firestore arrives.
-        splashLogo?.setImageResource(BrandAssets.logoRes)
-        splashLogo?.isVisible = true
+        // Hotel build: keep splash logo hidden until branding arrives, so the
+        // default flower does not flash before the remote logo replaces it.
+        splashLogo?.isVisible = BuildConfig.IS_CORPORATE
+        if (BuildConfig.IS_CORPORATE) {
+            splashLogo?.setImageResource(BrandAssets.logoRes)
+        } else {
+            splashLogo?.setImageDrawable(null)
+        }
         splashWelcome.text = getString(R.string.splash_welcome_loading)
         splashStatus.text = getString(R.string.splash_status_loading)
         splashProgress.isVisible = true
@@ -439,11 +444,17 @@ class SplashActivity : AppCompatActivity() {
         val logoView = splashLogo ?: return
         val remoteUrl = normalizeRemoteImageUrl(rawUrl)
         if (BuildConfig.IS_CORPORATE || remoteUrl.isNullOrBlank()) {
-            logoView.setImageResource(BrandAssets.logoRes)
+            logoView.isVisible = BuildConfig.IS_CORPORATE
+            if (BuildConfig.IS_CORPORATE) {
+                logoView.setImageResource(BrandAssets.logoRes)
+            } else {
+                logoView.setImageDrawable(null)
+            }
             onSettled()
             return
         }
-        logoView.setImageResource(BrandAssets.logoRes)
+        logoView.isVisible = false
+        logoView.setImageDrawable(null)
         imageLoader.enqueue(
             ImageRequest.Builder(this)
                 .data(remoteUrl)
@@ -451,13 +462,16 @@ class SplashActivity : AppCompatActivity() {
                 .allowHardware(false)
                 .target(
                     onStart = {
-                        logoView.setImageResource(BrandAssets.logoRes)
+                        logoView.isVisible = false
+                        logoView.setImageDrawable(null)
                     },
                     onSuccess = { result ->
                         logoView.setImageDrawable(result)
+                        logoView.isVisible = true
                     },
                     onError = {
-                        logoView.setImageResource(BrandAssets.logoRes)
+                        logoView.isVisible = false
+                        logoView.setImageDrawable(null)
                     },
                 )
                 .listener(
