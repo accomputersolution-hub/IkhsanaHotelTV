@@ -672,13 +672,17 @@ class FirestoreRepository(
             ?: items.joinToString(" · ").trim().takeIf { it.isNotEmpty() }
         if (resolvedDetails != null) {
             payload["details"] = resolvedDetails
+            payload["notes"] = resolvedDetails
         }
-        scheduledTime?.trim()?.takeIf { it.isNotEmpty() }?.let { payload["scheduledTime"] = it }
+        scheduledTime?.trim()?.takeIf { it.isNotEmpty() }?.let { time ->
+            payload["scheduledTime"] = time
+            payload["scheduledFor"] = time
+        }
         docRef.set(payload).await()
         Log.d(
             TAG,
             "WRITE Request → Hotels/$hotelId/Requests/${docRef.id} " +
-                "type=$requestType items=$items",
+                "type=$requestType items=$items scheduledTime=$scheduledTime details=$resolvedDetails",
         )
         docRef.id
     }

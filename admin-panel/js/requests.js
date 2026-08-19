@@ -485,9 +485,17 @@ function renderRequests(state) {
   bindRequestActions(container, state.department);
 }
 
+function normalizeRequestItems(items) {
+  if (!items) return [];
+  if (Array.isArray(items)) return items;
+  if (typeof items === 'object') return Object.values(items);
+  return [items];
+}
+
 function formatRequestItems(items) {
-  if (!items || !items.length) return '';
-  return items
+  const normalized = normalizeRequestItems(items);
+  if (!normalized.length) return '';
+  return normalized
     .map((item) => {
       if (typeof item === 'string') return item.trim();
       if (item && typeof item === 'object') {
@@ -501,9 +509,33 @@ function formatRequestItems(items) {
     .join(' · ');
 }
 
+function extractScheduledTime(req) {
+  for (const key of ['scheduledTime', 'scheduled_time', 'scheduleTime', 'scheduledFor']) {
+    const value = String(req[key] || '').trim();
+    if (value) return value;
+  }
+
+  const blob = [
+    req.details,
+    req.notes,
+    formatRequestItems(req.items),
+    req.serviceLabel,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const match = blob.match(
+    /(?:Scheduled Time\s*[—–-]\s*|Scheduled(?:\s+for)?:\s*)(\d{1,2}:\d{2}\s*[AP]M)/i,
+  );
+  return match ? match[1].trim() : '';
+}
+
 function requestDetailsLine(req) {
-  const scheduled = String(req.scheduledTime || '').trim();
-  const details = String(req.details || '').trim() || formatRequestItems(req.items);
+  const scheduled = extractScheduledTime(req);
+  const details =
+    String(req.details || '').trim() ||
+    String(req.notes || '').trim() ||
+    formatRequestItems(req.items);
   if (details) {
     if (scheduled && !details.includes(scheduled)) {
       return `${details} · Scheduled: ${scheduled}`;
@@ -517,6 +549,7 @@ function renderRequestCard(req, department) {
   const status = req.status || 'pending';
   const badge = STATUS_BADGES[status] || STATUS_BADGES.pending;
   const icon = department === 'concierge' ? '🚖' : '🧹';
+  const scheduledFor = extractScheduledTime(req);
   const details = requestDetailsLine(req);
 
   let actions = '';
@@ -540,6 +573,7 @@ function renderRequestCard(req, department) {
             <span class="req-status-badge ${badge}">${STATUS_LABELS[status] || status}</span>
           </div>
           <p class="service-type">${escapeHtml(req.serviceLabel || req.serviceType || 'Service Request')}</p>
+          ${scheduledFor ? `<p class="service-schedule">Scheduled for <strong>${escapeHtml(scheduledFor)}</strong></p>` : ''}
           ${details ? `<p class="service-details">${escapeHtml(details)}</p>` : ''}
           <p class="service-meta">${escapeHtml(req.guestName || 'Guest')} · ${formatTime(req.timestamp)}</p>
         </div>
