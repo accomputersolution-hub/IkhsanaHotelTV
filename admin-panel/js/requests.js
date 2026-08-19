@@ -432,8 +432,10 @@ function showRequestBanner(department, data) {
   if (!banner) return;
   const deptLabel = department === 'concierge' ? 'Concierge' : 'Housekeeping';
   const details = requestDetailsLine(data);
-  const detailSuffix = details ? ` · ${details}` : '';
-  banner.innerHTML = `New ${deptLabel} request — Room <strong>${escapeHtml(String(data.roomNumber || '?'))}</strong> · ${escapeHtml(data.serviceLabel || 'Service')}${escapeHtml(detailSuffix)}`;
+  const scheduledFor = extractScheduledTime(data);
+  const scheduleSuffix = scheduledFor ? ` · Scheduled for ${scheduledFor}` : '';
+  const detailSuffix = details ? ` · ${details}` : scheduleSuffix;
+  banner.innerHTML = `New ${deptLabel} request — Room <strong>${escapeHtml(String(data.roomNumber || '?'))}</strong> · ${escapeHtml(data.serviceLabel || 'Service')}${escapeHtml(detailSuffix || scheduleSuffix)}`;
   banner.classList.remove('hidden');
   setTimeout(() => banner.classList.add('hidden'), 6000);
 }
