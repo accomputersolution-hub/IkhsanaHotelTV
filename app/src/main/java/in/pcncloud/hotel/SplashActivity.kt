@@ -18,6 +18,7 @@ import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.ui.home.BrandAssets
+import coil.imageLoader
 import coil.request.ImageRequest
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
@@ -443,11 +444,22 @@ class SplashActivity : AppCompatActivity() {
             return
         }
         logoView.setImageResource(BrandAssets.logoRes)
-        logoView.load(
+        imageLoader.enqueue(
             ImageRequest.Builder(this)
                 .data(remoteUrl)
                 .crossfade(true)
                 .allowHardware(false)
+                .target(
+                    onStart = {
+                        logoView.setImageResource(BrandAssets.logoRes)
+                    },
+                    onSuccess = { result ->
+                        logoView.setImageDrawable(result)
+                    },
+                    onError = {
+                        logoView.setImageResource(BrandAssets.logoRes)
+                    },
+                )
                 .listener(
                     onSuccess = { _, _ ->
                         Log.i(TAG, "SplashLogo loaded OK")
