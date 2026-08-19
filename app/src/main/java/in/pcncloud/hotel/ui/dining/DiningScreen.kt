@@ -43,7 +43,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusGroup
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
@@ -397,7 +396,7 @@ private fun MenuItemCard(
                 transformOrigin = TransformOrigin(0.5f, 0.12f)
             }
             .onFocusChanged { rowFocused = it.hasFocus }
-            .then(if (canOrder) Modifier.focusGroup() else Modifier.focusable())
+            .then(if (canOrder) Modifier else Modifier.focusable())
             .luxuryGoldFocusChrome(focused = rowFocused, shape = shape)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
