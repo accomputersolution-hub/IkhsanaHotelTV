@@ -641,6 +641,8 @@ class FirestoreRepository(
         guestName: String,
         requestType: String = serviceType.uppercase(),
         items: List<String> = emptyList(),
+        scheduledTime: String? = null,
+        details: String? = null,
     ): Result<String> = runCatching {
         requireRoomOccupied()
         val docRef = firestore
@@ -666,6 +668,12 @@ class FirestoreRepository(
             "sessionKey" to currentSessionKey,
             "archived" to false,
         )
+        val resolvedDetails = details?.trim()?.takeIf { it.isNotEmpty() }
+            ?: items.joinToString(" · ").trim().takeIf { it.isNotEmpty() }
+        if (resolvedDetails != null) {
+            payload["details"] = resolvedDetails
+        }
+        scheduledTime?.trim()?.takeIf { it.isNotEmpty() }?.let { payload["scheduledTime"] = it }
         docRef.set(payload).await()
         Log.d(
             TAG,

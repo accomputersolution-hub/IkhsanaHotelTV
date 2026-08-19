@@ -1731,6 +1731,13 @@ body {
   margin-top: 0.25rem;
 }
 
+.service-details {
+  font-size: 0.8125rem;
+  color: var(--gold);
+  margin-top: 0.35rem;
+  line-height: 1.35;
+}
+
 .service-card-actions {
   display: flex;
   flex-wrap: wrap;

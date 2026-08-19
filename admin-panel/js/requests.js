@@ -431,7 +431,9 @@ function showRequestBanner(department, data) {
   const banner = document.getElementById('new-order-banner');
   if (!banner) return;
   const deptLabel = department === 'concierge' ? 'Concierge' : 'Housekeeping';
-  banner.innerHTML = `New ${deptLabel} request — Room <strong>${escapeHtml(String(data.roomNumber || '?'))}</strong> · ${escapeHtml(data.serviceLabel || 'Service')}`;
+  const details = requestDetailsLine(data);
+  const detailSuffix = details ? ` · ${details}` : '';
+  banner.innerHTML = `New ${deptLabel} request — Room <strong>${escapeHtml(String(data.roomNumber || '?'))}</strong> · ${escapeHtml(data.serviceLabel || 'Service')}${escapeHtml(detailSuffix)}`;
   banner.classList.remove('hidden');
   setTimeout(() => banner.classList.add('hidden'), 6000);
 }
@@ -483,10 +485,36 @@ function renderRequests(state) {
   bindRequestActions(container, state.department);
 }
 
+function formatRequestItems(items) {
+  if (!items || !items.length) return '';
+  return items
+    .map((item) => {
+      if (typeof item === 'string') return item.trim();
+      if (item && typeof item === 'object') {
+        const qty = item.quantity || 1;
+        const name = item.name || item.label || 'Item';
+        return qty > 1 ? `${qty}× ${name}` : name;
+      }
+      return String(item || '').trim();
+    })
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function requestDetailsLine(req) {
+  const scheduled = String(req.scheduledTime || '').trim();
+  const details = String(req.details || '').trim() || formatRequestItems(req.items);
+  if (scheduled && details) {
+    return `${details} · Scheduled: ${scheduled}`;
+  }
+  if (scheduled) return `Scheduled: ${scheduled}`;
+  return details;
+}
 function renderRequestCard(req, department) {
   const status = req.status || 'pending';
   const badge = STATUS_BADGES[status] || STATUS_BADGES.pending;
   const icon = department === 'concierge' ? '🚖' : '🧹';
+  const details = requestDetailsLine(req);
 
   let actions = '';
   if (status === 'pending') {
@@ -509,6 +537,7 @@ function renderRequestCard(req, department) {
             <span class="req-status-badge ${badge}">${STATUS_LABELS[status] || status}</span>
           </div>
           <p class="service-type">${escapeHtml(req.serviceLabel || req.serviceType || 'Service Request')}</p>
+          ${details ? `<p class="service-details">${escapeHtml(details)}</p>` : ''}
           <p class="service-meta">${escapeHtml(req.guestName || 'Guest')} · ${formatTime(req.timestamp)}</p>
         </div>
       </div>

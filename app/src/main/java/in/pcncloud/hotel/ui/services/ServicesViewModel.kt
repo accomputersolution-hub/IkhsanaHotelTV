@@ -392,6 +392,9 @@ class ServicesViewModel(
         }
 
         val items = state.selectedItemLabels
+        val scheduledTime = state.subSelections.values
+            .mapNotNull { it.scheduleTime?.trim()?.takeIf(String::isNotEmpty) }
+            .firstOrNull()
         viewModelScope.launch {
             _uiState.update { it.copy(isSubmitting = true) }
             repository.submitServiceRequest(
@@ -401,6 +404,8 @@ class ServicesViewModel(
                 guestName = state.guestName,
                 requestType = category.requestType,
                 items = items,
+                scheduledTime = scheduledTime,
+                details = items.joinToString(" · "),
             ).onSuccess { requestId ->
                 knownRequestStatuses[requestId] = "pending"
                 showToast("Request sent to Front Desk!", ServiceToastType.SUCCESS)
