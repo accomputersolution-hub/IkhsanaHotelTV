@@ -63,6 +63,7 @@
     <string name="service_tap_to_request">Press OK to choose options</string>
     <string name="service_submit_request">Submit Request</string>
     <string name="service_cancel">Cancel</string>
+    <string name="service_close">Close</string>
     <string name="service_select_at_least_one">Select at least one item</string>
     <string name="service_sub_hint">Adjust quantities, then submit</string>
     <string name="service_sub_hint_qty">Adjust quantities, then submit</string>
@@ -72,6 +73,11 @@
     <string name="service_desc_amenities">Bottled water, toiletries, and room amenities</string>
     <string name="service_desc_concierge">Call front desk or request concierge assistance</string>
     <string name="active_requests">Your Active Requests</string>
+    <string name="my_active_requests">My Active Requests</string>
+    <string name="my_active_requests_description">Track your ongoing services</string>
+    <string name="no_active_requests">No active service requests right now.</string>
+    <string name="one_active_request">1 active request</string>
+    <string name="active_request_count">%1$d active requests</string>
     <string name="request_sent">Request sent to Front Desk!</string>
     <string name="request_failed">Could not send request. Please try again.</string>
     <string name="status_in_progress">In Progress</string>

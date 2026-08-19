@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,7 +23,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -316,6 +314,7 @@ private fun HotelServicesScreen(
     val viewModel: ServicesViewModel = viewModel(factory = viewModelFactory)
     val uiState by viewModel.uiState.collectAsState()
     val firstItemFocus = remember { FocusRequester() }
+    var showActiveRequests by remember { mutableStateOf(false) }
     val options = remember(departmentFilter, viewModel.serviceOptions) {
         val filter = departmentFilter?.trim()?.lowercase().orEmpty()
         if (filter.isBlank()) {
@@ -341,7 +340,8 @@ private fun HotelServicesScreen(
             filter.isBlank() || request.department.equals(filter, ignoreCase = true)
         }
     }
-    val pickerOpen = uiState.activeCategory != null || uiState.showVacantRoomDialog
+    val pickerOpen =
+        uiState.activeCategory != null || uiState.showVacantRoomDialog || showActiveRequests
 
     LaunchedEffect(options.size, uiState.roomOccupied, pickerOpen) {
         if (options.isEmpty() || pickerOpen) return@LaunchedEffect
@@ -385,32 +385,12 @@ private fun HotelServicesScreen(
                 )
             }
 
-            if (visibleRequests.isNotEmpty()) {
-                item(
-                    key = "active-requests-header",
-                    span = { GridItemSpan(maxLineSpan) },
-                ) {
-                    Column {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(R.string.active_requests),
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = SerifDisplay,
-                            color = GoldLight,
-                        )
-                    }
-                }
-                itemsIndexed(
-                    items = visibleRequests,
-                    key = { index, request ->
-                        val id = request.id.trim().ifBlank { "empty" }
-                        "request-$id-$index"
-                    },
-                    span = { _, _ -> GridItemSpan(maxLineSpan) },
-                ) { _, request ->
-                    ActiveRequestRow(request = request)
-                }
+            item(key = "my-active-requests-card") {
+                ActiveRequestsCard(
+                    requestCount = visibleRequests.size,
+                    enabled = !pickerOpen,
+                    onClick = { showActiveRequests = true },
+                )
             }
         }
         }
@@ -442,6 +422,13 @@ private fun HotelServicesScreen(
                 onSelectChoice = viewModel::selectChoice,
                 onSubmit = viewModel::submitSubRequest,
                 onDismiss = viewModel::dismissSubDialog,
+            )
+        }
+
+        if (showActiveRequests) {
+            ActiveRequestsOverlay(
+                requests = visibleRequests,
+                onDismiss = { showActiveRequests = false },
             )
         }
     }
@@ -573,6 +560,127 @@ private fun ServiceCard(
                 color = if (focused) GoldLuxury.copy(alpha = 0.9f) else TextMuted.copy(alpha = 0.65f),
             )
         }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun ActiveRequestsCard(
+    requestCount: Int,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(16.dp)
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.05f else 1f,
+        animationSpec = tween(150),
+        label = "activeRequestsCardScale",
+    )
+    val elevation by animateFloatAsState(
+        targetValue = if (focused) 14f else 0f,
+        animationSpec = tween(150),
+        label = "activeRequestsCardElevation",
+    )
+    val fillBrush = if (focused) {
+        Brush.verticalGradient(
+            listOf(
+                GoldLuxury.copy(alpha = 0.22f),
+                NavySurface.copy(alpha = 0.88f),
+                NavyDeep.copy(alpha = 0.92f),
+            ),
+        )
+    } else {
+        Brush.verticalGradient(
+            listOf(
+                NavySurface.copy(alpha = 0.82f),
+                GlassCardFill,
+                NavyDeep.copy(alpha = 0.78f),
+            ),
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 156.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .shadow(
+                elevation = elevation.dp,
+                shape = shape,
+                ambientColor = GoldLuxury.copy(alpha = 0.4f),
+                spotColor = GoldLuxury.copy(alpha = 0.55f),
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .focusable(enabled)
+            .background(brush = fillBrush, shape = shape)
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) GoldLuxury else Color.White.copy(alpha = 0.10f),
+                shape = shape,
+            )
+            .onKeyEvent { event ->
+                if (enabled && event.type == KeyEventType.KeyDown &&
+                    (event.key == Key.Enter || event.key == Key.DirectionCenter)
+                ) {
+                    onClick()
+                    true
+                } else {
+                    false
+                }
+            }
+            .padding(horizontal = 18.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(76.dp)
+                .background(GoldLuxury.copy(alpha = if (focused) 0.22f else 0.12f), CircleShape)
+                .border(
+                    1.dp,
+                    if (focused) GoldLight else GoldGlassBorder,
+                    CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_service_history),
+                contentDescription = null,
+                modifier = Modifier.size(32.dp),
+                colorFilter = ColorFilter.tint(if (focused) GoldLight else GoldLuxury),
+            )
+        }
+        Text(
+            text = stringResource(R.string.my_active_requests),
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = SansBody,
+            color = if (focused) GoldLight else TextPrimary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = stringResource(R.string.my_active_requests_description),
+            fontSize = 12.sp,
+            fontFamily = SansBody,
+            color = TextMuted,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = if (requestCount == 1) {
+                stringResource(R.string.one_active_request)
+            } else {
+                stringResource(R.string.active_request_count, requestCount)
+            },
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            fontFamily = SansBody,
+            color = if (focused) GoldLuxury else TextMuted.copy(alpha = 0.65f),
+        )
     }
 }
 
@@ -1217,7 +1325,124 @@ private fun SubDialogButton(
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun ActiveRequestRow(request: ServiceRequest) {
+private fun ActiveRequestsOverlay(
+    requests: List<ServiceRequest>,
+    onDismiss: () -> Unit,
+) {
+    val firstFocus = remember { FocusRequester() }
+    DismissOnKioskBack(onDismiss)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.72f))
+            .padding(horizontal = 22.dp, vertical = 18.dp)
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Back) {
+                    onDismiss()
+                    true
+                } else {
+                    false
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 560.dp)
+                .fillMaxWidth(0.92f)
+                .background(NavySurface, RoundedCornerShape(22.dp))
+                .border(2.dp, GoldLuxury.copy(alpha = 0.55f), RoundedCornerShape(22.dp))
+                .padding(horizontal = 30.dp, vertical = 26.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_service_history),
+                    contentDescription = null,
+                    modifier = Modifier.size(32.dp),
+                    colorFilter = ColorFilter.tint(GoldLuxury),
+                )
+                Column {
+                    Text(
+                        text = stringResource(R.string.my_active_requests),
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = SerifDisplay,
+                        color = GoldLight,
+                    )
+                    Text(
+                        text = stringResource(R.string.my_active_requests_description),
+                        fontSize = 13.sp,
+                        fontFamily = SansBody,
+                        color = TextMuted,
+                    )
+                }
+            }
+
+            if (requests.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.no_active_requests),
+                    fontSize = 16.sp,
+                    fontFamily = SansBody,
+                    color = TextMuted,
+                    modifier = Modifier.padding(vertical = 18.dp),
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    requests.forEachIndexed { index, request ->
+                        ActiveRequestRow(
+                            request = request,
+                            modifier = if (index == 0) {
+                                Modifier.focusRequester(firstFocus)
+                            } else {
+                                Modifier
+                            },
+                        )
+                    }
+                }
+            }
+
+            SubDialogButton(
+                text = stringResource(R.string.service_close),
+                highlighted = true,
+                enabled = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (requests.isEmpty()) {
+                            Modifier.focusRequester(firstFocus)
+                        } else {
+                            Modifier
+                        },
+                    ),
+                onClick = onDismiss,
+            )
+        }
+    }
+
+    LaunchedEffect(requests.size) {
+        delay(50)
+        runCatching { firstFocus.requestFocus() }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun ActiveRequestRow(
+    request: ServiceRequest,
+    modifier: Modifier = Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
     val status = request.status.trim().lowercase()
     val statusColor = when (status) {
         "in_progress" -> FocusCyan
@@ -1231,10 +1456,19 @@ private fun ActiveRequestRow(request: ServiceRequest) {
     }
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .background(NavyDeep.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
-            .border(1.dp, GoldPrimary.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .background(
+                if (focused) GoldLuxury.copy(alpha = 0.16f) else NavyDeep.copy(alpha = 0.55f),
+                RoundedCornerShape(12.dp),
+            )
+            .border(
+                if (focused) 2.dp else 1.dp,
+                if (focused) GoldLuxury else GoldPrimary.copy(alpha = 0.2f),
+                RoundedCornerShape(12.dp),
+            )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -1243,7 +1477,7 @@ private fun ActiveRequestRow(request: ServiceRequest) {
             text = request.serviceLabel,
             fontSize = 16.sp,
             fontFamily = SansBody,
-            color = TextPrimary,
+            color = if (focused) GoldLight else TextPrimary,
             modifier = Modifier.weight(1f),
         )
         Text(
