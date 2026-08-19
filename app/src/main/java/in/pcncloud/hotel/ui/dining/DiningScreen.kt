@@ -606,9 +606,7 @@ private fun OrderSummaryPanel(
 ) {
     LuxuryGlassPanel(modifier = modifier) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
@@ -627,19 +625,32 @@ private fun OrderSummaryPanel(
                 color = TextMuted,
             )
 
-            if (cart.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.cart_empty),
-                    fontSize = 15.sp,
-                    fontFamily = SansBody,
-                    color = TextMuted,
-                )
-            } else {
-                cart.forEach { cartItem ->
-                    key(cartItem.menuItem.id) {
-                        CartLineRow(cartItem = cartItem)
+            // Pinned current selection — never inside the same scroll as payment,
+            // so D-pad to Pay / Confirm cannot hide the dishes being ordered.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 220.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (cart.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.cart_empty),
+                        fontSize = 15.sp,
+                        fontFamily = SansBody,
+                        color = TextMuted,
+                    )
+                } else {
+                    cart.forEach { cartItem ->
+                        key(cartItem.menuItem.id) {
+                            CartLineRow(cartItem = cartItem)
+                        }
                     }
                 }
+            }
+
+            if (cart.isNotEmpty()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -699,7 +710,8 @@ private fun OrderSummaryPanel(
                 onClick = onPlaceOrder,
             )
 
-            if (roomOrders.isNotEmpty()) {
+            // History only when not placing a new order — it was covering the cart.
+            if (!hasItems && roomOrders.isNotEmpty()) {
                 Text(
                     text = stringResource(R.string.order_history),
                     fontSize = 13.sp,
@@ -707,9 +719,17 @@ private fun OrderSummaryPanel(
                     fontFamily = SerifDisplay,
                     color = TextPrimary,
                 )
-                roomOrders.take(3).forEach { order ->
-                    key(order.id.ifBlank { "${order.timestamp}-${order.roomNumber}" }) {
-                        OrderHistoryCard(order = order)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 140.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    roomOrders.take(3).forEach { order ->
+                        key(order.id.ifBlank { "${order.timestamp}-${order.roomNumber}" }) {
+                            OrderHistoryCard(order = order)
+                        }
                     }
                 }
             }
@@ -720,12 +740,19 @@ private fun OrderSummaryPanel(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun CartLineRow(cartItem: CartItem) {
+    var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(10.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
             .background(NavyDeep.copy(alpha = 0.45f), shape)
-            .border(1.dp, CorpGoldBorderIdle, shape)
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) CorpGoldBright else CorpGoldBorderIdle,
+                shape = shape,
+            )
             .padding(horizontal = 10.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
