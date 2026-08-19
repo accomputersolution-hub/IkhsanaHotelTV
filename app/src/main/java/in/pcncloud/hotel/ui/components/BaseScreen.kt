@@ -202,7 +202,7 @@ fun HotelWallpaperBackground(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.55f)),
+                    .background(Color.Black.copy(alpha = 0.34f)),
             )
             Box(
                 modifier = Modifier
@@ -210,9 +210,21 @@ fun HotelWallpaperBackground(
                     .background(
                         Brush.verticalGradient(
                             colorStops = arrayOf(
-                                0.0f to Color.Black.copy(alpha = 0.28f),
-                                0.35f to Color.Black.copy(alpha = 0.18f),
-                                1.0f to Color.Black.copy(alpha = 0.62f),
+                                0.0f to Color.Black.copy(alpha = 0.18f),
+                                0.35f to Color.Black.copy(alpha = 0.10f),
+                                1.0f to Color.Black.copy(alpha = 0.48f),
+                            ),
+                        ),
+                    ),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.05f),
+                                Color.Transparent,
                             ),
                         ),
                     ),
@@ -396,10 +408,14 @@ private fun BrandLogo(hotelLogoUrl: String) {
 
     Box(
         modifier = Modifier
-            .height(72.dp)
-            .widthIn(max = 88.dp)
+            .height(84.dp)
+            .widthIn(min = 88.dp, max = 112.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xCCFFFFFF))
+            .border(1.dp, GoldLight.copy(alpha = 0.55f), RoundedCornerShape(18.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp)
             .wrapContentWidth(Alignment.Start),
-        contentAlignment = Alignment.CenterStart,
+        contentAlignment = Alignment.Center,
     ) {
         if (remoteUrl != null) {
             AsyncImage(
@@ -411,9 +427,9 @@ private fun BrandLogo(hotelLogoUrl: String) {
                 contentDescription = "Hotel Logo",
                 modifier = Modifier
                     .fillMaxHeight()
-                    .wrapContentWidth(),
+                    .fillMaxWidth(),
                 contentScale = ContentScale.Fit,
-                alignment = Alignment.CenterStart,
+                alignment = Alignment.Center,
                 error = localLogo,
                 fallback = localLogo,
             )
@@ -423,9 +439,9 @@ private fun BrandLogo(hotelLogoUrl: String) {
                 contentDescription = "Hotel Logo",
                 modifier = Modifier
                     .fillMaxHeight()
-                    .wrapContentWidth(),
+                    .fillMaxWidth(),
                 contentScale = ContentScale.Fit,
-                alignment = Alignment.CenterStart,
+                alignment = Alignment.Center,
             )
         }
     }
