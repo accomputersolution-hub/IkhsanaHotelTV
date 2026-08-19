@@ -91,7 +91,13 @@ class SplashActivity : AppCompatActivity() {
         } else {
             splashLogo?.setImageDrawable(null)
         }
-        splashWelcome.text = getString(R.string.splash_welcome_loading)
+        splashWelcome.isVisible = BuildConfig.IS_CORPORATE
+        splashWelcome.text =
+            if (BuildConfig.IS_CORPORATE) {
+                getString(R.string.splash_welcome_loading)
+            } else {
+                ""
+            }
         splashStatus.text = getString(R.string.splash_status_loading)
         splashProgress.isVisible = true
 
@@ -196,6 +202,7 @@ class SplashActivity : AppCompatActivity() {
                     "→ PairingActivity",
             )
             unpairedFlow = true
+            splashWelcome.isVisible = true
             splashWelcome.text = getString(R.string.splash_welcome_generic)
             splashStatus.text = getString(R.string.splash_status_pairing)
             if (KioskPolicy.canActivityNavigate(lifecycle)) {
@@ -208,7 +215,13 @@ class SplashActivity : AppCompatActivity() {
         val roomNumber = hotelConfig.getRoomNumberOrNull().orEmpty()
         Log.d(TAG, "Paired hotel_id=$hotelId room=$roomNumber — prefetching config")
         unpairedFlow = false
-        splashWelcome.text = getString(R.string.splash_welcome_loading)
+        splashWelcome.isVisible = BuildConfig.IS_CORPORATE
+        splashWelcome.text =
+            if (BuildConfig.IS_CORPORATE) {
+                getString(R.string.splash_welcome_loading)
+            } else {
+                ""
+            }
         splashStatus.text = getString(R.string.splash_status_loading)
 
         if (hotelListener == null) {
@@ -294,8 +307,10 @@ class SplashActivity : AppCompatActivity() {
 
                 // Keep corporate welcome tagline stable; hotel may refine with name.
                 if (hotelName.isNotBlank() && !BuildConfig.IS_CORPORATE) {
+                    splashWelcome.isVisible = true
                     splashWelcome.text = getString(R.string.splash_welcome_to, hotelName)
-                } else if (splashWelcome.text.isNullOrBlank()) {
+                } else if (splashWelcome.text.isNullOrBlank() && BuildConfig.IS_CORPORATE) {
+                    splashWelcome.isVisible = true
                     splashWelcome.text = getString(R.string.splash_welcome_loading)
                 }
                 loadSplashLogo(logoUrl) {
