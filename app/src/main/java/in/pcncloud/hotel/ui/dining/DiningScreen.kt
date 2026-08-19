@@ -149,7 +149,7 @@ fun DiningScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 24.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
             ) {
                 itemsIndexed(
                     items = MenuCategory.entries.toList(),
@@ -617,108 +617,115 @@ private fun OrderSummaryPanel(
             .border(1.dp, CorpGoldBorderIdle, RoundedCornerShape(16.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.your_order),
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = SerifDisplay,
-                color = CorpGold,
-            )
-
-            Text(
-                text = stringResource(R.string.order_review),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                fontFamily = SansBody,
-                color = TextMuted,
-            )
-
+        Column(modifier = Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 88.dp, max = 150.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .weight(1f)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                if (cart.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.cart_empty),
-                        fontSize = 15.sp,
-                        fontFamily = SansBody,
-                        color = TextMuted,
-                    )
-                } else {
-                    cart.forEach { cartItem ->
-                        key(cartItem.menuItem.id) {
-                            CartLineRow(cartItem = cartItem)
+                Text(
+                    text = stringResource(R.string.your_order),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = SerifDisplay,
+                    color = CorpGold,
+                )
+                Text(
+                    text = stringResource(R.string.order_review),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = SansBody,
+                    color = TextMuted,
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (cart.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.cart_empty),
+                            fontSize = 15.sp,
+                            fontFamily = SansBody,
+                            color = TextMuted,
+                        )
+                    } else {
+                        cart.forEach { cartItem ->
+                            key(cartItem.menuItem.id) {
+                                CartLineRow(cartItem = cartItem)
+                            }
                         }
                     }
                 }
             }
 
-            if (cart.isNotEmpty()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (cart.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.order_total),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = SansBody,
+                            color = TextPrimary,
+                        )
+                        Text(
+                            text = "₹${cartTotal.toInt()}",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = GoldLuxury,
+                        )
+                    }
+                }
+
+                PaymentToggle(
+                    selected = selectedPayment,
+                    onSelectCheckout = { onSelectPayment(PaymentMethod.PAY_AT_CHECKOUT) },
+                    onPayNow = onPayNow,
+                )
+
+                if (orderMessage == "success") {
                     Text(
-                        text = stringResource(R.string.order_total),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = SansBody,
-                        color = TextPrimary,
+                        text = stringResource(R.string.order_placed),
+                        fontSize = 13.sp,
+                        color = VegGreen,
                     )
+                } else if (orderMessage == "error") {
                     Text(
-                        text = "₹${cartTotal.toInt()}",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = GoldLuxury,
+                        text = stringResource(R.string.order_failed),
+                        fontSize = 13.sp,
+                        color = NonVegRed,
                     )
                 }
-            }
 
-            PaymentToggle(
-                selected = selectedPayment,
-                onSelectCheckout = { onSelectPayment(PaymentMethod.PAY_AT_CHECKOUT) },
-                onPayNow = onPayNow,
-            )
+                val hasItems = cart.isNotEmpty()
+                val ctaText = when {
+                    !roomOccupied -> stringResource(R.string.vacant_room_cta_hint)
+                    isPlacingOrder -> stringResource(R.string.loading)
+                    !hasItems -> stringResource(R.string.cart_add_items_cta)
+                    selectedPayment == PaymentMethod.PAID_ONLINE ->
+                        stringResource(R.string.pay_now) + " · ₹${cartTotal.toInt()}"
+                    else -> stringResource(R.string.cart_confirm_cta, cartTotal)
+                }
 
-            if (orderMessage == "success") {
-                Text(
-                    text = stringResource(R.string.order_placed),
-                    fontSize = 13.sp,
-                    color = VegGreen,
-                )
-            } else if (orderMessage == "error") {
-                Text(
-                    text = stringResource(R.string.order_failed),
-                    fontSize = 13.sp,
-                    color = NonVegRed,
+                PlaceOrderCta(
+                    text = ctaText,
+                    enabled = hasItems && !isPlacingOrder && roomOccupied,
+                    highlighted = hasItems && roomOccupied,
+                    modifier = Modifier.focusRequester(orderFocus),
+                    onClick = onPlaceOrder,
                 )
             }
-
-            val hasItems = cart.isNotEmpty()
-            val ctaText = when {
-                !roomOccupied -> stringResource(R.string.vacant_room_cta_hint)
-                isPlacingOrder -> stringResource(R.string.loading)
-                !hasItems -> stringResource(R.string.cart_add_items_cta)
-                selectedPayment == PaymentMethod.PAID_ONLINE ->
-                    stringResource(R.string.pay_now) + " · ₹${cartTotal.toInt()}"
-                else -> stringResource(R.string.cart_confirm_cta, cartTotal)
-            }
-
-            PlaceOrderCta(
-                text = ctaText,
-                enabled = hasItems && !isPlacingOrder && roomOccupied,
-                highlighted = hasItems && roomOccupied,
-                modifier = Modifier.focusRequester(orderFocus),
-                onClick = onPlaceOrder,
-            )
         }
     }
 }
