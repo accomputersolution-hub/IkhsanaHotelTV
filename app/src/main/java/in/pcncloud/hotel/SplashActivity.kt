@@ -26,7 +26,7 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.MetadataChanges
 
 /**
- * Dedicated cold-start splash (3–4s minimum):
+ * Dedicated cold-start splash:
  * - Default local flavor logo first, then hotel Firestore logo when available
  * - Welcome tagline + circular progress
  * - Waits for Hotels/{id} + Rooms/{room} snapshots (or timeout) before [MainActivity]
@@ -511,8 +511,8 @@ class SplashActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "SplashActivity"
         private const val REQUEST_OVERLAY_PERMISSION = 1001
-        private const val UNPAIRED_DELAY_MS = 3_000L
-        private const val MIN_DISPLAY_MS = 3_500L
+        private const val UNPAIRED_DELAY_MS = 900L
+        private const val MIN_DISPLAY_MS = 1_100L
         private const val DATA_TIMEOUT_MS = 10_000L
         private const val OVERLAY_DENY_CONTINUE_MS = 2_500L
     }
