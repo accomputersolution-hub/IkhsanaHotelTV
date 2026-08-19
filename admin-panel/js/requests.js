@@ -504,11 +504,14 @@ function formatRequestItems(items) {
 function requestDetailsLine(req) {
   const scheduled = String(req.scheduledTime || '').trim();
   const details = String(req.details || '').trim() || formatRequestItems(req.items);
-  if (scheduled && details) {
-    return `${details} · Scheduled: ${scheduled}`;
+  if (details) {
+    if (scheduled && !details.includes(scheduled)) {
+      return `${details} · Scheduled: ${scheduled}`;
+    }
+    return details;
   }
   if (scheduled) return `Scheduled: ${scheduled}`;
-  return details;
+  return '';
 }
 function renderRequestCard(req, department) {
   const status = req.status || 'pending';
