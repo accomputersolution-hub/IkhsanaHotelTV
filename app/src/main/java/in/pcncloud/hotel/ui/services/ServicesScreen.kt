@@ -532,6 +532,7 @@ private fun ServiceCard(
             iconRes = if (roomOccupied) option.iconRes else R.drawable.ic_service_lock,
             focused = focused && roomOccupied,
             disabled = !roomOccupied,
+            isPhotoAsset = roomOccupied,
         )
 
         Text(
@@ -581,6 +582,7 @@ private fun ServiceIconBadge(
     iconRes: Int,
     focused: Boolean,
     disabled: Boolean,
+    isPhotoAsset: Boolean,
 ) {
     val badgeScale by animateFloatAsState(
         targetValue = if (focused) 1.06f else 1f,
@@ -613,26 +615,37 @@ private fun ServiceIconBadge(
 
     Box(
         modifier = Modifier
-            .size(54.dp)
+            .size(76.dp)
             .graphicsLayer {
                 scaleX = badgeScale
                 scaleY = badgeScale
             }
-            .background(brush = fillBrush, shape = CircleShape)
-            .border(1.dp, borderColor, CircleShape),
+            .then(
+                if (isPhotoAsset) {
+                    Modifier
+                } else {
+                    Modifier
+                        .background(brush = fillBrush, shape = CircleShape)
+                        .border(1.dp, borderColor, CircleShape)
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Image(
             painter = painterResource(iconRes),
             contentDescription = null,
-            modifier = Modifier.size(24.dp),
-            colorFilter = ColorFilter.tint(
-                when {
-                    disabled -> TextMuted.copy(alpha = 0.6f)
-                    focused -> GoldLight
-                    else -> GoldLuxury
-                },
-            ),
+            modifier = Modifier.size(if (isPhotoAsset) 76.dp else 24.dp),
+            colorFilter = if (isPhotoAsset) {
+                null
+            } else {
+                ColorFilter.tint(
+                    when {
+                        disabled -> TextMuted.copy(alpha = 0.6f)
+                        focused -> GoldLight
+                        else -> GoldLuxury
+                    },
+                )
+            },
         )
     }
 }
@@ -702,8 +715,7 @@ private fun SubServiceDialog(
                         Image(
                             painter = painterResource(category.iconRes),
                             contentDescription = null,
-                            modifier = Modifier.size(28.dp),
-                            colorFilter = ColorFilter.tint(GoldLuxury),
+                            modifier = Modifier.size(54.dp),
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(

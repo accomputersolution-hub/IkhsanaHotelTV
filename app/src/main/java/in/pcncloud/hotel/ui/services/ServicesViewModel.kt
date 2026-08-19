@@ -104,7 +104,7 @@ class ServicesViewModel(
             serviceType = "housekeeping",
             requestType = "CLEANING",
             label = "Housekeeping & Turndown",
-            iconRes = R.drawable.ic_service_housekeeping,
+            iconRes = R.drawable.ic_service_housekeeping_3d,
             subtitle = "Freshen the room, refresh the bed, or schedule evening turndown",
             subItems = listOf(
                 SubServiceItem(
@@ -130,7 +130,7 @@ class ServicesViewModel(
             serviceType = "bath_sleep_amenities",
             requestType = "TOWELS",
             label = "Bath & Sleep Amenities",
-            iconRes = R.drawable.ic_service_bath_sleep,
+            iconRes = R.drawable.ic_service_bath_sleep_3d,
             subtitle = "Towels, pillows, blankets, and bedside comfort essentials",
             subItems = listOf(
                 SubServiceItem(id = "bath_towels", label = "Bath Towels", kind = SubItemKind.QUANTITY),
@@ -144,7 +144,7 @@ class ServicesViewModel(
             serviceType = "laundry_dry_cleaning",
             requestType = "LAUNDRY",
             label = "Laundry & Dry Cleaning",
-            iconRes = R.drawable.ic_service_laundry,
+            iconRes = R.drawable.ic_service_laundry_3d,
             subtitle = "Garment pickup, express pressing, and next-day dry cleaning",
             subItems = listOf(
                 SubServiceItem(
@@ -162,7 +162,7 @@ class ServicesViewModel(
             serviceType = "bell_desk_luggage",
             requestType = "BELL_DESK",
             label = "Bell Desk & Luggage",
-            iconRes = R.drawable.ic_service_bell_desk,
+            iconRes = R.drawable.ic_service_bell_desk_3d,
             subtitle = "Bag pickup, luggage storage, and porter assistance",
             subItems = listOf(
                 SubServiceItem(
@@ -182,7 +182,7 @@ class ServicesViewModel(
             serviceType = "spa_wellness",
             requestType = "SPA",
             label = "Spa & Wellness",
-            iconRes = R.drawable.ic_service_spa,
+            iconRes = R.drawable.ic_service_spa_3d,
             subtitle = "Spa booking, yoga session, or in-room wellness assistance",
             subItems = listOf(
                 SubServiceItem(
@@ -200,7 +200,7 @@ class ServicesViewModel(
             serviceType = "concierge_valet",
             requestType = "CONCIERGE",
             label = "Concierge & Valet",
-            iconRes = R.drawable.ic_service_concierge,
+            iconRes = R.drawable.ic_service_concierge_3d,
             subtitle = "Transport, local guidance, reservations, and valet coordination",
             subItems = listOf(
                 SubServiceItem(id = "airport_transfer", label = "Airport Transfer", kind = SubItemKind.TOGGLE),
