@@ -28,6 +28,10 @@ data class SubServiceItem(
     val kind: SubItemKind,
     /** For CHOICE items — e.g. Instant / Scheduled Time */
     val choices: List<String> = emptyList(),
+    /** Choice label that requires a follow-up time slot (e.g. Scheduled Time). */
+    val scheduledChoiceLabel: String = "Scheduled Time",
+    /** Preset times shown when [scheduledChoiceLabel] is selected. */
+    val scheduleTimeSlots: List<String> = emptyList(),
 )
 
 data class ServiceOption(
@@ -45,6 +49,8 @@ data class SubItemSelection(
     val quantity: Int = 0,
     val selected: Boolean = false,
     val choice: String? = null,
+    /** Set when a scheduled choice requires a specific time slot. */
+    val scheduleTime: String? = null,
 )
 
 enum class ServiceToastType {
@@ -78,8 +84,16 @@ data class ServicesUiState(
                         if (sel.selected) item.label else null
                     SubItemKind.CHOICE ->
                         if (sel.selected) {
-                            val choice = sel.choice?.takeIf { it.isNotBlank() }
-                            if (choice != null) "${item.label} ($choice)" else item.label
+                            val choice = sel.choice?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                            val needsTime = item.scheduleTimeSlots.isNotEmpty() &&
+                                choice.equals(item.scheduledChoiceLabel, ignoreCase = true)
+                            if (needsTime) {
+                                val time = sel.scheduleTime?.takeIf { it.isNotBlank() }
+                                    ?: return@mapNotNull null
+                                "${item.label} ($choice — $time)"
+                            } else {
+                                "${item.label} ($choice)"
+                            }
                         } else {
                             null
                         }
@@ -112,6 +126,14 @@ class ServicesViewModel(
                     label = "Full Housekeeping",
                     kind = SubItemKind.CHOICE,
                     choices = listOf("Instant", "Scheduled Time"),
+                    scheduleTimeSlots = listOf(
+                        "9:00 AM",
+                        "11:00 AM",
+                        "1:00 PM",
+                        "3:00 PM",
+                        "5:00 PM",
+                        "7:00 PM",
+                    ),
                 ),
                 SubServiceItem(
                     id = "express_trash",
@@ -326,9 +348,34 @@ class ServicesViewModel(
     fun selectChoice(itemId: String, choice: String) {
         _uiState.update { state ->
             val current = state.subSelections[itemId] ?: return@update state
+            val item = state.activeCategory?.subItems?.firstOrNull { it.id == itemId }
+            val needsTime = item?.scheduleTimeSlots?.isNotEmpty() == true &&
+                choice.equals(item.scheduledChoiceLabel, ignoreCase = true)
             state.copy(
                 subSelections = state.subSelections + (
-                    itemId to current.copy(selected = true, choice = choice)
+                    itemId to current.copy(
+                        selected = true,
+                        choice = choice,
+                        scheduleTime = when {
+                            !needsTime -> null
+                            choice == current.choice -> current.scheduleTime
+                            else -> null
+                        },
+                    )
+                    ),
+            )
+        }
+    }
+
+    fun selectScheduleTime(itemId: String, time: String) {
+        _uiState.update { state ->
+            val current = state.subSelections[itemId] ?: return@update state
+            state.copy(
+                subSelections = state.subSelections + (
+                    itemId to current.copy(
+                        selected = true,
+                        scheduleTime = time,
+                    )
                     ),
             )
         }

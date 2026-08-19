@@ -68,6 +68,7 @@
     <string name="service_sub_hint">Adjust quantities, then submit</string>
     <string name="service_sub_hint_qty">Adjust quantities, then submit</string>
     <string name="service_sub_hint_select">Select options, then submit</string>
+    <string name="service_select_time">Select preferred time</string>
     <string name="service_desc_cleaning">Request room cleanup or turndown service</string>
     <string name="service_desc_towels">Fresh towels, linen, and bedding refill</string>
     <string name="service_desc_amenities">Bottled water, toiletries, and room amenities</string>

@@ -448,6 +448,7 @@ private fun HotelServicesScreen(
                 onDecrement = viewModel::decrementSubItem,
                 onToggle = viewModel::toggleSubItem,
                 onSelectChoice = viewModel::selectChoice,
+                onSelectScheduleTime = viewModel::selectScheduleTime,
                 onSubmit = viewModel::submitSubRequest,
                 onDismiss = viewModel::dismissSubDialog,
             )
@@ -789,6 +790,7 @@ private fun SubServiceDialog(
     onDecrement: (String) -> Unit,
     onToggle: (String) -> Unit,
     onSelectChoice: (String, String) -> Unit,
+    onSelectScheduleTime: (String, String) -> Unit,
     onSubmit: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -881,6 +883,7 @@ private fun SubServiceDialog(
                                 cancelFocus = cancelFocus,
                                 submitFocus = submitFocus,
                                 onSelectChoice = { choice -> onSelectChoice(item.id, choice) },
+                                onSelectScheduleTime = { time -> onSelectScheduleTime(item.id, time) },
                             )
                         }
                     }
@@ -958,8 +961,18 @@ private fun SubOptionRow(
     cancelFocus: FocusRequester,
     submitFocus: FocusRequester,
     onSelectChoice: (String) -> Unit,
+    onSelectScheduleTime: (String) -> Unit,
 ) {
     var rowFocused by remember { mutableStateOf(false) }
+    val scheduleTimeFocus = remember(item.id) { FocusRequester() }
+    val showScheduleTimes = item.scheduleTimeSlots.isNotEmpty() &&
+        selection.choice.equals(item.scheduledChoiceLabel, ignoreCase = true)
+    LaunchedEffect(showScheduleTimes, selection.choice) {
+        if (showScheduleTimes && acceptRemoteInput) {
+            delay(80)
+            runCatching { scheduleTimeFocus.requestFocus() }
+        }
+    }
     val scale by animateFloatAsState(
         targetValue = if (rowFocused) 1.05f else 1f,
         animationSpec = tween(150),
@@ -1019,13 +1032,40 @@ private fun SubOptionRow(
                             label = choice,
                             selected = chosen,
                             enabled = acceptRemoteInput,
-                            modifier = if (requestInitialFocus && choiceIndex == 0) {
+                            modifier = if (requestInitialFocus && choiceIndex == 0 && !showScheduleTimes) {
                                 Modifier.focusRequester(initialFocus)
                             } else {
                                 Modifier
                             },
                             onClick = { onSelectChoice(choice) },
                         )
+                    }
+                }
+                if (showScheduleTimes) {
+                    Text(
+                        text = stringResource(R.string.service_select_time),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        fontFamily = SansBody,
+                        color = GoldLuxury.copy(alpha = 0.95f),
+                    )
+                    item.scheduleTimeSlots.chunked(3).forEachIndexed { rowIndex, rowSlots ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rowSlots.forEachIndexed { slotIndex, slot ->
+                                val chosen = selection.scheduleTime == slot
+                                ChoiceChip(
+                                    label = slot,
+                                    selected = chosen,
+                                    enabled = acceptRemoteInput,
+                                    modifier = if (rowIndex == 0 && slotIndex == 0) {
+                                        Modifier.focusRequester(scheduleTimeFocus)
+                                    } else {
+                                        Modifier
+                                    },
+                                    onClick = { onSelectScheduleTime(slot) },
+                                )
+                            }
+                        }
                     }
                 }
             }
