@@ -3,6 +3,7 @@ package `in`.pcncloud.hotel.ui.services
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -44,6 +45,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
@@ -51,6 +53,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -355,7 +358,7 @@ private fun HotelServicesScreen(
             showChromeHeader = false,
         ) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+            columns = GridCells.Fixed(3),
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
@@ -492,7 +495,7 @@ private fun ServiceCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 168.dp)
+            .heightIn(min = 156.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -521,18 +524,18 @@ private fun ServiceCard(
                     false
                 }
             }
-            .padding(horizontal = 22.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(horizontal = 18.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         ServiceIconBadge(
-            icon = if (roomOccupied) option.icon else "🔒",
+            iconRes = if (roomOccupied) option.iconRes else R.drawable.ic_service_lock,
             focused = focused && roomOccupied,
             disabled = !roomOccupied,
         )
 
         Text(
             text = option.label,
-            fontSize = 20.sp,
+            fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = SansBody,
             color = if (roomOccupied) {
@@ -551,10 +554,10 @@ private fun ServiceCard(
             } else {
                 stringResource(R.string.vacant_room_cta_hint)
             },
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             fontFamily = SansBody,
             color = if (roomOccupied) TextMuted else VacantRed.copy(alpha = 0.8f),
-            maxLines = 2,
+            maxLines = 3,
             overflow = TextOverflow.Ellipsis,
             lineHeight = 18.sp,
         )
@@ -574,7 +577,7 @@ private fun ServiceCard(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun ServiceIconBadge(
-    icon: String,
+    iconRes: Int,
     focused: Boolean,
     disabled: Boolean,
 ) {
@@ -609,7 +612,7 @@ private fun ServiceIconBadge(
 
     Box(
         modifier = Modifier
-            .size(56.dp)
+            .size(54.dp)
             .graphicsLayer {
                 scaleX = badgeScale
                 scaleY = badgeScale
@@ -618,7 +621,18 @@ private fun ServiceIconBadge(
             .border(1.dp, borderColor, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = icon, fontSize = 26.sp)
+        Image(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+            colorFilter = ColorFilter.tint(
+                when {
+                    disabled -> TextMuted.copy(alpha = 0.6f)
+                    focused -> GoldLight
+                    else -> GoldLuxury
+                },
+            ),
+        )
     }
 }
 
@@ -681,7 +695,12 @@ private fun SubServiceDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text(text = category.icon, fontSize = 28.sp)
+                        Image(
+                            painter = painterResource(category.iconRes),
+                            contentDescription = null,
+                            modifier = Modifier.size(28.dp),
+                            colorFilter = ColorFilter.tint(GoldLuxury),
+                        )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = category.label,
