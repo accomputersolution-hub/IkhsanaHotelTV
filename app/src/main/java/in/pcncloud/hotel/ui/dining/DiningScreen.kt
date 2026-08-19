@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusGroup
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
@@ -77,8 +78,8 @@ import `in`.pcncloud.hotel.data.model.OrderStatus
 import `in`.pcncloud.hotel.data.model.PaymentMethod
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.BaseScreen
-import `in`.pcncloud.hotel.ui.components.LuxuryGlassPanel
 import `in`.pcncloud.hotel.ui.components.luxuryGoldFocusChrome
+import `in`.pcncloud.hotel.ui.theme.CorpCardBg
 import `in`.pcncloud.hotel.ui.theme.CorpGold
 import `in`.pcncloud.hotel.ui.theme.CorpGoldBorderIdle
 import `in`.pcncloud.hotel.ui.theme.CorpGoldBright
@@ -395,19 +396,8 @@ private fun MenuItemCard(
                 scaleY = scale
                 transformOrigin = TransformOrigin(0.5f, 0.12f)
             }
-            .onFocusChanged { rowFocused = it.isFocused }
-            .focusable()
-            .onKeyEvent { event ->
-                if (!canOrder) return@onKeyEvent false
-                if (event.type == KeyEventType.KeyDown &&
-                    (event.key == Key.Enter || event.key == Key.DirectionCenter)
-                ) {
-                    onAdd()
-                    true
-                } else {
-                    false
-                }
-            }
+            .onFocusChanged { rowFocused = it.hasFocus }
+            .then(if (canOrder) Modifier.focusGroup() else Modifier.focusable())
             .luxuryGoldFocusChrome(focused = rowFocused, shape = shape)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
@@ -456,7 +446,7 @@ private fun MenuItemCard(
                     quantity = quantity,
                     onAdd = onAdd,
                     onRemove = onRemove,
-                    compact = true,
+                    compact = false,
                 )
             }
         }
@@ -543,7 +533,7 @@ private fun QuantityButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(if (compact) 6.dp else 8.dp)
-    val buttonSize = if (compact) 28.dp else 36.dp
+    val buttonSize = if (compact) 36.dp else 44.dp
 
     Box(
         modifier = Modifier
@@ -604,14 +594,19 @@ private fun OrderSummaryPanel(
     onPlaceOrder: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    LuxuryGlassPanel(modifier = modifier) {
+    Box(
+        modifier = modifier
+            .background(CorpCardBg, RoundedCornerShape(16.dp))
+            .border(1.dp, CorpGoldBorderIdle, RoundedCornerShape(16.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
         Column(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
                 text = stringResource(R.string.your_order),
-                fontSize = 20.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = SerifDisplay,
                 color = CorpGold,
@@ -619,18 +614,16 @@ private fun OrderSummaryPanel(
 
             Text(
                 text = stringResource(R.string.order_review),
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = SansBody,
                 color = TextMuted,
             )
 
-            // Pinned current selection — never inside the same scroll as payment,
-            // so D-pad to Pay / Confirm cannot hide the dishes being ordered.
             Column(
                 modifier = Modifier
+                    .weight(1f)
                     .fillMaxWidth()
-                    .heightIn(max = 220.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -658,14 +651,14 @@ private fun OrderSummaryPanel(
                 ) {
                     Text(
                         text = stringResource(R.string.order_total),
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = SansBody,
                         color = TextPrimary,
                     )
                     Text(
                         text = "₹${cartTotal.toInt()}",
-                        fontSize = 20.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = GoldLuxury,
                     )
@@ -709,30 +702,6 @@ private fun OrderSummaryPanel(
                 modifier = Modifier.focusRequester(orderFocus),
                 onClick = onPlaceOrder,
             )
-
-            // History only when not placing a new order — it was covering the cart.
-            if (!hasItems && roomOrders.isNotEmpty()) {
-                Text(
-                    text = stringResource(R.string.order_history),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = SerifDisplay,
-                    color = TextPrimary,
-                )
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 140.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    roomOrders.take(3).forEach { order ->
-                        key(order.id.ifBlank { "${order.timestamp}-${order.roomNumber}" }) {
-                            OrderHistoryCard(order = order)
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -829,7 +798,7 @@ private fun PlaceOrderCta(
                 scaleX = scale
                 scaleY = scale
             }
-            .heightIn(min = 52.dp)
+            .heightIn(min = 44.dp)
             .onFocusChanged { focused = it.isFocused }
             .focusable(enabled)
             .onKeyEvent { event ->
@@ -848,7 +817,7 @@ private fun PlaceOrderCta(
                 color = borderColor,
                 shape = shape,
             )
-            .padding(horizontal = 14.dp, vertical = 14.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -1007,10 +976,10 @@ private fun PaymentToggle(
     onPayNow: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             text = stringResource(R.string.payment_method_title),
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = SansBody,
             color = TextMuted,
@@ -1082,33 +1051,33 @@ private fun PaymentCard(
                     onClick(); true
                 } else false
             }
-            .padding(horizontal = 6.dp, vertical = 6.dp),
-        contentAlignment = Alignment.Center,
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        contentAlignment = Alignment.CenterStart,
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(1.dp),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(text = icon, fontSize = 16.sp)
-            Text(
-                text = title,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = SansBody,
-                color = if (isSelected) GoldLuxury else TextPrimary,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = subtitle,
-                fontSize = 10.sp,
-                fontFamily = SansBody,
-                color = TextMuted,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = SansBody,
+                    color = if (isSelected) GoldLuxury else TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = subtitle,
+                    fontSize = 9.sp,
+                    fontFamily = SansBody,
+                    color = TextMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
