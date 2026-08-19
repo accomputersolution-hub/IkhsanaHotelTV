@@ -118,11 +118,6 @@ class ServicesViewModel(
                     label = "Turndown Setup",
                     kind = SubItemKind.TOGGLE,
                 ),
-                SubServiceItem(
-                    id = "express_refresh",
-                    label = "Express Refresh",
-                    kind = SubItemKind.TOGGLE,
-                ),
             ),
         ),
         ServiceOption(
@@ -154,7 +149,6 @@ class ServicesViewModel(
                     choices = listOf("Within 30 min", "This Evening"),
                 ),
                 SubServiceItem(id = "dry_cleaning", label = "Dry Cleaning", kind = SubItemKind.TOGGLE),
-                SubServiceItem(id = "pressing_only", label = "Pressing Only", kind = SubItemKind.TOGGLE),
             ),
         ),
         ServiceOption(

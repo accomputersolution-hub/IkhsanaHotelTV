@@ -795,6 +795,7 @@ private fun SubServiceDialog(
     val firstFocus = remember { FocusRequester() }
     val cancelFocus = remember { FocusRequester() }
     val submitFocus = remember { FocusRequester() }
+    var acceptRemoteInput by remember(category.serviceType) { mutableStateOf(false) }
     val usesQuantitySteppers = category.subItems.any { it.kind == SubItemKind.QUANTITY }
     val subtitle = if (usesQuantitySteppers) {
         stringResource(R.string.service_sub_hint_qty)
@@ -871,11 +872,9 @@ private fun SubServiceDialog(
                             SubOptionRow(
                                 item = item,
                                 selection = selection,
-                                modifier = if (index == 0) {
-                                    Modifier.focusRequester(firstFocus)
-                                } else {
-                                    Modifier
-                                },
+                                acceptRemoteInput = acceptRemoteInput,
+                                requestInitialFocus = index == 0,
+                                initialFocus = firstFocus,
                                 onIncrement = { onIncrement(item.id) },
                                 onDecrement = { onDecrement(item.id) },
                                 onToggle = { onToggle(item.id) },
@@ -904,7 +903,7 @@ private fun SubServiceDialog(
                         SubDialogButton(
                             text = stringResource(R.string.service_cancel),
                             highlighted = false,
-                            enabled = !isSubmitting,
+                            enabled = !isSubmitting && acceptRemoteInput,
                             modifier = Modifier
                                 .weight(1f)
                                 .focusRequester(cancelFocus)
@@ -925,7 +924,7 @@ private fun SubServiceDialog(
                                 stringResource(R.string.service_submit_request)
                             },
                             highlighted = true,
-                            enabled = canSubmit,
+                            enabled = canSubmit && acceptRemoteInput,
                             modifier = Modifier
                                 .weight(1.35f)
                                 .focusRequester(submitFocus),
@@ -935,7 +934,9 @@ private fun SubServiceDialog(
                     }
 
                     LaunchedEffect(category.serviceType) {
-                        delay(50)
+                        acceptRemoteInput = false
+                        delay(220)
+                        acceptRemoteInput = true
                         runCatching { firstFocus.requestFocus() }
                     }
                 }
@@ -948,7 +949,9 @@ private fun SubServiceDialog(
 private fun SubOptionRow(
     item: SubServiceItem,
     selection: SubItemSelection,
-    modifier: Modifier = Modifier,
+    acceptRemoteInput: Boolean,
+    requestInitialFocus: Boolean,
+    initialFocus: FocusRequester,
     onIncrement: () -> Unit,
     onDecrement: () -> Unit,
     onToggle: () -> Unit,
@@ -973,107 +976,124 @@ private fun SubOptionRow(
         else -> Color.White.copy(alpha = 0.10f)
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .onFocusChanged { rowFocused = it.isFocused || it.hasFocus }
-            .focusable()
-            .onKeyEvent { event ->
-                // Row OK activates toggle / selects default choice; qty rows leave OK to child steppers
-                if (event.type == KeyEventType.KeyDown &&
-                    (event.key == Key.Enter || event.key == Key.DirectionCenter)
-                ) {
-                    when (item.kind) {
-                        SubItemKind.TOGGLE -> {
-                            onToggle(); true
-                        }
-                        SubItemKind.CHOICE -> {
-                            val choice = selection.choice
-                                ?: item.choices.firstOrNull()
-                            if (choice != null) {
-                                onSelectChoice(choice); true
-                            } else {
-                                false
-                            }
-                        }
-                        SubItemKind.QUANTITY -> false
-                    }
-                } else {
-                    false
-                }
-            }
-            .background(
-                when {
-                    rowFocused -> GoldLuxury.copy(alpha = 0.16f)
-                    active -> GoldLuxury.copy(alpha = 0.12f)
-                    else -> NavyDeep.copy(alpha = 0.55f)
-                },
-                shape,
-            )
-            .border(
-                width = if (rowFocused) 2.dp else 1.dp,
-                color = borderColor,
-                shape = shape,
-            )
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        when (item.kind) {
-            SubItemKind.QUANTITY -> {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = item.label,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = SansBody,
-                        color = if (rowFocused) GoldLight else TextPrimary,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    SubQuantityStepper(
-                        quantity = selection.quantity,
-                        onAdd = onIncrement,
-                        onRemove = onDecrement,
-                    )
-                }
-            }
-            SubItemKind.TOGGLE -> {
-                SubToggleRow(
-                    label = item.label,
-                    selected = selection.selected,
-                    rowFocused = rowFocused,
-                    onClick = onToggle,
-                )
-            }
-            SubItemKind.CHOICE -> {
+    val rowModifier = Modifier
+        .fillMaxWidth()
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .background(
+            when {
+                rowFocused -> GoldLuxury.copy(alpha = 0.16f)
+                active -> GoldLuxury.copy(alpha = 0.12f)
+                else -> NavyDeep.copy(alpha = 0.55f)
+            },
+            shape,
+        )
+        .border(
+            width = if (rowFocused) 2.dp else 1.dp,
+            color = borderColor,
+            shape = shape,
+        )
+        .padding(horizontal = 14.dp, vertical = 12.dp)
+
+    when (item.kind) {
+        SubItemKind.CHOICE -> {
+            Column(
+                modifier = rowModifier,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Text(
                     text = item.label,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = SansBody,
-                    color = if (rowFocused) GoldLight else TextPrimary,
+                    color = if (active) GoldLight else TextPrimary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    item.choices.forEach { choice ->
+                    item.choices.forEachIndexed { choiceIndex, choice ->
                         val chosen = selection.selected && selection.choice == choice
                         ChoiceChip(
                             label = choice,
                             selected = chosen,
-                            downFocus = cancelFocus,
+                            enabled = acceptRemoteInput,
+                            modifier = if (requestInitialFocus && choiceIndex == 0) {
+                                Modifier.focusRequester(initialFocus)
+                            } else {
+                                Modifier
+                            },
                             onClick = { onSelectChoice(choice) },
                         )
                     }
+                }
+            }
+        }
+        else -> {
+            Column(
+                modifier = rowModifier
+                    .onFocusChanged { rowFocused = it.isFocused || it.hasFocus }
+                    .then(
+                        if (requestInitialFocus) {
+                            Modifier.focusRequester(initialFocus)
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .focusable(enabled = acceptRemoteInput)
+                    .onKeyEvent { event ->
+                        if (!acceptRemoteInput) return@onKeyEvent false
+                        if (event.type == KeyEventType.KeyDown &&
+                            (event.key == Key.Enter || event.key == Key.DirectionCenter)
+                        ) {
+                            when (item.kind) {
+                                SubItemKind.TOGGLE -> {
+                                    onToggle(); true
+                                }
+                                SubItemKind.QUANTITY -> false
+                                SubItemKind.CHOICE -> false
+                            }
+                        } else {
+                            false
+                        }
+                    },
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                when (item.kind) {
+                    SubItemKind.QUANTITY -> {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = item.label,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = SansBody,
+                                color = if (rowFocused) GoldLight else TextPrimary,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            SubQuantityStepper(
+                                quantity = selection.quantity,
+                                acceptRemoteInput = acceptRemoteInput,
+                                onAdd = onIncrement,
+                                onRemove = onDecrement,
+                            )
+                        }
+                    }
+                    SubItemKind.TOGGLE -> {
+                        SubToggleRow(
+                            label = item.label,
+                            selected = selection.selected,
+                            rowFocused = rowFocused,
+                            onClick = onToggle,
+                        )
+                    }
+                    SubItemKind.CHOICE -> Unit
                 }
             }
         }
@@ -1132,21 +1152,24 @@ private fun SubToggleRow(
 private fun ChoiceChip(
     label: String,
     selected: Boolean,
+    enabled: Boolean = true,
     downFocus: FocusRequester? = null,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(999.dp)
     Box(
-        modifier = Modifier
+        modifier = modifier
             .then(
                 Modifier.focusProperties {
                     if (downFocus != null) down = downFocus
                 },
             )
             .onFocusChanged { focused = it.isFocused }
-            .focusable()
+            .focusable(enabled)
             .onKeyEvent { event ->
+                if (!enabled) return@onKeyEvent false
                 if (event.type == KeyEventType.KeyDown &&
                     (event.key == Key.Enter || event.key == Key.DirectionCenter)
                 ) {
@@ -1183,6 +1206,7 @@ private fun ChoiceChip(
 @Composable
 private fun SubQuantityStepper(
     quantity: Int,
+    acceptRemoteInput: Boolean,
     onAdd: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -1195,7 +1219,7 @@ private fun SubQuantityStepper(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        SubQtyButton(label = "−", enabled = quantity > 0, onClick = onRemove)
+        SubQtyButton(label = "−", enabled = acceptRemoteInput && quantity > 0, onClick = onRemove)
         Text(
             text = quantity.toString(),
             fontSize = 16.sp,
@@ -1206,7 +1230,7 @@ private fun SubQuantityStepper(
             modifier = Modifier.width(28.dp),
             maxLines = 1,
         )
-        SubQtyButton(label = "+", enabled = true, onClick = onAdd)
+        SubQtyButton(label = "+", enabled = acceptRemoteInput, onClick = onAdd)
     }
 }
 
