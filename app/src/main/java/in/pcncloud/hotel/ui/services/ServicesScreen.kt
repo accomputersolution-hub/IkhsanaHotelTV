@@ -315,6 +315,7 @@ private fun HotelServicesScreen(
     val uiState by viewModel.uiState.collectAsState()
     val firstItemFocus = remember { FocusRequester() }
     var showActiveRequests by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     val options = remember(departmentFilter, viewModel.serviceOptions) {
         val filter = departmentFilter?.trim()?.lowercase().orEmpty()
         if (filter.isBlank()) {
@@ -342,6 +343,26 @@ private fun HotelServicesScreen(
     }
     val pickerOpen =
         uiState.activeCategory != null || uiState.showVacantRoomDialog || showActiveRequests
+
+    DisposableEffect(showActiveRequests, uiState.activeCategory, uiState.showVacantRoomDialog) {
+        val main = context as? MainActivity
+        val previous = main?.nestedAdminBackHandler
+        if (showActiveRequests || uiState.activeCategory != null || uiState.showVacantRoomDialog) {
+            main?.nestedAdminBackHandler = {
+                when {
+                    showActiveRequests -> showActiveRequests = false
+                    uiState.activeCategory != null -> viewModel.dismissSubDialog()
+                    uiState.showVacantRoomDialog -> viewModel.dismissVacantRoomDialog()
+                }
+                true
+            }
+        }
+        onDispose {
+            if (main?.nestedAdminBackHandler != previous) {
+                main?.nestedAdminBackHandler = previous
+            }
+        }
+    }
 
     LaunchedEffect(options.size, uiState.roomOccupied, pickerOpen) {
         if (options.isEmpty() || pickerOpen) return@LaunchedEffect
