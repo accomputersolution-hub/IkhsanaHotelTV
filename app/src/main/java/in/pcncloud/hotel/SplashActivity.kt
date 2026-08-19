@@ -17,9 +17,8 @@ import androidx.core.view.isVisible
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
-import `in`.pcncloud.hotel.ui.components.hotelImageRequest
 import `in`.pcncloud.hotel.ui.home.BrandAssets
-import coil.load
+import coil.request.ImageRequest
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -293,11 +292,11 @@ class SplashActivity : AppCompatActivity() {
                 } else if (splashWelcome.text.isNullOrBlank()) {
                     splashWelcome.text = getString(R.string.splash_welcome_loading)
                 }
-                loadSplashLogo(logoUrl)
-
-                brandingReady = true
-                Log.i(TAG, "Splash hotel config ready → name=$hotelName logo=${logoUrl.take(120)}")
-                tryScheduleMainWhenReady()
+                loadSplashLogo(logoUrl) {
+                    brandingReady = true
+                    Log.i(TAG, "Splash hotel config ready → name=$hotelName logo=${logoUrl.take(120)}")
+                    tryScheduleMainWhenReady()
+                }
             }
     }
 
@@ -435,24 +434,36 @@ class SplashActivity : AppCompatActivity() {
         else -> value.toString().trim().takeIf { it.isNotEmpty() }
     }
 
-    private fun loadSplashLogo(rawUrl: String) {
+    private fun loadSplashLogo(rawUrl: String, onSettled: () -> Unit) {
         val logoView = splashLogo ?: return
         val remoteUrl = normalizeRemoteImageUrl(rawUrl)
         if (BuildConfig.IS_CORPORATE || remoteUrl.isNullOrBlank()) {
             logoView.setImageResource(BrandAssets.logoRes)
+            onSettled()
             return
         }
+        logoView.setImageResource(BrandAssets.logoRes)
         logoView.load(
-            hotelImageRequest(
-                context = this,
-                url = remoteUrl,
-                logTag = "SplashLogo",
-            ),
-        ) {
-            placeholder(BrandAssets.logoRes)
-            error(BrandAssets.logoRes)
-            fallback(BrandAssets.logoRes)
-        }
+            ImageRequest.Builder(this)
+                .data(remoteUrl)
+                .crossfade(true)
+                .allowHardware(false)
+                .listener(
+                    onSuccess = { _, _ ->
+                        Log.i(TAG, "SplashLogo loaded OK")
+                        onSettled()
+                    },
+                    onError = { _, result ->
+                        Log.e(
+                            TAG,
+                            "SplashLogo FAILED url=${remoteUrl.take(160)}: ${result.throwable.message}",
+                            result.throwable,
+                        )
+                        onSettled()
+                    },
+                )
+                .build(),
+        )
     }
 
     private fun normalizeRemoteImageUrl(url: String): String? {
