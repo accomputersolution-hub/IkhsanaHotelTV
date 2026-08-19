@@ -8,7 +8,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -43,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -59,6 +59,8 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -612,121 +614,129 @@ private fun OrderSummaryPanel(
     onPlaceOrder: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val density = LocalDensity.current
+    var footerHeight by remember { mutableStateOf(168.dp) }
+    val hasItems = cart.isNotEmpty()
+    val ctaText = when {
+        !roomOccupied -> stringResource(R.string.vacant_room_cta_hint)
+        isPlacingOrder -> stringResource(R.string.loading)
+        !hasItems -> stringResource(R.string.cart_add_items_cta)
+        selectedPayment == PaymentMethod.PAID_ONLINE ->
+            stringResource(R.string.pay_now) + " · ₹${cartTotal.toInt()}"
+        else -> stringResource(R.string.cart_confirm_cta, cartTotal)
+    }
+
     Box(
         modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
             .background(CorpCardBg, RoundedCornerShape(16.dp))
             .border(1.dp, CorpGoldBorderIdle, RoundedCornerShape(16.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val cartHeight = (maxHeight * 0.48f).coerceIn(140.dp, 280.dp)
-
-            Column(modifier = Modifier.fillMaxSize()) {
-                Text(
-                    text = stringResource(R.string.your_order),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = SerifDisplay,
-                    color = CorpGold,
-                )
-                Text(
-                    text = stringResource(R.string.order_review),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    fontFamily = SansBody,
-                    color = TextMuted,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
-                )
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(cartHeight)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    if (cart.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.cart_empty),
-                            fontSize = 15.sp,
-                            fontFamily = SansBody,
-                            color = TextMuted,
-                        )
-                    } else {
-                        cart.forEach { cartItem ->
-                            key(cartItem.menuItem.id) {
-                                CartLineRow(cartItem = cartItem)
-                            }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = footerHeight),
+        ) {
+            Text(
+                text = stringResource(R.string.your_order),
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = SerifDisplay,
+                color = CorpGold,
+            )
+            Text(
+                text = stringResource(R.string.order_review),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = SansBody,
+                color = TextMuted,
+                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (cart.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.cart_empty),
+                        fontSize = 15.sp,
+                        fontFamily = SansBody,
+                        color = TextMuted,
+                    )
+                } else {
+                    cart.forEach { cartItem ->
+                        key(cartItem.menuItem.id) {
+                            CartLineRow(cartItem = cartItem)
                         }
                     }
                 }
+            }
+        }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                if (cart.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.order_total),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = SansBody,
-                            color = TextPrimary,
-                        )
-                        Text(
-                            text = "₹${cartTotal.toInt()}",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = GoldLuxury,
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
+        Column(
+            modifier = Modifier
+                .align(Alignment.Bottom)
+                .fillMaxWidth()
+                .background(CorpCardBg)
+                .padding(top = 8.dp)
+                .onSizeChanged { size ->
+                    footerHeight = with(density) { size.height.toDp() }
+                },
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (hasItems) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.order_total),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = SansBody,
+                        color = TextPrimary,
+                    )
+                    Text(
+                        text = "₹${cartTotal.toInt()}",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = GoldLuxury,
+                    )
                 }
+            }
 
-                PaymentToggle(
-                    selected = selectedPayment,
-                    onSelectCheckout = { onSelectPayment(PaymentMethod.PAY_AT_CHECKOUT) },
-                    onPayNow = onPayNow,
+            PaymentToggle(
+                selected = selectedPayment,
+                onSelectCheckout = { onSelectPayment(PaymentMethod.PAY_AT_CHECKOUT) },
+                onPayNow = onPayNow,
+            )
+
+            if (orderMessage == "success") {
+                Text(
+                    text = stringResource(R.string.order_placed),
+                    fontSize = 13.sp,
+                    color = VegGreen,
                 )
-
-                if (orderMessage == "success") {
-                    Text(
-                        text = stringResource(R.string.order_placed),
-                        fontSize = 13.sp,
-                        color = VegGreen,
-                        modifier = Modifier.padding(top = 6.dp),
-                    )
-                } else if (orderMessage == "error") {
-                    Text(
-                        text = stringResource(R.string.order_failed),
-                        fontSize = 13.sp,
-                        color = NonVegRed,
-                        modifier = Modifier.padding(top = 6.dp),
-                    )
-                }
-
-                val hasItems = cart.isNotEmpty()
-                val ctaText = when {
-                    !roomOccupied -> stringResource(R.string.vacant_room_cta_hint)
-                    isPlacingOrder -> stringResource(R.string.loading)
-                    !hasItems -> stringResource(R.string.cart_add_items_cta)
-                    selectedPayment == PaymentMethod.PAID_ONLINE ->
-                        stringResource(R.string.pay_now) + " · ₹${cartTotal.toInt()}"
-                    else -> stringResource(R.string.cart_confirm_cta, cartTotal)
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                PlaceOrderCta(
-                    text = ctaText,
-                    enabled = hasItems && !isPlacingOrder && roomOccupied,
-                    highlighted = hasItems && roomOccupied,
-                    modifier = Modifier.focusRequester(orderFocus),
-                    onClick = onPlaceOrder,
+            } else if (orderMessage == "error") {
+                Text(
+                    text = stringResource(R.string.order_failed),
+                    fontSize = 13.sp,
+                    color = NonVegRed,
                 )
             }
+
+            PlaceOrderCta(
+                text = ctaText,
+                enabled = hasItems && !isPlacingOrder && roomOccupied,
+                highlighted = hasItems && roomOccupied,
+                modifier = Modifier.focusRequester(orderFocus),
+                onClick = onPlaceOrder,
+            )
         }
     }
 }
