@@ -1,5 +1,6 @@
 package `in`.pcncloud.hotel.ui.services
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -28,6 +29,7 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -56,14 +58,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
 import `in`.pcncloud.hotel.BuildConfig
+import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.data.model.ServiceRequest
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
@@ -335,9 +337,10 @@ private fun HotelServicesScreen(
             filter.isBlank() || request.department.equals(filter, ignoreCase = true)
         }
     }
+    val pickerOpen = uiState.activeCategory != null || uiState.showVacantRoomDialog
 
-    LaunchedEffect(options.size, uiState.roomOccupied) {
-        if (options.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(options.size, uiState.roomOccupied, pickerOpen) {
+        if (options.isEmpty() || pickerOpen) return@LaunchedEffect
         delay(50)
         runCatching { firstItemFocus.requestFocus() }
     }
@@ -370,7 +373,7 @@ private fun HotelServicesScreen(
             ) { index, option ->
                 ServiceCard(
                     option = option,
-                    enabled = !uiState.isSubmitting && uiState.roomOccupied,
+                    enabled = !uiState.isSubmitting && uiState.roomOccupied && !pickerOpen,
                     roomOccupied = uiState.roomOccupied,
                     modifier = if (index == 0) Modifier.focusRequester(firstItemFocus) else Modifier,
                     onClick = { viewModel.openCategory(option) },
@@ -500,7 +503,7 @@ private fun ServiceCard(
                 spotColor = GoldLuxury.copy(alpha = 0.55f),
             )
             .onFocusChanged { focused = it.isFocused }
-            .focusable(enabled = roomOccupied)
+            .focusable(enabled = enabled)
             .background(brush = fillBrush, shape = shape)
             .border(
                 width = if (focused && roomOccupied) 2.dp else 1.dp,
@@ -645,21 +648,23 @@ private fun SubServiceDialog(
         stringResource(R.string.service_sub_hint_select)
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-        ),
+    // In-composition overlay — Compose Dialog windows steal Activity focus on
+    // physical TVs and kiosk reclaim dumps the guest back on Home.
+    DismissOnKioskBack(onDismiss)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f))
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Back) {
+                    onDismiss()
+                    true
+                } else {
+                    false
+                }
+            },
+        contentAlignment = Alignment.Center,
     ) {
-        // Full-window 0.7 dark scrim behind the panel
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.7f)),
-            contentAlignment = Alignment.Center,
-        ) {
             Box(
                 modifier = Modifier
                     .widthIn(max = 500.dp)
@@ -769,7 +774,6 @@ private fun SubServiceDialog(
                     }
                 }
             }
-        }
     }
 }
 
@@ -1193,7 +1197,22 @@ private fun ActiveRequestRow(request: ServiceRequest) {
 private fun VacantRoomDialog(onDismiss: () -> Unit) {
     val dismissFocus = remember { FocusRequester() }
 
-    Dialog(onDismissRequest = onDismiss) {
+    // In-composition overlay — Compose Dialog windows reclaim Home on physical TVs.
+    DismissOnKioskBack(onDismiss)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f))
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Back) {
+                    onDismiss()
+                    true
+                } else {
+                    false
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
         Box(
             modifier = Modifier
                 .background(NavySurface, RoundedCornerShape(24.dp))
@@ -1273,6 +1292,23 @@ private fun VacantRoomDialog(onDismiss: () -> Unit) {
                     runCatching { dismissFocus.requestFocus() }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DismissOnKioskBack(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    BackHandler(onBack = onDismiss)
+    DisposableEffect(onDismiss) {
+        val main = context as? MainActivity
+        val previous = main?.nestedAdminBackHandler
+        main?.nestedAdminBackHandler = {
+            onDismiss()
+            true
+        }
+        onDispose {
+            main?.nestedAdminBackHandler = previous
         }
     }
 }
