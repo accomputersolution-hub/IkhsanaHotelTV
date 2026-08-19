@@ -96,6 +96,7 @@
     <string name="cart_confirm_cta">Confirm &amp; Place Order · ₹%1$.0f</string>
     <string name="cart_items">%1$d item(s) — ₹%2$.0f</string>
     <string name="your_order">Your Order</string>
+    <string name="order_review">Order Review</string>
     <string name="order_total">Total</string>
     <string name="order_history">Recent Orders</string>
     <string name="no_orders_yet">No orders placed yet</string>
@@ -105,7 +106,7 @@
     <string name="vacant_room_dialog_cta">Understood</string>
     <string name="vacant_room_cta_hint">Room not checked-in — contact reception</string>
     <string name="payment_method_title">Payment Method</string>
-    <string name="pay_at_checkout">Pay at Checkout</string>
+    <string name="pay_at_checkout">Pay at Reception</string>
     <string name="pay_at_checkout_sub">Add to Room Bill</string>
     <string name="pay_now">Pay Now</string>
     <string name="pay_now_sub">Scan QR on TV</string>

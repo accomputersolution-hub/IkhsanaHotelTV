@@ -21,8 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -31,12 +29,14 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -178,7 +178,7 @@ fun DiningScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .weight(if (BuildConfig.IS_CORPORATE) 1f else 0.70f)
+                        .weight(if (BuildConfig.IS_CORPORATE) 1f else 0.62f)
                         .fillMaxHeight(),
                 ) {
                     LazyVerticalGrid(
@@ -252,7 +252,7 @@ fun DiningScreen(
                             }
                         },
                         modifier = Modifier
-                            .weight(0.30f)
+                            .weight(0.38f)
                             .fillMaxHeight(),
                     )
                 }
@@ -317,48 +317,6 @@ private fun CategoryTab(
             fontFamily = SansBody,
             color = if (isSelected || isFocused) CorpGoldBright else CorpGold,
             maxLines = 1,
-        )
-    }
-}
-
-@Composable
-private fun GoldListScrollbar(
-    listState: LazyListState,
-    modifier: Modifier = Modifier,
-) {
-    val info = listState.layoutInfo
-    val visible = info.visibleItemsInfo
-    val total = info.totalItemsCount
-    if (total < 2 || visible.isEmpty()) return
-
-    val spacing = info.mainAxisItemSpacing.toFloat()
-    val avgSize = visible.map { it.size }.average().toFloat().coerceAtLeast(1f)
-    val contentPx = avgSize * total + spacing * (total - 1).coerceAtLeast(0)
-    val viewportPx = (info.viewportEndOffset - info.viewportStartOffset).toFloat()
-    if (contentPx <= viewportPx + 8f) return
-
-    val scrollPx = listState.firstVisibleItemIndex * (avgSize + spacing) +
-        listState.firstVisibleItemScrollOffset
-    val scrollable = (contentPx - viewportPx).coerceAtLeast(1f)
-    val progress = (scrollPx / scrollable).coerceIn(0f, 1f)
-    val thumbFraction = (viewportPx / contentPx).coerceIn(0.18f, 0.78f)
-
-    Canvas(
-        modifier = modifier.width(6.dp),
-    ) {
-        val trackW = size.width
-        val radius = trackW / 2f
-        drawRoundRect(
-            color = CorpGold.copy(alpha = 0.22f),
-            cornerRadius = CornerRadius(radius, radius),
-        )
-        val thumbH = size.height * thumbFraction
-        val thumbTop = (size.height - thumbH) * progress
-        drawRoundRect(
-            color = CorpGoldBright,
-            topLeft = Offset(0f, thumbTop),
-            size = Size(trackW, thumbH),
-            cornerRadius = CornerRadius(radius, radius),
         )
     }
 }
@@ -647,12 +605,10 @@ private fun OrderSummaryPanel(
     onPlaceOrder: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val orderListState = rememberLazyListState()
-
     LuxuryGlassPanel(modifier = modifier) {
         Column(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
                 text = stringResource(R.string.your_order),
@@ -662,99 +618,70 @@ private fun OrderSummaryPanel(
                 color = CorpGold,
             )
 
-            Box(
+            Column(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp)),
+                    .heightIn(min = 120.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                LazyColumn(
-                    state = orderListState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(end = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 8.dp),
-                ) {
-                    if (cart.isEmpty()) {
-                        item(key = "cart_empty") {
-                            Text(
-                                text = stringResource(R.string.cart_empty),
-                                fontSize = 14.sp,
-                                fontFamily = SansBody,
-                                color = TextMuted,
-                            )
-                        }
-                    } else {
-                        items(
-                            count = cart.size,
-                            key = { index -> cart[index].menuItem.id },
-                        ) { index ->
-                            CartLineRow(cartItem = cart[index])
-                        }
-                        item(key = "cart_total") {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.order_total),
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontFamily = SansBody,
-                                    color = TextPrimary,
-                                )
-                                Text(
-                                    text = "₹${cartTotal.toInt()}",
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = GoldLuxury,
-                                )
-                            }
+                Text(
+                    text = stringResource(R.string.order_review),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = SansBody,
+                    color = TextMuted,
+                )
+                if (cart.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.cart_empty),
+                        fontSize = 14.sp,
+                        fontFamily = SansBody,
+                        color = TextMuted,
+                    )
+                } else {
+                    cart.forEach { cartItem ->
+                        key(cartItem.menuItem.id) {
+                            CartLineRow(cartItem = cartItem)
                         }
                     }
-
-                    item(key = "history_header") {
-                        Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
                         Text(
-                            text = stringResource(R.string.order_history),
+                            text = stringResource(R.string.order_total),
                             fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = SerifDisplay,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = SansBody,
                             color = TextPrimary,
                         )
-                    }
-
-                    if (roomOrders.isEmpty()) {
-                        item(key = "history_empty") {
-                            Text(
-                                text = stringResource(R.string.no_orders_yet),
-                                fontSize = 13.sp,
-                                fontFamily = SansBody,
-                                color = TextMuted,
-                            )
-                        }
-                    } else {
-                        items(
-                            count = roomOrders.size.coerceAtMost(4),
-                            key = { index ->
-                                "order_${roomOrders[index].id.ifBlank { "$index-${roomOrders[index].timestamp}" }}"
-                            },
-                        ) { index ->
-                            OrderHistoryCard(order = roomOrders[index])
-                        }
+                        Text(
+                            text = "₹${cartTotal.toInt()}",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = GoldLuxury,
+                        )
                     }
                 }
 
-                GoldListScrollbar(
-                    listState = orderListState,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .padding(vertical = 4.dp),
-                )
+                if (roomOrders.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.order_history),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = SerifDisplay,
+                        color = TextPrimary,
+                    )
+                    roomOrders.take(3).forEach { order ->
+                        OrderHistoryCard(order = order)
+                    }
+                }
             }
 
             PaymentToggle(
@@ -801,19 +728,12 @@ private fun OrderSummaryPanel(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun CartLineRow(cartItem: CartItem) {
-    var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(10.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .onFocusChanged { focused = it.isFocused }
-            .focusable()
             .background(NavyDeep.copy(alpha = 0.45f), shape)
-            .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = if (focused) CorpGoldBright else CorpGoldBorderIdle,
-                shape = shape,
-            )
+            .border(1.dp, CorpGoldBorderIdle, shape)
             .padding(horizontal = 10.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -1142,14 +1062,14 @@ private fun PaymentCard(
                     onClick(); true
                 } else false
             }
-            .padding(horizontal = 8.dp, vertical = 10.dp),
+            .padding(horizontal = 6.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
-            Text(text = icon, fontSize = 18.sp)
+            Text(text = icon, fontSize = 16.sp)
             Text(
                 text = title,
                 fontSize = 11.sp,
