@@ -1,4 +1,4 @@
-import { db, rtdb } from './firebase-config.js';
+import { db, rtdb, storage } from './firebase-config.js';
 import {
   collection,
   doc,
@@ -14,6 +14,7 @@ import {
   serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 import { ref as rtdbRef, set as rtdbSet } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-storage.js';
 import { createHotelAdminAccount, isSuperAdmin } from './auth.js';
 import { TenantManager, clearHotelContext, getHotelId } from './tenant-context.js';
 import { escapeHtml, toast, openModal, closeModal, setupModalClose } from './utils.js';
@@ -424,6 +425,30 @@ function setupEditHotelModal() {
   const logoInput = document.getElementById('edit-hotel-logo-url');
   const wallpaperInput = document.getElementById('edit-hotel-wallpaper-url');
   const activeToggle = document.getElementById('edit-hotel-active');
+  const logoFileInput = document.getElementById('edit-hotel-logo-file');
+  const logoUploadBtn = document.getElementById('edit-hotel-logo-upload-btn');
+
+  logoUploadBtn?.addEventListener('click', () => logoFileInput?.click());
+  logoFileInput?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const hotelId = editingHotelId || document.getElementById('edit-hotel-id')?.value;
+    if (!hotelId) {
+      toast('Open a hotel first, then upload the logo', 'error');
+      return;
+    }
+    try {
+      toast('Uploading logo…');
+      const url = await uploadHotelImage(hotelId, file, 'logo');
+      if (logoInput) logoInput.value = url;
+      updateMediaPreview(url, 'edit-hotel-logo-preview', 'edit-hotel-logo-placeholder');
+      toast('Logo uploaded — Save Changes dabao');
+    } catch (err) {
+      console.error('[super-admin] logo upload failed', err);
+      toast(err.message || 'Logo upload failed. Enable Firebase Storage for this project.', 'error');
+    }
+  });
 
   logoInput?.addEventListener('input', () => {
     updateMediaPreview(
@@ -578,6 +603,22 @@ function updateMediaPreview(url, imgId, placeholderId) {
   };
   placeholder.textContent = imgId.includes('logo') ? 'Logo preview' : 'Wallpaper preview';
   img.src = url;
+}
+
+const MAX_HOTEL_IMAGE_BYTES = 3 * 1024 * 1024;
+
+async function uploadHotelImage(hotelId, file, kind) {
+  if (!file || !String(file.type || '').startsWith('image/')) {
+    throw new Error('Choose a PNG, JPG, or WebP image');
+  }
+  if (file.size > MAX_HOTEL_IMAGE_BYTES) {
+    throw new Error('Image must be under 3 MB');
+  }
+  const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
+  const path = `hotels/${hotelId}/branding/${kind}_${Date.now()}.${ext}`;
+  const objectRef = storageRef(storage, path);
+  await uploadBytes(objectRef, file, { contentType: file.type || 'image/png' });
+  return getDownloadURL(objectRef);
 }
 
 function syncActiveToggleLabel() {
