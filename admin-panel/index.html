@@ -339,28 +339,16 @@
             <!-- Right: media & settings -->
             <div class="edit-property-col space-y-4">
               <div>
-                <label for="edit-hotel-logo-url" class="block text-sm font-medium mb-1">Logo</label>
+                <label for="edit-hotel-logo-url" class="block text-sm font-medium mb-1">Logo URL</label>
                 <input
                   id="edit-hotel-logo-url"
-                  type="text"
+                  type="url"
                   spellcheck="false"
                   autocomplete="off"
-                  placeholder="https://…  or upload a file below"
+                  placeholder="https://…"
                   class="sa-field w-full outline-none"
                 />
-                <div class="flex items-center gap-2 mt-2">
-                  <input
-                    id="edit-hotel-logo-file"
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                    class="hidden"
-                  />
-                  <button id="edit-hotel-logo-upload-btn" type="button" class="quick-btn">
-                    Upload from computer
-                  </button>
-                  <span class="text-xs" style="color:var(--text-dim)">PNG / JPG / WebP · max 3 MB</span>
-                </div>
-                <p class="text-xs mt-1" style="color:var(--text-dim)">URL nahi hai to file choose karo — Firebase Storage pe save hogi, TV usi link se logo dikhayega.</p>
+                <p class="text-xs mt-1" style="color:var(--text-dim)">Direct image link · field <code>branding.logoUrl</code>.</p>
                 <div class="sa-media-preview mt-2 max-h-32">
                   <img id="edit-hotel-logo-preview" alt="Logo preview" class="sa-preview-img sa-preview-logo max-h-32 object-contain hidden" />
                   <span id="edit-hotel-logo-placeholder" class="sa-preview-placeholder">Logo preview</span>

@@ -2,7 +2,6 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.0/firebas
 import { getAuth } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js';
 import { getFirestore } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 import { getDatabase } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js';
-import { getStorage } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-storage.js';
 
 export const firebaseConfig = {
   apiKey: 'AIzaSyBEXhPG6aNiJ1S7pN4EDoBo6EYMtbNe-pQ',
@@ -38,8 +37,6 @@ export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 /** Realtime Database — TV kiosk Lock Task flags (`hotels/{hotelId}/config/…`) */
 export const rtdb = getDatabase(app);
-/** Cloud Storage — hotel logos / wallpapers uploaded from Super Admin */
-export const storage = getStorage(app);
 
 /**
  * Primary Auth instance — Email/Password must be enabled in Firebase Console.
