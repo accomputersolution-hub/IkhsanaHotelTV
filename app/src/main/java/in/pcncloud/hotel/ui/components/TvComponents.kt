@@ -359,13 +359,14 @@ private fun HotelLuxuryNavCard(
             verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
             modifier = Modifier.fillMaxSize(),
         ) {
-            LuxuryIconBadge(
-                iconRes = iconRes,
+            // Full-color 3D PNG (corporate assets) — never gold-tint or the 3D dies.
+            Image(
+                painter = painterResource(iconRes),
                 contentDescription = title,
-                focused = isFocused,
                 modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
+                    .size(56.dp)
                     .graphicsLayer { alpha = iconAlpha },
+                contentScale = ContentScale.Fit,
             )
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
