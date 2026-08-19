@@ -290,7 +290,7 @@ fun AppChromeHeader(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier
                 .weight(1f)
                 .padding(end = 16.dp)
@@ -408,8 +408,8 @@ private fun BrandLogo(hotelLogoUrl: String) {
 
     Box(
         modifier = Modifier
-            .height(72.dp)
-            .widthIn(max = 88.dp)
+            .height(84.dp)
+            .widthIn(max = 104.dp)
             .wrapContentWidth(Alignment.Start),
         contentAlignment = Alignment.CenterStart,
     ) {

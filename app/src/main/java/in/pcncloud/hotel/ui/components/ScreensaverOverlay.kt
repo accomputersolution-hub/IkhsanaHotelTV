@@ -328,7 +328,7 @@ private fun ScreensaverLogo(
 
     Box(
         modifier = Modifier
-            .size(160.dp)
+            .size(176.dp)
             .graphicsLayer {
                 scaleX = glow
                 scaleY = glow
