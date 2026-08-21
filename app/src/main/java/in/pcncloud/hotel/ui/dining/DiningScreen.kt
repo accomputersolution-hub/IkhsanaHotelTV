@@ -81,6 +81,7 @@ import `in`.pcncloud.hotel.data.model.OrderStatus
 import `in`.pcncloud.hotel.data.model.PaymentMethod
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.BaseScreen
+import `in`.pcncloud.hotel.ui.components.hotelImageRequest
 import `in`.pcncloud.hotel.ui.components.luxuryGoldFocusChrome
 import `in`.pcncloud.hotel.ui.theme.CorpCardBg
 import `in`.pcncloud.hotel.ui.theme.CorpGold
@@ -96,10 +97,18 @@ import `in`.pcncloud.hotel.ui.theme.SansBody
 import `in`.pcncloud.hotel.ui.theme.SerifDisplay
 import `in`.pcncloud.hotel.ui.theme.TextMuted
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage
 
 private val VegGreen = Color(0xFF22C55E)
 private val NonVegRed = Color(0xFFEF4444)
 private val GlassDark = Color(0xCC0B1325)
+/** Champagne gold — hotel dining focus / CTA accent (#D4AF37). */
+private val ChampagneGold = Color(0xFFD4AF37)
+private val ChampagneGoldBright = Color(0xFFE8C96A)
+private val CartPanelBg = Color(0xE61A1A1A)
+private val QtyStepperBg = Color(0x66000000)
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -178,25 +187,25 @@ fun DiningScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 Box(
                     modifier = Modifier
-                        .weight(if (BuildConfig.IS_CORPORATE) 1f else 0.54f)
+                        .weight(if (BuildConfig.IS_CORPORATE) 1f else 0.68f)
                         .fillMaxHeight(),
                 ) {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
+                        columns = GridCells.Fixed(if (BuildConfig.IS_CORPORATE) 2 else 3),
                         state = menuGridState,
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(end = 20.dp),
-                        horizontalArrangement = Arrangement.spacedBy(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(18.dp),
+                            .padding(end = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                         contentPadding = PaddingValues(
                             start = 4.dp,
                             top = 12.dp,
-                            end = 12.dp,
+                            end = 10.dp,
                             bottom = 40.dp,
                         ),
                     ) {
@@ -216,11 +225,12 @@ fun DiningScreen(
                                 key = { _, item -> item.id },
                             ) { index, item ->
                                 val qty = uiState.cart.find { it.menuItem.id == item.id }?.quantity ?: 0
+                                val columns = if (BuildConfig.IS_CORPORATE) 2 else 3
                                 MenuItemCard(
                                     item = item,
                                     quantity = qty,
                                     canOrder = !BuildConfig.IS_CORPORATE,
-                                    upFocus = if (index < 2) categoryFocus else null,
+                                    upFocus = if (index < columns) categoryFocus else null,
                                     onAdd = { viewModel.addToCart(item) },
                                     onRemove = { viewModel.removeFromCart(item) },
                                 )
@@ -260,7 +270,7 @@ fun DiningScreen(
                             }
                         },
                         modifier = Modifier
-                            .weight(0.46f)
+                            .weight(0.32f)
                             .fillMaxHeight(),
                     )
                 }
@@ -390,16 +400,18 @@ private fun MenuItemCard(
         label = "cardScale",
     )
     val shape = RoundedCornerShape(14.dp)
+    val context = LocalContext.current
+    val imageUrl = item.imageUrl.trim()
     val subtitle = if (canOrder) {
         "₹${item.price.toInt()}"
     } else {
         item.description.trim()
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 140.dp)
+            .height(136.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -407,57 +419,94 @@ private fun MenuItemCard(
             }
             .onFocusChanged { rowFocused = it.hasFocus }
             .then(if (canOrder) Modifier else Modifier.focusable())
-            .luxuryGoldFocusChrome(focused = rowFocused, shape = shape)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .clip(shape)
+            .border(
+                width = if (rowFocused) 2.dp else 1.dp,
+                color = if (rowFocused) ChampagneGold else Color.White.copy(alpha = 0.10f),
+                shape = shape,
+            ),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            VegBadge(isVeg = item.isVeg)
-            Text(text = "🍽", fontSize = 18.sp)
+        if (imageUrl.isNotEmpty()) {
+            AsyncImage(
+                model = hotelImageRequest(context, imageUrl, "DiningFood"),
+                contentDescription = item.name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0xFF2A2218), Color(0xFF0F1218)),
+                        ),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(text = "🍽", fontSize = 28.sp)
+            }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Text(
-            text = item.name,
-            fontSize = 17.sp,
-            fontWeight = FontWeight.SemiBold,
-            fontFamily = SansBody,
-            color = if (rowFocused) CorpGoldBright else TextPrimary,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            lineHeight = 22.sp,
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.15f),
+                        0.40f to Color.Black.copy(alpha = 0.35f),
+                        1f to Color.Black.copy(alpha = 0.82f),
+                    ),
+                ),
         )
 
-        if (subtitle.isNotBlank()) {
-            Spacer(modifier = Modifier.height(4.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+        ) {
+            VegBadge(isVeg = item.isVeg)
+
+            Spacer(modifier = Modifier.weight(1f))
+
             Text(
-                text = subtitle,
-                fontSize = 13.sp,
-                fontWeight = if (canOrder) FontWeight.Bold else FontWeight.Normal,
+                text = item.name,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
                 fontFamily = SansBody,
-                color = if (canOrder) CorpGold else TextMuted,
-                maxLines = 1,
+                color = if (rowFocused) ChampagneGoldBright else TextPrimary,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                lineHeight = 22.sp,
             )
-        }
 
-        Spacer(modifier = Modifier.weight(1f))
-
-        if (canOrder) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                QuantityStepper(
-                    quantity = quantity,
-                    onAdd = onAdd,
-                    onRemove = onRemove,
-                    compact = false,
-                    upFocus = upFocus,
+            if (subtitle.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 13.sp,
+                    fontWeight = if (canOrder) FontWeight.Bold else FontWeight.Normal,
+                    fontFamily = SansBody,
+                    color = if (canOrder) ChampagneGold else TextMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+            }
+
+            if (canOrder) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    QuantityStepper(
+                        quantity = quantity,
+                        onAdd = onAdd,
+                        onRemove = onRemove,
+                        compact = false,
+                        upFocus = upFocus,
+                    )
+                }
             }
         }
     }
@@ -499,8 +548,8 @@ private fun QuantityStepper(
     val qtySize = if (compact) 14.sp else 17.sp
     Row(
         modifier = Modifier
-            .background(GlassDark, shape)
-            .border(1.dp, GoldGlassBorder, shape)
+            .background(QtyStepperBg, shape)
+            .border(1.dp, Color.White.copy(alpha = 0.22f), shape)
             .padding(
                 horizontal = if (compact) 4.dp else 6.dp,
                 vertical = if (compact) 2.dp else 4.dp,
@@ -630,8 +679,7 @@ private fun OrderSummaryPanel(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(CorpCardBg, RoundedCornerShape(16.dp))
-            .border(1.dp, CorpGoldBorderIdle, RoundedCornerShape(16.dp))
+            .background(CartPanelBg, RoundedCornerShape(16.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Column(
@@ -644,7 +692,7 @@ private fun OrderSummaryPanel(
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = SerifDisplay,
-                color = CorpGold,
+                color = ChampagneGold,
             )
             Text(
                 text = stringResource(R.string.order_review),
@@ -682,7 +730,7 @@ private fun OrderSummaryPanel(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .background(CorpCardBg)
+                .background(CartPanelBg)
                 .padding(top = 8.dp)
                 .onSizeChanged { size ->
                     footerHeight = with(density) { size.height.toDp() }
@@ -800,31 +848,30 @@ private fun PlaceOrderCta(
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(14.dp)
     val scale by animateFloatAsState(
-        targetValue = if (focused && enabled) 1.03f else 1f,
+        targetValue = if (focused) 1.05f else 1f,
         animationSpec = tween(160),
         label = "ctaScale",
     )
 
     val background = when {
         !highlighted -> Brush.verticalGradient(
-            listOf(Color.White.copy(alpha = 0.08f), Color.White.copy(alpha = 0.04f)),
+            listOf(Color.White.copy(alpha = 0.10f), Color.White.copy(alpha = 0.05f)),
         )
         focused -> Brush.verticalGradient(
-            listOf(GoldLight, GoldLuxury, GoldPrimary),
+            listOf(ChampagneGoldBright, ChampagneGold),
         )
         else -> Brush.verticalGradient(
-            listOf(GoldLuxury.copy(alpha = 0.95f), GoldPrimary.copy(alpha = 0.85f)),
+            listOf(ChampagneGold, Color(0xFFB8962E)),
         )
     }
     val borderColor = when {
-        focused && highlighted -> GoldLight
-        highlighted -> GoldLuxury.copy(alpha = 0.7f)
-        else -> CorpGoldBorderIdle
+        focused -> ChampagneGoldBright
+        highlighted -> ChampagneGold.copy(alpha = 0.85f)
+        else -> Color.White.copy(alpha = 0.14f)
     }
     val textColor = when {
         !highlighted -> TextMuted
-        focused -> NavyDeep
-        else -> NavyDeep.copy(alpha = 0.92f)
+        else -> Color(0xFF1A1208)
     }
 
     Box(
@@ -849,7 +896,7 @@ private fun PlaceOrderCta(
             }
             .background(brush = background, shape = shape)
             .border(
-                width = if (focused) 2.dp else 1.dp,
+                width = if (focused) 2.5.dp else 1.dp,
                 color = borderColor,
                 shape = shape,
             )
@@ -1033,7 +1080,7 @@ private fun PaymentToggle(
                 onClick = onSelectCheckout,
             )
             PaymentCard(
-                icon = "📲",
+                icon = "▦",
                 title = stringResource(R.string.pay_now),
                 subtitle = stringResource(R.string.pay_now_sub),
                 isSelected = selected == PaymentMethod.PAID_ONLINE,
@@ -1058,23 +1105,27 @@ private fun PaymentCard(
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(12.dp)
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.04f else 1f,
+        targetValue = if (focused) 1.05f else 1f,
         animationSpec = tween(150),
         label = "payScale",
     )
     val borderColor = when {
-        isSelected -> GoldLuxury
-        focused -> GoldLuxury.copy(alpha = 0.7f)
+        focused -> ChampagneGold
+        isSelected -> ChampagneGold.copy(alpha = 0.85f)
         else -> Color.White.copy(alpha = 0.10f)
     }
-    val bgAlpha = if (isSelected) 0.22f else if (focused) 0.12f else 0.06f
+    val bgColor = when {
+        focused -> ChampagneGold.copy(alpha = 0.28f)
+        isSelected -> ChampagneGold.copy(alpha = 0.18f)
+        else -> Color.White.copy(alpha = 0.06f)
+    }
 
     Box(
         modifier = modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .background(GoldLuxury.copy(alpha = bgAlpha), shape)
+            .background(bgColor, shape)
             .border(
-                width = if (isSelected || focused) 2.dp else 1.dp,
+                width = if (isSelected || focused) 2.5.dp else 1.dp,
                 color = borderColor,
                 shape = shape,
             )
@@ -1087,27 +1138,27 @@ private fun PaymentCard(
                     onClick(); true
                 } else false
             }
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .padding(horizontal = 6.dp, vertical = 8.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(text = icon, fontSize = 16.sp)
+            Text(text = icon, fontSize = 15.sp, color = ChampagneGold)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    fontSize = 11.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = SansBody,
-                    color = if (isSelected) GoldLuxury else TextPrimary,
+                    color = if (isSelected || focused) ChampagneGoldBright else TextPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = subtitle,
-                    fontSize = 9.sp,
+                    fontSize = 11.sp,
                     fontFamily = SansBody,
                     color = TextMuted,
                     maxLines = 1,

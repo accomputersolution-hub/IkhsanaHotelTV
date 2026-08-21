@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="dining_champagne_gold">#FFD4AF37</color>
+    <color name="dining_champagne_gold_bright">#FFE8C96A</color>
+    <color name="dining_navy_deep">#FF090D16</color>
+    <color name="dining_cart_panel">#E61A1A1A</color>
+    <color name="dining_qty_bg">#66FFFFFF</color>
+    <color name="dining_cta_muted">#33FFFFFF</color>
+    <color name="dining_cta_text_dark">#FF1A1208</color>
+    <color name="dining_overlay_start">#00000000</color>
+    <color name="dining_overlay_end">#CC000000</color>
+    <color name="dining_white">#FFFFFFFF</color>
+    <color name="dining_white_muted">#B3FFFFFF</color>
+</resources>

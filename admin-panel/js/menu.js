@@ -48,6 +48,25 @@ let menuUnsub = null;
 
 /** Parsed rows ready for import (valid only). */
 let bulkParsedRows = [];
+
+/** ImgBB viewer pages (`ibb.co/…`) are HTML — TV needs `i.ibb.co/…` image bytes. */
+function assertDirectMenuImageUrl(url) {
+  if (!url) return true;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host === 'ibb.co' || host === 'www.ibb.co') {
+      toast(
+        'ImgBB page link TV pe nahi chalta. Image pe right-click → Copy image address (i.ibb.co/…)',
+        'error',
+      );
+      return false;
+    }
+  } catch {
+    toast('Valid https image link lagao', 'error');
+    return false;
+  }
+  return true;
+}
 let bulkImporting = false;
 
 const SAMPLE_CSV_HOTEL = `category,name,price,description,is_veg,image_url
@@ -408,6 +427,12 @@ function setupMenuItemModal() {
     btn.textContent = 'Saving…';
 
     const corporate = isCorporateProperty();
+    const imageUrl = document.getElementById('menu-item-image').value.trim();
+    if (!assertDirectMenuImageUrl(imageUrl)) {
+      btn.disabled = false;
+      btn.textContent = 'Save Item';
+      return;
+    }
     const payload = {
       name: document.getElementById('menu-item-name').value.trim(),
       description: document.getElementById('menu-item-desc').value.trim(),
@@ -415,7 +440,7 @@ function setupMenuItemModal() {
         ? 0
         : parseFloat(document.getElementById('menu-item-price').value) || 0,
       category: document.getElementById('menu-item-category').value,
-      imageUrl: document.getElementById('menu-item-image').value.trim(),
+      imageUrl,
       available: document.getElementById('menu-item-available').checked,
       updatedAt: serverTimestamp(),
     };
@@ -839,6 +864,16 @@ function validateBulkRows(rawRows) {
     const rowErrors = [];
     if (!name) rowErrors.push('name required');
     if (!categoryRaw) rowErrors.push('category required');
+    if (imageUrl) {
+      try {
+        const host = new URL(imageUrl).hostname.toLowerCase();
+        if (host === 'ibb.co' || host === 'www.ibb.co') {
+          rowErrors.push('use direct i.ibb.co image URL, not ibb.co page');
+        }
+      } catch {
+        rowErrors.push('invalid image_url');
+      }
+    }
 
     let price = 0;
     if (corporate) {
