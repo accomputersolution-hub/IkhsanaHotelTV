@@ -55,6 +55,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Same cert as release so USB / hotelDebug sideload is not treated as an
+            // unknown developer by Play Protect on the physical TV.
+            signingConfig = signingConfigs.getByName("release")
+        }
         release {
             signingConfig = signingConfigs.getByName("release")
             optimization {

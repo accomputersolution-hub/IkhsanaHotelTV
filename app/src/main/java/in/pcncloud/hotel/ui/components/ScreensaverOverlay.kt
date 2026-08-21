@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -244,7 +245,11 @@ private fun ScreensaverBackground(
     Box(modifier = Modifier.fillMaxSize()) {
         if (useRemote) {
             AsyncImage(
-                model = wallpaperUrl,
+                model = hotelImageRequest(
+                    context = LocalContext.current,
+                    url = wallpaperUrl,
+                    logTag = "ScreensaverWallpaper",
+                ),
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
@@ -277,10 +282,10 @@ private fun ScreensaverBackground(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color.Black.copy(alpha = 0.55f),
-                            Color.Black.copy(alpha = 0.35f),
-                            Color.Black.copy(alpha = 0.5f),
-                            Color.Black.copy(alpha = 0.75f),
+                            Color.Black.copy(alpha = 0.30f),
+                            Color.Black.copy(alpha = 0.18f),
+                            Color.Black.copy(alpha = 0.32f),
+                            Color.Black.copy(alpha = 0.58f),
                         ),
                     ),
                 ),
@@ -293,6 +298,18 @@ private fun ScreensaverBackground(
                     Brush.radialGradient(
                         colors = listOf(
                             GoldPrimary.copy(alpha = 0.08f),
+                            Color.Transparent,
+                        ),
+                    ),
+                ),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.06f),
                             Color.Transparent,
                         ),
                     ),
@@ -311,7 +328,7 @@ private fun ScreensaverLogo(
 
     Box(
         modifier = Modifier
-            .size(160.dp)
+            .size(176.dp)
             .graphicsLayer {
                 scaleX = glow
                 scaleY = glow
@@ -321,7 +338,11 @@ private fun ScreensaverLogo(
     ) {
         if (remoteUrl != null) {
             AsyncImage(
-                model = remoteUrl,
+                model = hotelImageRequest(
+                    context = LocalContext.current,
+                    url = remoteUrl,
+                    logTag = "ScreensaverLogo",
+                ),
                 contentDescription = stringResource(R.string.screensaver_logo_cd),
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,

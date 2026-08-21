@@ -2,6 +2,7 @@ package `in`.pcncloud.hotel.ui.services
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.data.model.GuestProfile
 import `in`.pcncloud.hotel.data.model.ServiceRequest
 import `in`.pcncloud.hotel.data.repository.FirestoreRepository
@@ -27,6 +28,10 @@ data class SubServiceItem(
     val kind: SubItemKind,
     /** For CHOICE items — e.g. Instant / Scheduled Time */
     val choices: List<String> = emptyList(),
+    /** Choice label that requires a follow-up time slot (e.g. Scheduled Time). */
+    val scheduledChoiceLabel: String = "Scheduled Time",
+    /** Preset times shown when [scheduledChoiceLabel] is selected. */
+    val scheduleTimeSlots: List<String> = emptyList(),
 )
 
 data class ServiceOption(
@@ -34,7 +39,7 @@ data class ServiceOption(
     val serviceType: String,
     val requestType: String,
     val label: String,
-    val icon: String,
+    val iconRes: Int,
     val subtitle: String,
     val subItems: List<SubServiceItem>,
 )
@@ -44,6 +49,8 @@ data class SubItemSelection(
     val quantity: Int = 0,
     val selected: Boolean = false,
     val choice: String? = null,
+    /** Set when a scheduled choice requires a specific time slot. */
+    val scheduleTime: String? = null,
 )
 
 enum class ServiceToastType {
@@ -77,8 +84,16 @@ data class ServicesUiState(
                         if (sel.selected) item.label else null
                     SubItemKind.CHOICE ->
                         if (sel.selected) {
-                            val choice = sel.choice?.takeIf { it.isNotBlank() }
-                            if (choice != null) "${item.label} ($choice)" else item.label
+                            val choice = sel.choice?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                            val needsTime = item.scheduleTimeSlots.isNotEmpty() &&
+                                choice.equals(item.scheduledChoiceLabel, ignoreCase = true)
+                            if (needsTime) {
+                                val time = sel.scheduleTime?.takeIf { it.isNotBlank() }
+                                    ?: return@mapNotNull null
+                                "${item.label} ($choice — $time)"
+                            } else {
+                                "${item.label} ($choice)"
+                            }
                         } else {
                             null
                         }
@@ -102,67 +117,111 @@ class ServicesViewModel(
             department = "housekeeping",
             serviceType = "housekeeping",
             requestType = "CLEANING",
-            label = "Room Cleaning",
-            icon = "🧹",
-            subtitle = "Request room cleanup or turndown service",
+            label = "Housekeeping & Turndown",
+            iconRes = R.drawable.ic_service_housekeeping_3d,
+            subtitle = "Freshen the room, refresh the bed, or schedule evening turndown",
             subItems = listOf(
                 SubServiceItem(
                     id = "full_room_service",
-                    label = "Full Room Service",
+                    label = "Full Housekeeping",
                     kind = SubItemKind.CHOICE,
                     choices = listOf("Instant", "Scheduled Time"),
+                    scheduleTimeSlots = listOf(
+                        "9:00 AM",
+                        "11:00 AM",
+                        "1:00 PM",
+                        "3:00 PM",
+                        "5:00 PM",
+                        "7:00 PM",
+                    ),
                 ),
                 SubServiceItem(
                     id = "express_trash",
-                    label = "Express Trash Pickup",
+                    label = "Turndown Setup",
                     kind = SubItemKind.TOGGLE,
                 ),
             ),
         ),
         ServiceOption(
             department = "housekeeping",
-            serviceType = "extra_towels",
+            serviceType = "bath_sleep_amenities",
             requestType = "TOWELS",
-            label = "Extra Towels & Linen",
-            icon = "🧻",
-            subtitle = "Fresh towels, linen, and bedding refill",
+            label = "Bath & Sleep Amenities",
+            iconRes = R.drawable.ic_service_bath_sleep_3d,
+            subtitle = "Towels, pillows, blankets, and bedside comfort essentials",
             subItems = listOf(
                 SubServiceItem(id = "bath_towels", label = "Bath Towels", kind = SubItemKind.QUANTITY),
                 SubServiceItem(id = "extra_pillows", label = "Extra Pillows", kind = SubItemKind.QUANTITY),
                 SubServiceItem(id = "blanket", label = "Blanket", kind = SubItemKind.QUANTITY),
+                SubServiceItem(id = "sleep_mask", label = "Sleep Mask", kind = SubItemKind.QUANTITY),
             ),
         ),
         ServiceOption(
             department = "housekeeping",
-            serviceType = "amenities",
-            requestType = "AMENITIES",
-            label = "Bottled Water / Amenities",
-            icon = "🍾",
-            subtitle = "Bottled water, toiletries, and room amenities",
+            serviceType = "laundry_dry_cleaning",
+            requestType = "LAUNDRY",
+            label = "Laundry & Dry Cleaning",
+            iconRes = R.drawable.ic_service_laundry_3d,
+            subtitle = "Garment pickup, express pressing, and next-day dry cleaning",
             subItems = listOf(
-                SubServiceItem(id = "mineral_water", label = "Mineral Water Bottles", kind = SubItemKind.QUANTITY),
-                SubServiceItem(id = "dental_kit", label = "Dental Kit", kind = SubItemKind.QUANTITY),
-                SubServiceItem(id = "soap_shampoo", label = "Soap & Shampoo Kit", kind = SubItemKind.QUANTITY),
+                SubServiceItem(
+                    id = "laundry_pickup",
+                    label = "Laundry Pickup",
+                    kind = SubItemKind.CHOICE,
+                    choices = listOf("Within 30 min", "This Evening"),
+                ),
+                SubServiceItem(id = "dry_cleaning", label = "Dry Cleaning", kind = SubItemKind.TOGGLE),
             ),
         ),
         ServiceOption(
             department = "concierge",
-            serviceType = "concierge_call",
-            requestType = "CONCIERGE",
-            label = "Concierge / Front Desk Call",
-            icon = "🚖",
-            subtitle = "Call front desk or request concierge assistance",
+            serviceType = "bell_desk_luggage",
+            requestType = "BELL_DESK",
+            label = "Bell Desk & Luggage",
+            iconRes = R.drawable.ic_service_bell_desk_3d,
+            subtitle = "Bag pickup, luggage storage, and porter assistance",
             subItems = listOf(
                 SubServiceItem(
-                    id = "airport_taxi",
-                    label = "Airport Taxi Booking Request",
+                    id = "luggage_assist",
+                    label = "Luggage Assistance",
                     kind = SubItemKind.TOGGLE,
                 ),
                 SubServiceItem(
-                    id = "luggage_assist",
-                    label = "Luggage Assistance Request",
+                    id = "bag_storage",
+                    label = "Temporary Bag Storage",
                     kind = SubItemKind.TOGGLE,
                 ),
+            ),
+        ),
+        ServiceOption(
+            department = "concierge",
+            serviceType = "spa_wellness",
+            requestType = "SPA",
+            label = "Spa & Wellness",
+            iconRes = R.drawable.ic_service_spa_3d,
+            subtitle = "Spa booking, yoga session, or in-room wellness assistance",
+            subItems = listOf(
+                SubServiceItem(
+                    id = "spa_booking",
+                    label = "Spa Appointment",
+                    kind = SubItemKind.CHOICE,
+                    choices = listOf("Earliest Slot", "Choose at Callback"),
+                ),
+                SubServiceItem(id = "yoga_mat", label = "Yoga Mat", kind = SubItemKind.TOGGLE),
+                SubServiceItem(id = "wellness_callback", label = "Wellness Callback", kind = SubItemKind.TOGGLE),
+            ),
+        ),
+        ServiceOption(
+            department = "concierge",
+            serviceType = "concierge_valet",
+            requestType = "CONCIERGE",
+            label = "Concierge & Valet",
+            iconRes = R.drawable.ic_service_concierge_3d,
+            subtitle = "Transport, local guidance, reservations, and valet coordination",
+            subItems = listOf(
+                SubServiceItem(id = "airport_transfer", label = "Airport Transfer", kind = SubItemKind.TOGGLE),
+                SubServiceItem(id = "restaurant_reservation", label = "Restaurant Reservation", kind = SubItemKind.TOGGLE),
+                SubServiceItem(id = "valet_pickup", label = "Valet Pickup", kind = SubItemKind.TOGGLE),
             ),
         ),
     )
@@ -199,8 +258,9 @@ class ServicesViewModel(
     private suspend fun handleRequestUpdates(requests: List<ServiceRequest>) {
         requests.forEach { request ->
             val previous = knownRequestStatuses[request.id]
-            if (requestsInitialized && previous != null && previous != request.status) {
-                when (request.status) {
+            val status = request.status.trim().lowercase()
+            if (requestsInitialized && previous != null && previous != status) {
+                when (status) {
                     "in_progress" -> showToast(
                         "Your ${request.serviceLabel} request is In Progress",
                         ServiceToastType.STATUS,
@@ -215,10 +275,10 @@ class ServicesViewModel(
                     )
                 }
             }
-            knownRequestStatuses[request.id] = request.status
+            knownRequestStatuses[request.id] = status
         }
         requestsInitialized = true
-        _uiState.update { it.copy(activeRequests = requests.filter { it.status != "cancelled" }) }
+        _uiState.update { it.copy(activeRequests = requests.filter { it.status.lowercase() != "cancelled" }) }
     }
 
     fun dismissVacantRoomDialog() {
@@ -288,9 +348,34 @@ class ServicesViewModel(
     fun selectChoice(itemId: String, choice: String) {
         _uiState.update { state ->
             val current = state.subSelections[itemId] ?: return@update state
+            val item = state.activeCategory?.subItems?.firstOrNull { it.id == itemId }
+            val needsTime = item?.scheduleTimeSlots?.isNotEmpty() == true &&
+                choice.equals(item.scheduledChoiceLabel, ignoreCase = true)
             state.copy(
                 subSelections = state.subSelections + (
-                    itemId to current.copy(selected = true, choice = choice)
+                    itemId to current.copy(
+                        selected = true,
+                        choice = choice,
+                        scheduleTime = when {
+                            !needsTime -> null
+                            choice == current.choice -> current.scheduleTime
+                            else -> null
+                        },
+                    )
+                    ),
+            )
+        }
+    }
+
+    fun selectScheduleTime(itemId: String, time: String) {
+        _uiState.update { state ->
+            val current = state.subSelections[itemId] ?: return@update state
+            state.copy(
+                subSelections = state.subSelections + (
+                    itemId to current.copy(
+                        selected = true,
+                        scheduleTime = time,
+                    )
                     ),
             )
         }
@@ -307,6 +392,9 @@ class ServicesViewModel(
         }
 
         val items = state.selectedItemLabels
+        val scheduledTime = state.subSelections.values
+            .mapNotNull { it.scheduleTime?.trim()?.takeIf(String::isNotEmpty) }
+            .firstOrNull()
         viewModelScope.launch {
             _uiState.update { it.copy(isSubmitting = true) }
             repository.submitServiceRequest(
@@ -316,6 +404,8 @@ class ServicesViewModel(
                 guestName = state.guestName,
                 requestType = category.requestType,
                 items = items,
+                scheduledTime = scheduledTime,
+                details = items.joinToString(" · "),
             ).onSuccess { requestId ->
                 knownRequestStatuses[requestId] = "pending"
                 showToast("Request sent to Front Desk!", ServiceToastType.SUCCESS)

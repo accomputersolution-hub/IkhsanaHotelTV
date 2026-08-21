@@ -18,14 +18,16 @@ import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.ui.home.BrandAssets
+import coil.imageLoader
+import coil.request.ImageRequest
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.MetadataChanges
 
 /**
- * Dedicated cold-start splash (3–4s minimum):
- * - Compact local flavor logo ([BrandAssets] / `@drawable/lt_logo` on corporate)
+ * Dedicated cold-start splash:
+ * - Default local flavor logo first, then hotel Firestore logo when available
  * - Welcome tagline + circular progress
  * - Waits for Hotels/{id} + Rooms/{room} snapshots (or timeout) before [MainActivity]
  */
@@ -81,10 +83,21 @@ class SplashActivity : AppCompatActivity() {
         splashProgress = findViewById(R.id.splash_progress)
         startedAtMs = SystemClock.elapsedRealtime()
 
-        // Compact local mark only — never Coil / Firebase on splash.
-        splashLogo?.setImageResource(BrandAssets.logoRes)
-        splashLogo?.isVisible = true
-        splashWelcome.text = getString(R.string.splash_welcome_loading)
+        // Hotel build: keep splash logo hidden until branding arrives, so the
+        // default flower does not flash before the remote logo replaces it.
+        splashLogo?.isVisible = BuildConfig.IS_CORPORATE
+        if (BuildConfig.IS_CORPORATE) {
+            splashLogo?.setImageResource(BrandAssets.logoRes)
+        } else {
+            splashLogo?.setImageDrawable(null)
+        }
+        splashWelcome.isVisible = BuildConfig.IS_CORPORATE
+        splashWelcome.text =
+            if (BuildConfig.IS_CORPORATE) {
+                getString(R.string.splash_welcome_loading)
+            } else {
+                ""
+            }
         splashStatus.text = getString(R.string.splash_status_loading)
         splashProgress.isVisible = true
 
@@ -189,6 +202,7 @@ class SplashActivity : AppCompatActivity() {
                     "→ PairingActivity",
             )
             unpairedFlow = true
+            splashWelcome.isVisible = true
             splashWelcome.text = getString(R.string.splash_welcome_generic)
             splashStatus.text = getString(R.string.splash_status_pairing)
             if (KioskPolicy.canActivityNavigate(lifecycle)) {
@@ -201,7 +215,13 @@ class SplashActivity : AppCompatActivity() {
         val roomNumber = hotelConfig.getRoomNumberOrNull().orEmpty()
         Log.d(TAG, "Paired hotel_id=$hotelId room=$roomNumber — prefetching config")
         unpairedFlow = false
-        splashWelcome.text = getString(R.string.splash_welcome_loading)
+        splashWelcome.isVisible = BuildConfig.IS_CORPORATE
+        splashWelcome.text =
+            if (BuildConfig.IS_CORPORATE) {
+                getString(R.string.splash_welcome_loading)
+            } else {
+                ""
+            }
         splashStatus.text = getString(R.string.splash_status_loading)
 
         if (hotelListener == null) {
@@ -269,22 +289,35 @@ class SplashActivity : AppCompatActivity() {
                 }
 
                 val data = snapshot.data ?: emptyMap()
+                @Suppress("UNCHECKED_CAST")
+                val branding = (data["branding"] as? Map<String, Any?>) ?: emptyMap()
                 val hotelName = firstNonBlank(
                     data["name"] as? String,
                     data["hotel_name"] as? String,
                     data["hotelName"] as? String,
                 )
+                val logoUrl = firstNonBlank(
+                    asTrimmedString(branding["logo_url"]),
+                    asTrimmedString(branding["logoUrl"]),
+                    asTrimmedString(branding["logo"]),
+                    asTrimmedString(data["logo_url"]),
+                    asTrimmedString(data["logoUrl"]),
+                    asTrimmedString(data["logo"]),
+                )
 
                 // Keep corporate welcome tagline stable; hotel may refine with name.
                 if (hotelName.isNotBlank() && !BuildConfig.IS_CORPORATE) {
+                    splashWelcome.isVisible = true
                     splashWelcome.text = getString(R.string.splash_welcome_to, hotelName)
-                } else if (splashWelcome.text.isNullOrBlank()) {
+                } else if (splashWelcome.text.isNullOrBlank() && BuildConfig.IS_CORPORATE) {
+                    splashWelcome.isVisible = true
                     splashWelcome.text = getString(R.string.splash_welcome_loading)
                 }
-
-                brandingReady = true
-                Log.i(TAG, "Splash hotel config ready → name=$hotelName")
-                tryScheduleMainWhenReady()
+                loadSplashLogo(logoUrl) {
+                    brandingReady = true
+                    Log.i(TAG, "Splash hotel config ready → name=$hotelName logo=${logoUrl.take(120)}")
+                    tryScheduleMainWhenReady()
+                }
             }
     }
 
@@ -415,11 +448,86 @@ class SplashActivity : AppCompatActivity() {
     private fun firstNonBlank(vararg values: String?): String =
         values.firstOrNull { !it.isNullOrBlank() }.orEmpty()
 
+    private fun asTrimmedString(value: Any?): String? = when (value) {
+        null -> null
+        is String -> value.trim().takeIf { it.isNotEmpty() }
+        is Number, is Boolean -> value.toString()
+        else -> value.toString().trim().takeIf { it.isNotEmpty() }
+    }
+
+    private fun loadSplashLogo(rawUrl: String, onSettled: () -> Unit) {
+        val logoView = splashLogo ?: return
+        val remoteUrl = normalizeRemoteImageUrl(rawUrl)
+        if (BuildConfig.IS_CORPORATE || remoteUrl.isNullOrBlank()) {
+            logoView.isVisible = BuildConfig.IS_CORPORATE
+            if (BuildConfig.IS_CORPORATE) {
+                logoView.setImageResource(BrandAssets.logoRes)
+            } else {
+                logoView.setImageDrawable(null)
+            }
+            onSettled()
+            return
+        }
+        logoView.isVisible = false
+        logoView.setImageDrawable(null)
+        imageLoader.enqueue(
+            ImageRequest.Builder(this)
+                .data(remoteUrl)
+                .crossfade(true)
+                .allowHardware(false)
+                .target(
+                    onStart = {
+                        logoView.isVisible = false
+                        logoView.setImageDrawable(null)
+                    },
+                    onSuccess = { result ->
+                        logoView.setImageDrawable(result)
+                        logoView.isVisible = true
+                    },
+                    onError = {
+                        logoView.isVisible = false
+                        logoView.setImageDrawable(null)
+                    },
+                )
+                .listener(
+                    onSuccess = { _, _ ->
+                        Log.i(TAG, "SplashLogo loaded OK")
+                        onSettled()
+                    },
+                    onError = { _, result ->
+                        Log.e(
+                            TAG,
+                            "SplashLogo FAILED url=${remoteUrl.take(160)}: ${result.throwable.message}",
+                            result.throwable,
+                        )
+                        onSettled()
+                    },
+                )
+                .build(),
+        )
+    }
+
+    private fun normalizeRemoteImageUrl(url: String): String? {
+        var cleaned = url.trim().trim('"', '\'').trim()
+        if (cleaned.isBlank()) return null
+        if (cleaned.startsWith("data:image/svg", ignoreCase = true)) return null
+
+        val wikiFilePage = Regex(
+            pattern = """^https?://(?:commons\.wikimedia\.org|(?:[a-z]+\.)?wikipedia\.org)/wiki/File:(.+)$""",
+            option = RegexOption.IGNORE_CASE,
+        ).matchEntire(cleaned)
+        if (wikiFilePage != null) {
+            val fileName = wikiFilePage.groupValues[1]
+            cleaned = "https://commons.wikimedia.org/wiki/Special:FilePath/$fileName"
+        }
+        return cleaned
+    }
+
     companion object {
         private const val TAG = "SplashActivity"
         private const val REQUEST_OVERLAY_PERMISSION = 1001
-        private const val UNPAIRED_DELAY_MS = 3_000L
-        private const val MIN_DISPLAY_MS = 3_500L
+        private const val UNPAIRED_DELAY_MS = 900L
+        private const val MIN_DISPLAY_MS = 1_100L
         private const val DATA_TIMEOUT_MS = 10_000L
         private const val OVERLAY_DENY_CONTINUE_MS = 2_500L
     }

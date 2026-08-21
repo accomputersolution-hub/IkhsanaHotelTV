@@ -66,7 +66,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
@@ -103,6 +102,8 @@ fun BaseScreen(
     headerDownFocus: FocusRequester? = null,
     title: String? = null,
     subtitle: String? = null,
+    /** Home chrome (logo, clock, room). Hotel sub-screens hide this for vertical space. */
+    showChromeHeader: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val chromeViewModel: HomeViewModel = viewModel(factory = viewModelFactory)
@@ -130,33 +131,38 @@ fun BaseScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 40.dp, vertical = 28.dp),
+                .padding(
+                    horizontal = 40.dp,
+                    vertical = if (showChromeHeader) 28.dp else 16.dp,
+                ),
         ) {
-            AppChromeHeader(
-                roomNumber = roomNumber,
-                hotelLogoUrl = hotelLogoUrl,
-                hotelName = hotelName,
-                tagline = tagline,
-                unreadAlerts = unreadAlerts,
-                showAlertBell = showAlertBell,
-                alertBellFocus = alertBellFocus,
-                roomBadgeFocus = roomBadgeFocus,
-                headerDownFocus = headerDownFocus,
-                onOpenAdmin = onOpenAdmin,
-                onAlerts = onAlerts,
-            )
+            if (showChromeHeader) {
+                AppChromeHeader(
+                    roomNumber = roomNumber,
+                    hotelLogoUrl = hotelLogoUrl,
+                    hotelName = hotelName,
+                    tagline = tagline,
+                    unreadAlerts = unreadAlerts,
+                    showAlertBell = showAlertBell,
+                    alertBellFocus = alertBellFocus,
+                    roomBadgeFocus = roomBadgeFocus,
+                    headerDownFocus = headerDownFocus,
+                    onOpenAdmin = onOpenAdmin,
+                    onAlerts = onAlerts,
+                )
 
-            Spacer(modifier = Modifier.height(16.dp))
-            GoldSeparatorLine()
+                Spacer(modifier = Modifier.height(16.dp))
+                GoldSeparatorLine()
+            }
 
             if (!title.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(if (showChromeHeader) 18.dp else 8.dp))
                 LuxuryScreenHeader(
                     title = title,
                     subtitle = subtitle,
                     showSeparator = false,
                 )
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(if (showChromeHeader) 24.dp else 16.dp))
             }
 
             content()
@@ -181,7 +187,11 @@ fun HotelWallpaperBackground(
     ) {
         if (wallpaperUrl.isNotBlank() && !isLegacyUnsafeImageUrl(wallpaperUrl)) {
             AsyncImage(
-                model = wallpaperUrl,
+                model = hotelImageRequest(
+                    context = LocalContext.current,
+                    url = wallpaperUrl,
+                    logTag = "HotelWallpaper",
+                ),
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
@@ -192,7 +202,7 @@ fun HotelWallpaperBackground(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.55f)),
+                    .background(Color.Black.copy(alpha = 0.34f)),
             )
             Box(
                 modifier = Modifier
@@ -200,9 +210,21 @@ fun HotelWallpaperBackground(
                     .background(
                         Brush.verticalGradient(
                             colorStops = arrayOf(
-                                0.0f to Color.Black.copy(alpha = 0.28f),
-                                0.35f to Color.Black.copy(alpha = 0.18f),
-                                1.0f to Color.Black.copy(alpha = 0.62f),
+                                0.0f to Color.Black.copy(alpha = 0.18f),
+                                0.35f to Color.Black.copy(alpha = 0.10f),
+                                1.0f to Color.Black.copy(alpha = 0.48f),
+                            ),
+                        ),
+                    ),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.05f),
+                                Color.Transparent,
                             ),
                         ),
                     ),
@@ -268,7 +290,7 @@ fun AppChromeHeader(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier
                 .weight(1f)
                 .padding(end = 16.dp)
@@ -386,30 +408,18 @@ private fun BrandLogo(hotelLogoUrl: String) {
 
     Box(
         modifier = Modifier
-            .height(72.dp)
-            .widthIn(max = 88.dp)
+            .height(84.dp)
+            .widthIn(max = 104.dp)
             .wrapContentWidth(Alignment.Start),
         contentAlignment = Alignment.CenterStart,
     ) {
         if (remoteUrl != null) {
             AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(remoteUrl)
-                    .crossfade(true)
-                    .allowHardware(false)
-                    .listener(
-                        onSuccess = { _, _ ->
-                            Log.i("BrandLogo", "Hotel logo loaded OK")
-                        },
-                        onError = { _, result ->
-                            Log.e(
-                                "BrandLogo",
-                                "Hotel logo FAILED url=${remoteUrl.take(120)}: ${result.throwable.message}",
-                                result.throwable,
-                            )
-                        },
-                    )
-                    .build(),
+                model = hotelImageRequest(
+                    context = context,
+                    url = remoteUrl,
+                    logTag = "BrandLogo",
+                ),
                 contentDescription = "Hotel Logo",
                 modifier = Modifier
                     .fillMaxHeight()
@@ -548,20 +558,14 @@ private fun RoomBadge(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun WifiStatusIcon() {
-    if (BuildConfig.IS_CORPORATE) {
-        Image(
-            painter = painterResource(R.drawable.ic_wifi),
-            contentDescription = stringResource(R.string.wifi_status),
-            modifier = Modifier.size(22.dp),
-            colorFilter = ColorFilter.tint(TextPrimary.copy(alpha = 0.92f)),
-        )
-    } else {
-        Text(
-            text = "📶",
-            fontSize = 22.sp,
-            color = TextPrimary,
-        )
-    }
+    Image(
+        painter = painterResource(R.drawable.ic_wifi),
+        contentDescription = stringResource(R.string.wifi_status),
+        modifier = Modifier.size(22.dp),
+        colorFilter = ColorFilter.tint(
+            if (BuildConfig.IS_CORPORATE) TextPrimary.copy(alpha = 0.92f) else GoldPrimary,
+        ),
+    )
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)

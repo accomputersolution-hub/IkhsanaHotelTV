@@ -1142,6 +1142,8 @@ class MainActivity : ComponentActivity() {
                         handleKioskBackPressed()
                     } else if (isSubViewActive()) {
                         navigateToHomeView()
+                    } else if (!BuildConfig.IS_CORPORATE) {
+                        Log.d(TAG, "Hotel flavor @ Home — Back consumed (no exit)")
                     } else {
                         Log.d(TAG, "Kiosk off safety-net: moveTaskToBack")
                         moveTaskToBack(true)
@@ -1217,11 +1219,16 @@ class MainActivity : ComponentActivity() {
                 return true
             }
         } else if (event.keyCode == KeyEvent.KEYCODE_BACK &&
-            event.action == KeyEvent.ACTION_DOWN &&
-            isSubViewActive()
+            event.action == KeyEvent.ACTION_DOWN
         ) {
-            navigateToHomeView()
-            return true
+            if (isSubViewActive()) {
+                navigateToHomeView()
+                return true
+            }
+            if (!BuildConfig.IS_CORPORATE) {
+                Log.d(TAG, "Hotel flavor @ Home — Back consumed (no exit)")
+                return true
+            }
         }
 
         return try {

@@ -9,4 +9,5 @@ internal object NavCardIcons {
     val menu = R.drawable.ic_corp_menu
     val agenda = R.drawable.ic_corp_agenda
     val emergency = R.drawable.ic_corp_emergency
+    val alerts = R.drawable.ic_nav_alerts
 }

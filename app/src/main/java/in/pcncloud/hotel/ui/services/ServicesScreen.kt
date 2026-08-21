@@ -1,7 +1,9 @@
 package `in`.pcncloud.hotel.ui.services
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -10,7 +12,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,12 +23,12 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -38,10 +39,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
@@ -49,6 +52,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -56,13 +60,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
+import kotlinx.coroutines.delay
 import `in`.pcncloud.hotel.BuildConfig
+import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.data.model.ServiceRequest
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
@@ -309,6 +314,8 @@ private fun HotelServicesScreen(
     val viewModel: ServicesViewModel = viewModel(factory = viewModelFactory)
     val uiState by viewModel.uiState.collectAsState()
     val firstItemFocus = remember { FocusRequester() }
+    var showActiveRequests by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     val options = remember(departmentFilter, viewModel.serviceOptions) {
         val filter = departmentFilter?.trim()?.lowercase().orEmpty()
         if (filter.isBlank()) {
@@ -328,22 +335,59 @@ private fun HotelServicesScreen(
         else -> stringResource(R.string.services_subtitle)
     }
 
-    LaunchedEffect(options.size) {
-        if (options.isNotEmpty()) {
-            runCatching { firstItemFocus.requestFocus() }
+    val visibleRequests = remember(uiState.activeRequests, departmentFilter) {
+        val filter = departmentFilter?.trim()?.lowercase().orEmpty()
+        uiState.activeRequests.filter { request ->
+            filter.isBlank() || request.department.equals(filter, ignoreCase = true)
         }
+    }
+    val pickerOpen =
+        uiState.activeCategory != null || uiState.showVacantRoomDialog || showActiveRequests
+
+    DisposableEffect(showActiveRequests, uiState.activeCategory, uiState.showVacantRoomDialog) {
+        val main = context as? MainActivity
+        val previous = main?.nestedAdminBackHandler
+        if (showActiveRequests || uiState.activeCategory != null || uiState.showVacantRoomDialog) {
+            main?.nestedAdminBackHandler = {
+                when {
+                    showActiveRequests -> showActiveRequests = false
+                    uiState.activeCategory != null -> viewModel.dismissSubDialog()
+                    uiState.showVacantRoomDialog -> viewModel.dismissVacantRoomDialog()
+                }
+                true
+            }
+        }
+        onDispose {
+            if (main?.nestedAdminBackHandler != previous) {
+                main?.nestedAdminBackHandler = previous
+            }
+        }
+    }
+
+    LaunchedEffect(options.size, uiState.roomOccupied, pickerOpen) {
+        if (options.isEmpty() || pickerOpen) return@LaunchedEffect
+        delay(50)
+        runCatching { firstItemFocus.requestFocus() }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
         BaseScreen(
             viewModelFactory = viewModelFactory,
-            onBack = onBack,
+            onBack = {
+                when {
+                    showActiveRequests -> showActiveRequests = false
+                    uiState.activeCategory != null -> viewModel.dismissSubDialog()
+                    uiState.showVacantRoomDialog -> viewModel.dismissVacantRoomDialog()
+                    else -> onBack()
+                }
+            },
             onOpenAdmin = onOpenAdmin,
             title = screenTitle,
             subtitle = screenSubtitle,
+            showChromeHeader = false,
         ) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+            columns = GridCells.Fixed(3),
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
@@ -358,40 +402,23 @@ private fun HotelServicesScreen(
         ) {
             itemsIndexed(
                 items = options,
-                key = { _, option -> option.serviceType },
+                key = { index, option -> "option-${option.serviceType}-$index" },
             ) { index, option ->
                 ServiceCard(
                     option = option,
-                    enabled = !uiState.isSubmitting && uiState.roomOccupied,
+                    enabled = !uiState.isSubmitting && uiState.roomOccupied && !pickerOpen,
                     roomOccupied = uiState.roomOccupied,
                     modifier = if (index == 0) Modifier.focusRequester(firstItemFocus) else Modifier,
                     onClick = { viewModel.openCategory(option) },
                 )
             }
 
-            if (uiState.activeRequests.isNotEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Column {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(R.string.active_requests),
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = SerifDisplay,
-                            color = GoldLight,
-                        )
-                    }
-                }
-                itemsIndexed(
-                    items = uiState.activeRequests.filter { request ->
-                        val filter = departmentFilter?.trim()?.lowercase().orEmpty()
-                        filter.isBlank() || request.department.equals(filter, ignoreCase = true)
-                    },
-                    key = { _, request -> request.id },
-                    span = { _, _ -> GridItemSpan(maxLineSpan) },
-                ) { _, request ->
-                    ActiveRequestRow(request = request)
-                }
+            item(key = "my-active-requests-card") {
+                ActiveRequestsCard(
+                    requestCount = visibleRequests.size,
+                    enabled = !pickerOpen,
+                    onClick = { showActiveRequests = true },
+                )
             }
         }
         }
@@ -421,8 +448,16 @@ private fun HotelServicesScreen(
                 onDecrement = viewModel::decrementSubItem,
                 onToggle = viewModel::toggleSubItem,
                 onSelectChoice = viewModel::selectChoice,
+                onSelectScheduleTime = viewModel::selectScheduleTime,
                 onSubmit = viewModel::submitSubRequest,
                 onDismiss = viewModel::dismissSubDialog,
+            )
+        }
+
+        if (showActiveRequests) {
+            ActiveRequestsOverlay(
+                requests = visibleRequests,
+                onDismiss = { showActiveRequests = false },
             )
         }
     }
@@ -477,7 +512,7 @@ private fun ServiceCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 168.dp)
+            .heightIn(min = 156.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -489,7 +524,7 @@ private fun ServiceCard(
                 spotColor = GoldLuxury.copy(alpha = 0.55f),
             )
             .onFocusChanged { focused = it.isFocused }
-            .focusable(enabled = roomOccupied)
+            .focusable(enabled = enabled)
             .background(brush = fillBrush, shape = shape)
             .border(
                 width = if (focused && roomOccupied) 2.dp else 1.dp,
@@ -506,18 +541,19 @@ private fun ServiceCard(
                     false
                 }
             }
-            .padding(horizontal = 22.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(horizontal = 18.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         ServiceIconBadge(
-            icon = if (roomOccupied) option.icon else "🔒",
+            iconRes = if (roomOccupied) option.iconRes else R.drawable.ic_service_lock,
             focused = focused && roomOccupied,
             disabled = !roomOccupied,
+            isPhotoAsset = roomOccupied,
         )
 
         Text(
             text = option.label,
-            fontSize = 20.sp,
+            fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = SansBody,
             color = if (roomOccupied) {
@@ -536,10 +572,10 @@ private fun ServiceCard(
             } else {
                 stringResource(R.string.vacant_room_cta_hint)
             },
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             fontFamily = SansBody,
             color = if (roomOccupied) TextMuted else VacantRed.copy(alpha = 0.8f),
-            maxLines = 2,
+            maxLines = 3,
             overflow = TextOverflow.Ellipsis,
             lineHeight = 18.sp,
         )
@@ -558,10 +594,119 @@ private fun ServiceCard(
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
+private fun ActiveRequestsCard(
+    requestCount: Int,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(16.dp)
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.05f else 1f,
+        animationSpec = tween(150),
+        label = "activeRequestsCardScale",
+    )
+    val elevation by animateFloatAsState(
+        targetValue = if (focused) 14f else 0f,
+        animationSpec = tween(150),
+        label = "activeRequestsCardElevation",
+    )
+    val fillBrush = if (focused) {
+        Brush.verticalGradient(
+            listOf(
+                GoldLuxury.copy(alpha = 0.22f),
+                NavySurface.copy(alpha = 0.88f),
+                NavyDeep.copy(alpha = 0.92f),
+            ),
+        )
+    } else {
+        Brush.verticalGradient(
+            listOf(
+                NavySurface.copy(alpha = 0.82f),
+                GlassCardFill,
+                NavyDeep.copy(alpha = 0.78f),
+            ),
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 156.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .shadow(
+                elevation = elevation.dp,
+                shape = shape,
+                ambientColor = GoldLuxury.copy(alpha = 0.4f),
+                spotColor = GoldLuxury.copy(alpha = 0.55f),
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .focusable(enabled)
+            .background(brush = fillBrush, shape = shape)
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) GoldLuxury else Color.White.copy(alpha = 0.10f),
+                shape = shape,
+            )
+            .onKeyEvent { event ->
+                if (enabled && event.type == KeyEventType.KeyDown &&
+                    (event.key == Key.Enter || event.key == Key.DirectionCenter)
+                ) {
+                    onClick()
+                    true
+                } else {
+                    false
+                }
+            }
+            .padding(horizontal = 18.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_service_active_requests_3d),
+            contentDescription = null,
+            modifier = Modifier.size(76.dp),
+        )
+        Text(
+            text = stringResource(R.string.my_active_requests),
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = SansBody,
+            color = if (focused) GoldLight else TextPrimary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = stringResource(R.string.my_active_requests_description),
+            fontSize = 12.sp,
+            fontFamily = SansBody,
+            color = TextMuted,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = if (requestCount == 1) {
+                stringResource(R.string.one_active_request)
+            } else {
+                stringResource(R.string.active_request_count, requestCount)
+            },
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            fontFamily = SansBody,
+            color = if (focused) GoldLuxury else TextMuted.copy(alpha = 0.65f),
+        )
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
 private fun ServiceIconBadge(
-    icon: String,
+    iconRes: Int,
     focused: Boolean,
     disabled: Boolean,
+    isPhotoAsset: Boolean,
 ) {
     val badgeScale by animateFloatAsState(
         targetValue = if (focused) 1.06f else 1f,
@@ -594,16 +739,38 @@ private fun ServiceIconBadge(
 
     Box(
         modifier = Modifier
-            .size(56.dp)
+            .size(76.dp)
             .graphicsLayer {
                 scaleX = badgeScale
                 scaleY = badgeScale
             }
-            .background(brush = fillBrush, shape = CircleShape)
-            .border(1.dp, borderColor, CircleShape),
+            .then(
+                if (isPhotoAsset) {
+                    Modifier
+                } else {
+                    Modifier
+                        .background(brush = fillBrush, shape = CircleShape)
+                        .border(1.dp, borderColor, CircleShape)
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = icon, fontSize = 26.sp)
+        Image(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            modifier = Modifier.size(if (isPhotoAsset) 76.dp else 24.dp),
+            colorFilter = if (isPhotoAsset) {
+                null
+            } else {
+                ColorFilter.tint(
+                    when {
+                        disabled -> TextMuted.copy(alpha = 0.6f)
+                        focused -> GoldLight
+                        else -> GoldLuxury
+                    },
+                )
+            },
+        )
     }
 }
 
@@ -623,14 +790,14 @@ private fun SubServiceDialog(
     onDecrement: (String) -> Unit,
     onToggle: (String) -> Unit,
     onSelectChoice: (String, String) -> Unit,
+    onSelectScheduleTime: (String, String) -> Unit,
     onSubmit: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val firstFocus = remember { FocusRequester() }
-    LaunchedEffect(category.serviceType) {
-        firstFocus.requestFocus()
-    }
-
+    val cancelFocus = remember { FocusRequester() }
+    val submitFocus = remember { FocusRequester() }
+    var acceptRemoteInput by remember(category.serviceType) { mutableStateOf(false) }
     val usesQuantitySteppers = category.subItems.any { it.kind == SubItemKind.QUANTITY }
     val subtitle = if (usesQuantitySteppers) {
         stringResource(R.string.service_sub_hint_qty)
@@ -638,28 +805,31 @@ private fun SubServiceDialog(
         stringResource(R.string.service_sub_hint_select)
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-        ),
+    // In-composition overlay — Compose Dialog windows steal Activity focus on
+    // physical TVs and kiosk reclaim dumps the guest back on Home.
+    DismissOnKioskBack(onDismiss)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f))
+            .padding(horizontal = 22.dp, vertical = 18.dp)
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Back) {
+                    onDismiss()
+                    true
+                } else {
+                    false
+                }
+            },
+        contentAlignment = Alignment.Center,
     ) {
-        // Full-window 0.7 dark scrim behind the panel
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.7f)),
-            contentAlignment = Alignment.Center,
-        ) {
             Box(
                 modifier = Modifier
                     .widthIn(max = 500.dp)
                     .fillMaxWidth(0.92f)
                     .background(NavySurface, RoundedCornerShape(22.dp))
                     .border(2.dp, GoldLuxury.copy(alpha = 0.45f), RoundedCornerShape(22.dp))
-                    .padding(horizontal = 28.dp, vertical = 24.dp),
+                    .padding(horizontal = 30.dp, vertical = 26.dp),
             ) {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -668,7 +838,11 @@ private fun SubServiceDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text(text = category.icon, fontSize = 28.sp)
+                        Image(
+                            painter = painterResource(category.iconRes),
+                            contentDescription = null,
+                            modifier = Modifier.size(54.dp),
+                        )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = category.label,
@@ -700,15 +874,16 @@ private fun SubServiceDialog(
                             SubOptionRow(
                                 item = item,
                                 selection = selection,
-                                modifier = if (index == 0) {
-                                    Modifier.focusRequester(firstFocus)
-                                } else {
-                                    Modifier
-                                },
+                                acceptRemoteInput = acceptRemoteInput,
+                                requestInitialFocus = index == 0,
+                                initialFocus = firstFocus,
                                 onIncrement = { onIncrement(item.id) },
                                 onDecrement = { onDecrement(item.id) },
                                 onToggle = { onToggle(item.id) },
+                                cancelFocus = cancelFocus,
+                                submitFocus = submitFocus,
                                 onSelectChoice = { choice -> onSelectChoice(item.id, choice) },
+                                onSelectScheduleTime = { time -> onSelectScheduleTime(item.id, time) },
                             )
                         }
                     }
@@ -731,8 +906,18 @@ private fun SubServiceDialog(
                         SubDialogButton(
                             text = stringResource(R.string.service_cancel),
                             highlighted = false,
-                            enabled = !isSubmitting,
-                            modifier = Modifier.weight(1f),
+                            enabled = !isSubmitting && acceptRemoteInput,
+                            modifier = Modifier
+                                .weight(1f)
+                                .focusRequester(cancelFocus)
+                                .then(
+                                    if (category.subItems.isEmpty()) {
+                                        Modifier.focusRequester(firstFocus)
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                            rightFocus = submitFocus,
                             onClick = onDismiss,
                         )
                         SubDialogButton(
@@ -742,14 +927,23 @@ private fun SubServiceDialog(
                                 stringResource(R.string.service_submit_request)
                             },
                             highlighted = true,
-                            enabled = canSubmit,
-                            modifier = Modifier.weight(1.35f),
+                            enabled = canSubmit && acceptRemoteInput,
+                            modifier = Modifier
+                                .weight(1.35f)
+                                .focusRequester(submitFocus),
+                            leftFocus = cancelFocus,
                             onClick = onSubmit,
                         )
                     }
+
+                    LaunchedEffect(category.serviceType) {
+                        acceptRemoteInput = false
+                        delay(220)
+                        acceptRemoteInput = true
+                        runCatching { firstFocus.requestFocus() }
+                    }
                 }
             }
-        }
     }
 }
 
@@ -758,13 +952,27 @@ private fun SubServiceDialog(
 private fun SubOptionRow(
     item: SubServiceItem,
     selection: SubItemSelection,
-    modifier: Modifier = Modifier,
+    acceptRemoteInput: Boolean,
+    requestInitialFocus: Boolean,
+    initialFocus: FocusRequester,
     onIncrement: () -> Unit,
     onDecrement: () -> Unit,
     onToggle: () -> Unit,
+    cancelFocus: FocusRequester,
+    submitFocus: FocusRequester,
     onSelectChoice: (String) -> Unit,
+    onSelectScheduleTime: (String) -> Unit,
 ) {
     var rowFocused by remember { mutableStateOf(false) }
+    val scheduleTimeFocus = remember(item.id) { FocusRequester() }
+    val showScheduleTimes = item.scheduleTimeSlots.isNotEmpty() &&
+        selection.choice.equals(item.scheduledChoiceLabel, ignoreCase = true)
+    LaunchedEffect(showScheduleTimes, selection.choice) {
+        if (showScheduleTimes && acceptRemoteInput) {
+            delay(80)
+            runCatching { scheduleTimeFocus.requestFocus() }
+        }
+    }
     val scale by animateFloatAsState(
         targetValue = if (rowFocused) 1.05f else 1f,
         animationSpec = tween(150),
@@ -781,106 +989,151 @@ private fun SubOptionRow(
         else -> Color.White.copy(alpha = 0.10f)
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .onFocusChanged { rowFocused = it.isFocused || it.hasFocus }
-            .focusable()
-            .onKeyEvent { event ->
-                // Row OK activates toggle / selects default choice; qty rows leave OK to child steppers
-                if (event.type == KeyEventType.KeyDown &&
-                    (event.key == Key.Enter || event.key == Key.DirectionCenter)
-                ) {
-                    when (item.kind) {
-                        SubItemKind.TOGGLE -> {
-                            onToggle(); true
-                        }
-                        SubItemKind.CHOICE -> {
-                            val choice = selection.choice
-                                ?: item.choices.firstOrNull()
-                            if (choice != null) {
-                                onSelectChoice(choice); true
-                            } else {
-                                false
-                            }
-                        }
-                        SubItemKind.QUANTITY -> false
-                    }
-                } else {
-                    false
-                }
-            }
-            .background(
-                when {
-                    rowFocused -> GoldLuxury.copy(alpha = 0.16f)
-                    active -> GoldLuxury.copy(alpha = 0.12f)
-                    else -> NavyDeep.copy(alpha = 0.55f)
-                },
-                shape,
-            )
-            .border(
-                width = if (rowFocused) 2.dp else 1.dp,
-                color = borderColor,
-                shape = shape,
-            )
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        when (item.kind) {
-            SubItemKind.QUANTITY -> {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = item.label,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = SansBody,
-                        color = if (rowFocused) GoldLight else TextPrimary,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    SubQuantityStepper(
-                        quantity = selection.quantity,
-                        onAdd = onIncrement,
-                        onRemove = onDecrement,
-                    )
-                }
-            }
-            SubItemKind.TOGGLE -> {
-                SubToggleRow(
-                    label = item.label,
-                    selected = selection.selected,
-                    rowFocused = rowFocused,
-                    onClick = onToggle,
-                )
-            }
-            SubItemKind.CHOICE -> {
+    val rowModifier = Modifier
+        .fillMaxWidth()
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .background(
+            when {
+                rowFocused -> GoldLuxury.copy(alpha = 0.16f)
+                active -> GoldLuxury.copy(alpha = 0.12f)
+                else -> NavyDeep.copy(alpha = 0.55f)
+            },
+            shape,
+        )
+        .border(
+            width = if (rowFocused) 2.dp else 1.dp,
+            color = borderColor,
+            shape = shape,
+        )
+        .padding(horizontal = 14.dp, vertical = 12.dp)
+
+    when (item.kind) {
+        SubItemKind.CHOICE -> {
+            Column(
+                modifier = rowModifier,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Text(
                     text = item.label,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = SansBody,
-                    color = if (rowFocused) GoldLight else TextPrimary,
+                    color = if (active) GoldLight else TextPrimary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    item.choices.forEach { choice ->
+                    item.choices.forEachIndexed { choiceIndex, choice ->
                         val chosen = selection.selected && selection.choice == choice
                         ChoiceChip(
                             label = choice,
                             selected = chosen,
+                            enabled = acceptRemoteInput,
+                            modifier = if (requestInitialFocus && choiceIndex == 0 && !showScheduleTimes) {
+                                Modifier.focusRequester(initialFocus)
+                            } else {
+                                Modifier
+                            },
                             onClick = { onSelectChoice(choice) },
                         )
                     }
+                }
+                if (showScheduleTimes) {
+                    Text(
+                        text = stringResource(R.string.service_select_time),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        fontFamily = SansBody,
+                        color = GoldLuxury.copy(alpha = 0.95f),
+                    )
+                    item.scheduleTimeSlots.chunked(3).forEachIndexed { rowIndex, rowSlots ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rowSlots.forEachIndexed { slotIndex, slot ->
+                                val chosen = selection.scheduleTime == slot
+                                ChoiceChip(
+                                    label = slot,
+                                    selected = chosen,
+                                    enabled = acceptRemoteInput,
+                                    modifier = if (rowIndex == 0 && slotIndex == 0) {
+                                        Modifier.focusRequester(scheduleTimeFocus)
+                                    } else {
+                                        Modifier
+                                    },
+                                    onClick = { onSelectScheduleTime(slot) },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        else -> {
+            Column(
+                modifier = rowModifier
+                    .onFocusChanged { rowFocused = it.isFocused || it.hasFocus }
+                    .then(
+                        if (requestInitialFocus) {
+                            Modifier.focusRequester(initialFocus)
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .focusable(enabled = acceptRemoteInput)
+                    .onKeyEvent { event ->
+                        if (!acceptRemoteInput) return@onKeyEvent false
+                        if (event.type == KeyEventType.KeyDown &&
+                            (event.key == Key.Enter || event.key == Key.DirectionCenter)
+                        ) {
+                            when (item.kind) {
+                                SubItemKind.TOGGLE -> {
+                                    onToggle(); true
+                                }
+                                SubItemKind.QUANTITY -> false
+                                SubItemKind.CHOICE -> false
+                            }
+                        } else {
+                            false
+                        }
+                    },
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                when (item.kind) {
+                    SubItemKind.QUANTITY -> {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = item.label,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = SansBody,
+                                color = if (rowFocused) GoldLight else TextPrimary,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            SubQuantityStepper(
+                                quantity = selection.quantity,
+                                acceptRemoteInput = acceptRemoteInput,
+                                onAdd = onIncrement,
+                                onRemove = onDecrement,
+                            )
+                        }
+                    }
+                    SubItemKind.TOGGLE -> {
+                        SubToggleRow(
+                            label = item.label,
+                            selected = selection.selected,
+                            rowFocused = rowFocused,
+                            onClick = onToggle,
+                        )
+                    }
+                    SubItemKind.CHOICE -> Unit
                 }
             }
         }
@@ -939,15 +1192,24 @@ private fun SubToggleRow(
 private fun ChoiceChip(
     label: String,
     selected: Boolean,
+    enabled: Boolean = true,
+    downFocus: FocusRequester? = null,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(999.dp)
     Box(
-        modifier = Modifier
+        modifier = modifier
+            .then(
+                Modifier.focusProperties {
+                    if (downFocus != null) down = downFocus
+                },
+            )
             .onFocusChanged { focused = it.isFocused }
-            .focusable()
+            .focusable(enabled)
             .onKeyEvent { event ->
+                if (!enabled) return@onKeyEvent false
                 if (event.type == KeyEventType.KeyDown &&
                     (event.key == Key.Enter || event.key == Key.DirectionCenter)
                 ) {
@@ -957,14 +1219,14 @@ private fun ChoiceChip(
             .background(
                 when {
                     selected -> GoldLuxury.copy(alpha = 0.28f)
-                    focused -> GoldLuxury.copy(alpha = 0.14f)
+                    focused -> Color.White.copy(alpha = 0.16f)
                     else -> Color.White.copy(alpha = 0.06f)
                 },
                 shape,
             )
             .border(
                 if (focused || selected) 2.dp else 1.dp,
-                if (selected || focused) GoldLuxury else Color.White.copy(alpha = 0.14f),
+                if (selected) GoldLuxury else if (focused) GoldLight else Color.White.copy(alpha = 0.14f),
                 shape,
             )
             .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -984,6 +1246,7 @@ private fun ChoiceChip(
 @Composable
 private fun SubQuantityStepper(
     quantity: Int,
+    acceptRemoteInput: Boolean,
     onAdd: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -996,7 +1259,7 @@ private fun SubQuantityStepper(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        SubQtyButton(label = "−", enabled = quantity > 0, onClick = onRemove)
+        SubQtyButton(label = "−", enabled = acceptRemoteInput && quantity > 0, onClick = onRemove)
         Text(
             text = quantity.toString(),
             fontSize = 16.sp,
@@ -1007,7 +1270,7 @@ private fun SubQuantityStepper(
             modifier = Modifier.width(28.dp),
             maxLines = 1,
         )
-        SubQtyButton(label = "+", enabled = true, onClick = onAdd)
+        SubQtyButton(label = "+", enabled = acceptRemoteInput, onClick = onAdd)
     }
 }
 
@@ -1066,6 +1329,8 @@ private fun SubDialogButton(
     text: String,
     highlighted: Boolean,
     enabled: Boolean,
+    leftFocus: FocusRequester? = null,
+    rightFocus: FocusRequester? = null,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -1077,6 +1342,9 @@ private fun SubDialogButton(
         label = "subDlgBtnScale",
     )
     val bgBrush = when {
+        focused && !highlighted && enabled -> Brush.verticalGradient(
+            listOf(Color.White.copy(0.18f), Color.White.copy(0.10f)),
+        )
         !highlighted -> Brush.verticalGradient(
             listOf(Color.White.copy(0.08f), Color.White.copy(0.04f)),
         )
@@ -1090,17 +1358,23 @@ private fun SubDialogButton(
     }
     val borderColor = when {
         focused && highlighted && enabled -> GoldLight
+        focused && enabled -> Color.White.copy(alpha = 0.88f)
         highlighted && enabled -> GoldLuxury.copy(0.7f)
         else -> Color.White.copy(0.15f)
     }
     val textColor = when {
         highlighted && enabled -> NavyDeep
+        focused && enabled -> TextPrimary
         else -> TextMuted
     }
 
     Box(
         modifier = modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
+            .focusProperties {
+                if (leftFocus != null) left = leftFocus
+                if (rightFocus != null) right = rightFocus
+            }
             .background(brush = bgBrush, shape = shape)
             .border(if (focused) 2.dp else 1.dp, borderColor, shape)
             .onFocusChanged { focused = it.isFocused }
@@ -1130,23 +1404,149 @@ private fun SubDialogButton(
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun ActiveRequestRow(request: ServiceRequest) {
-    val statusColor = when (request.status) {
+private fun ActiveRequestsOverlay(
+    requests: List<ServiceRequest>,
+    onDismiss: () -> Unit,
+) {
+    val firstFocus = remember { FocusRequester() }
+    DismissOnKioskBack(onDismiss)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.72f))
+            .padding(horizontal = 22.dp, vertical = 18.dp)
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Back) {
+                    onDismiss()
+                    true
+                } else {
+                    false
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 560.dp)
+                .fillMaxWidth(0.92f)
+                .background(NavySurface, RoundedCornerShape(22.dp))
+                .border(2.dp, GoldLuxury.copy(alpha = 0.55f), RoundedCornerShape(22.dp))
+                .padding(horizontal = 30.dp, vertical = 26.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_service_active_requests_3d),
+                    contentDescription = null,
+                    modifier = Modifier.size(54.dp),
+                )
+                Column {
+                    Text(
+                        text = stringResource(R.string.my_active_requests),
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = SerifDisplay,
+                        color = GoldLight,
+                    )
+                    Text(
+                        text = stringResource(R.string.my_active_requests_description),
+                        fontSize = 13.sp,
+                        fontFamily = SansBody,
+                        color = TextMuted,
+                    )
+                }
+            }
+
+            if (requests.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.no_active_requests),
+                    fontSize = 16.sp,
+                    fontFamily = SansBody,
+                    color = TextMuted,
+                    modifier = Modifier.padding(vertical = 18.dp),
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    requests.forEachIndexed { index, request ->
+                        ActiveRequestRow(
+                            request = request,
+                            modifier = if (index == 0) {
+                                Modifier.focusRequester(firstFocus)
+                            } else {
+                                Modifier
+                            },
+                        )
+                    }
+                }
+            }
+
+            SubDialogButton(
+                text = stringResource(R.string.service_close),
+                highlighted = true,
+                enabled = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (requests.isEmpty()) {
+                            Modifier.focusRequester(firstFocus)
+                        } else {
+                            Modifier
+                        },
+                    ),
+                onClick = onDismiss,
+            )
+        }
+    }
+
+    LaunchedEffect(requests.size) {
+        delay(50)
+        runCatching { firstFocus.requestFocus() }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun ActiveRequestRow(
+    request: ServiceRequest,
+    modifier: Modifier = Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val status = request.status.trim().lowercase()
+    val statusColor = when (status) {
         "in_progress" -> FocusCyan
         "completed" -> FocusTeal
         else -> Color(0xFFFBBF24)
     }
-    val statusLabel = when (request.status) {
+    val statusLabel = when (status) {
         "in_progress" -> stringResource(R.string.status_in_progress)
         "completed" -> stringResource(R.string.status_completed)
         else -> stringResource(R.string.status_pending)
     }
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .background(NavyDeep.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
-            .border(1.dp, GoldPrimary.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .background(
+                if (focused) GoldLuxury.copy(alpha = 0.16f) else NavyDeep.copy(alpha = 0.55f),
+                RoundedCornerShape(12.dp),
+            )
+            .border(
+                if (focused) 2.dp else 1.dp,
+                if (focused) GoldLuxury else GoldPrimary.copy(alpha = 0.2f),
+                RoundedCornerShape(12.dp),
+            )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -1155,7 +1555,7 @@ private fun ActiveRequestRow(request: ServiceRequest) {
             text = request.serviceLabel,
             fontSize = 16.sp,
             fontFamily = SansBody,
-            color = TextPrimary,
+            color = if (focused) GoldLight else TextPrimary,
             modifier = Modifier.weight(1f),
         )
         Text(
@@ -1171,9 +1571,23 @@ private fun ActiveRequestRow(request: ServiceRequest) {
 @Composable
 private fun VacantRoomDialog(onDismiss: () -> Unit) {
     val dismissFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { dismissFocus.requestFocus() }
 
-    Dialog(onDismissRequest = onDismiss) {
+    // In-composition overlay — Compose Dialog windows reclaim Home on physical TVs.
+    DismissOnKioskBack(onDismiss)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f))
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Back) {
+                    onDismiss()
+                    true
+                } else {
+                    false
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
         Box(
             modifier = Modifier
                 .background(NavySurface, RoundedCornerShape(24.dp))
@@ -1248,7 +1662,28 @@ private fun VacantRoomDialog(onDismiss: () -> Unit) {
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                LaunchedEffect(Unit) {
+                    delay(50)
+                    runCatching { dismissFocus.requestFocus() }
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun DismissOnKioskBack(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    BackHandler(onBack = onDismiss)
+    DisposableEffect(onDismiss) {
+        val main = context as? MainActivity
+        val previous = main?.nestedAdminBackHandler
+        main?.nestedAdminBackHandler = {
+            onDismiss()
+            true
+        }
+        onDispose {
+            main?.nestedAdminBackHandler = previous
         }
     }
 }

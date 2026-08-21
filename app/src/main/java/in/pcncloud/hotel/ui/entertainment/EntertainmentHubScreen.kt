@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
+import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.integration.AppLauncherUtils
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
@@ -158,6 +159,7 @@ fun EntertainmentHubScreen(
         onOpenAdmin = onOpenAdmin,
         title = stringResource(R.string.entertainment_title),
         subtitle = stringResource(R.string.entertainment_subtitle),
+        showChromeHeader = BuildConfig.IS_CORPORATE,
     ) {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(4),

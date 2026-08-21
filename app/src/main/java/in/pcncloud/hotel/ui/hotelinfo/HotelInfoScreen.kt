@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
+import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.BaseScreen
@@ -49,6 +50,7 @@ fun HotelInfoScreen(
         onBack = onBack,
         onOpenAdmin = onOpenAdmin,
         title = stringResource(R.string.hotel_info_title),
+        showChromeHeader = BuildConfig.IS_CORPORATE,
     ) {
         Column(
             modifier = Modifier

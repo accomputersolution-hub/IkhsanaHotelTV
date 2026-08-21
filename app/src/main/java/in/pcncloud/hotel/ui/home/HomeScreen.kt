@@ -540,7 +540,7 @@ private fun NavigationCardsRow(
             LuxuryNavCard(
                 title = stringResource(R.string.feature_services),
                 subtitle = stringResource(R.string.feature_services_subtitle),
-                iconRes = R.drawable.ic_nav_services,
+                iconRes = NavCardIcons.emergency,
                 focusGlowColor = GoldLuxury,
                 modifier = cardMod(servicesFocus, HomeNavCard.Services),
                 onClick = onServices,
@@ -552,7 +552,7 @@ private fun NavigationCardsRow(
                 } else {
                     stringResource(R.string.feature_alerts_subtitle)
                 },
-                iconRes = R.drawable.ic_nav_alerts,
+                iconRes = NavCardIcons.alerts,
                 focusGlowColor = GoldLuxury,
                 modifier = cardMod(alertsFocus, HomeNavCard.Alerts),
                 onClick = onAlerts,
