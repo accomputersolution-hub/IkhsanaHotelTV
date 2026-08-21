@@ -109,6 +109,8 @@ private val ChampagneGold = Color(0xFFD4AF37)
 private val ChampagneGoldBright = Color(0xFFE8C96A)
 private val CartPanelBg = Color(0xE61A1A1A)
 private val QtyStepperBg = Color(0x66000000)
+
+@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun DiningScreen(
     viewModelFactory: HotelViewModelFactory,
@@ -392,18 +394,21 @@ private fun MenuItemCard(
 ) {
     var rowFocused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (rowFocused) 1.05f else 1f,
+        targetValue = if (rowFocused) 1.03f else 1f,
         animationSpec = tween(150),
         label = "cardScale",
     )
-    val shape = RoundedCornerShape(16.dp)
-    val context = LocalContext.current
-    val imageUrl = item.imageUrl.trim()
+    val shape = RoundedCornerShape(14.dp)
+    val subtitle = if (canOrder) {
+        "₹${item.price.toInt()}"
+    } else {
+        item.description.trim()
+    }
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(220.dp)
+            .heightIn(min = 140.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -412,96 +417,62 @@ private fun MenuItemCard(
             .onFocusChanged { rowFocused = it.hasFocus }
             .then(if (canOrder) Modifier else Modifier.focusable())
             .clip(shape)
+            .background(NavyDeep.copy(alpha = 0.72f), shape)
             .border(
-                width = if (rowFocused) 2.5.dp else 1.dp,
+                width = if (rowFocused) 2.dp else 1.dp,
                 color = if (rowFocused) ChampagneGold else Color.White.copy(alpha = 0.10f),
                 shape = shape,
-            ),
-    ) {
-        if (imageUrl.isNotEmpty()) {
-            AsyncImage(
-                model = hotelImageRequest(context, imageUrl, "DiningFood"),
-                contentDescription = item.name,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
             )
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.linearGradient(
-                            listOf(Color(0xFF2A2218), Color(0xFF0F1218)),
-                        ),
-                    ),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            VegBadge(isVeg = item.isVeg)
+            Text(text = "🍽", fontSize = 18.sp)
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Text(
+            text = item.name,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = SansBody,
+            color = if (rowFocused) ChampagneGoldBright else TextPrimary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            lineHeight = 22.sp,
+        )
+
+        if (subtitle.isNotBlank()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = subtitle,
+                fontSize = 13.sp,
+                fontWeight = if (canOrder) FontWeight.Bold else FontWeight.Normal,
+                fontFamily = SansBody,
+                color = if (canOrder) ChampagneGold else TextMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.45f to Color.Black.copy(alpha = 0.25f),
-                        1f to Color.Black.copy(alpha = 0.82f),
-                    ),
-                ),
-        )
+        Spacer(modifier = Modifier.weight(1f))
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                VegBadge(isVeg = item.isVeg)
-                Text(
-                    text = item.name,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    fontFamily = SansBody,
-                    color = if (rowFocused) ChampagneGoldBright else TextPrimary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
+        if (canOrder) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
             ) {
-                if (canOrder) {
-                    Text(
-                        text = "₹${item.price.toInt()}",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = SansBody,
-                        color = ChampagneGold,
-                    )
-                    QuantityStepper(
-                        quantity = quantity,
-                        onAdd = onAdd,
-                        onRemove = onRemove,
-                        compact = false,
-                        upFocus = upFocus,
-                    )
-                } else {
-                    Text(
-                        text = item.description.trim(),
-                        fontSize = 13.sp,
-                        fontFamily = SansBody,
-                        color = TextMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                QuantityStepper(
+                    quantity = quantity,
+                    onAdd = onAdd,
+                    onRemove = onRemove,
+                    compact = false,
+                    upFocus = upFocus,
+                )
             }
         }
     }
