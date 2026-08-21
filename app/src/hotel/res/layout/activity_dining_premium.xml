@@ -150,7 +150,7 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal">
 
-            <!-- Charge to Room -->
+            <!-- Bill to Room -->
             <LinearLayout
                 android:id="@+id/btn_charge_to_room"
                 android:layout_width="0dp"
@@ -162,19 +162,20 @@
                 android:focusable="true"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="10dp"
+                android:paddingHorizontal="8dp"
                 android:stateListAnimator="@animator/dining_focus_scale">
 
                 <ImageView
-                    android:layout_width="22dp"
-                    android:layout_height="22dp"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
                     android:contentDescription="@null"
                     android:src="@drawable/ic_dining_charge_room" />
 
                 <LinearLayout
-                    android:layout_width="match_parent"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
                     android:orientation="vertical">
 
                     <TextView
@@ -184,7 +185,7 @@
                         android:maxLines="1"
                         android:text="@string/pay_at_checkout"
                         android:textColor="@color/dining_white"
-                        android:textSize="11sp"
+                        android:textSize="14sp"
                         android:textStyle="bold" />
 
                     <TextView
@@ -194,11 +195,11 @@
                         android:maxLines="1"
                         android:text="@string/pay_at_checkout_sub"
                         android:textColor="@color/dining_white_muted"
-                        android:textSize="9sp" />
+                        android:textSize="11sp" />
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- Pay Now (Scan QR) -->
+            <!-- Scan & Pay -->
             <LinearLayout
                 android:id="@+id/btn_pay_now_qr"
                 android:layout_width="0dp"
@@ -210,19 +211,20 @@
                 android:focusable="true"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="10dp"
+                android:paddingHorizontal="8dp"
                 android:stateListAnimator="@animator/dining_focus_scale">
 
                 <ImageView
-                    android:layout_width="22dp"
-                    android:layout_height="22dp"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
                     android:contentDescription="@null"
                     android:src="@drawable/ic_dining_qr" />
 
                 <LinearLayout
-                    android:layout_width="match_parent"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
                     android:orientation="vertical">
 
                     <TextView
@@ -232,7 +234,7 @@
                         android:maxLines="1"
                         android:text="@string/pay_now"
                         android:textColor="@color/dining_white"
-                        android:textSize="11sp"
+                        android:textSize="14sp"
                         android:textStyle="bold" />
 
                     <TextView
@@ -242,7 +244,7 @@
                         android:maxLines="1"
                         android:text="@string/pay_now_sub"
                         android:textColor="@color/dining_white_muted"
-                        android:textSize="9sp" />
+                        android:textSize="11sp" />
                 </LinearLayout>
             </LinearLayout>
         </LinearLayout>

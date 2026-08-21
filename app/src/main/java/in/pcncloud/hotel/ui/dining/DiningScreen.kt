@@ -1138,18 +1138,18 @@ private fun PaymentCard(
                     onClick(); true
                 } else false
             }
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .padding(horizontal = 6.dp, vertical = 8.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(text = icon, fontSize = 16.sp, color = ChampagneGold)
+            Text(text = icon, fontSize = 15.sp, color = ChampagneGold)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    fontSize = 11.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = SansBody,
                     color = if (isSelected || focused) ChampagneGoldBright else TextPrimary,
@@ -1158,7 +1158,7 @@ private fun PaymentCard(
                 )
                 Text(
                     text = subtitle,
-                    fontSize = 9.sp,
+                    fontSize = 11.sp,
                     fontFamily = SansBody,
                     color = TextMuted,
                     maxLines = 1,

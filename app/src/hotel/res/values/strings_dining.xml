@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="pay_at_checkout">Charge to Room</string>
-    <string name="pay_at_checkout_sub">Add to Room Bill</string>
-    <string name="pay_now">Pay Now (Scan QR)</string>
-    <string name="pay_now_sub">Scan QR on TV</string>
+    <string name="pay_at_checkout">Bill to Room</string>
+    <string name="pay_at_checkout_sub">Pay at Checkout</string>
+    <string name="pay_now">Scan &amp; Pay</string>
+    <string name="pay_now_sub">Pay Instantly</string>
     <string name="dining_title">In-Room Dining</string>
     <string name="dining_subtitle">Curated room service · press OK to add</string>
     <string name="cart_add_items_cta">Add Items to Continue</string>
