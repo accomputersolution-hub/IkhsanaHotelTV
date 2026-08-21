@@ -1,65 +1,43 @@
 /**
- * Load Hotels/{slug} branding for subdomain (or query) tenants.
+ * Load public hotel branding for subdomain tenants via public_hotels/{slug}.
+ * Does not read private Hotels/{id} fields (admin email, rooms, …).
  */
 
 import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 import { db } from './firebase-config.js';
-import { normalizeHotelId } from './firebase-config.js';
-import { resolveTenantSlugFromLocation } from './tenant-slug.js';
+import { resolveTenantSlugFromLocation, normalizePublicSlug } from './tenant-slug.js';
 import { setAssignedHotel, updateHotelMeta } from './tenant-context.js';
 
-/**
- * @typedef {object} HotelTenant
- * @property {string} id
- * @property {string} name
- * @property {string} status
- * @property {string} property_type
- * @property {string} logoUrl
- * @property {string} themeColor
- * @property {string} bgWallpaper
- * @property {object} branding
- * @property {object} raw
- */
-
-/**
- * Fetch a single hotel document by slug / document id.
- * @param {string} slug
- * @returns {Promise<HotelTenant|null>}
- */
-export async function fetchHotelBySlug(slug) {
-  const id = normalizeHotelId(slug);
+export async function fetchPublicHotelBySlug(slug) {
+  const id = normalizePublicSlug(slug);
   if (!id) return null;
 
-  const snap = await getDoc(doc(db, 'Hotels', id));
+  const snap = await getDoc(doc(db, 'public_hotels', id));
   if (!snap.exists()) return null;
 
   const data = snap.data() || {};
-  const branding = data.branding || {};
+  const hotelId = data.hotelId || data.hotel_id || '';
+  if (!hotelId) return null;
+
   return {
-    id,
+    publicSlug: id,
+    hotelId,
     name: data.name || id,
     status: data.status || 'active',
-    property_type: data.property_type || data.propertyType || 'hotel',
-    logoUrl: branding.logoUrl || branding.logo_url || data.logoUrl || '',
-    themeColor: branding.themeColor || data.themeColor || '',
-    bgWallpaper: branding.bgWallpaper || branding.bg_wallpaper || data.bgWallpaper || '',
-    branding,
-    adminEmail: data.adminEmail || '',
-    isKioskModeEnabled: data.isKioskModeEnabled !== false,
-    raw: data,
+    property_type: data.property_type || 'hotel',
+    logoUrl: data.logoUrl || data.logo_url || '',
+    themeColor: data.themeColor || '',
+    bgWallpaper: data.bgWallpaper || data.bg_wallpaper || '',
   };
 }
 
-/**
- * Resolve slug from the URL and bind TenantManager + branding.
- * Safe to call on admin / kiosk boot.
- *
- * @param {{ useDefaultOnLocal?: boolean, fallback?: string|null }} [opts]
- * @returns {Promise<{ slug: string|null, hotel: HotelTenant|null, status: 'ready'|'not_found'|'missing_slug'|'error', error?: string }>}
- */
+/** @deprecated Use fetchPublicHotelBySlug */
+export async function fetchHotelBySlug(slug) {
+  return fetchPublicHotelBySlug(slug);
+}
+
 export async function bootstrapTenantFromHostname(opts = {}) {
   const slug = resolveTenantSlugFromLocation(undefined, {
-    useDefaultOnLocal: opts.useDefaultOnLocal === true,
     fallback: opts.fallback ?? null,
   });
 
@@ -68,19 +46,20 @@ export async function bootstrapTenantFromHostname(opts = {}) {
   }
 
   try {
-    const hotel = await fetchHotelBySlug(slug);
+    const hotel = await fetchPublicHotelBySlug(slug);
     if (!hotel) {
       return { slug, hotel: null, status: 'not_found' };
     }
 
-    setAssignedHotel(hotel.id, {
+    // Bind internal hotelId for staff PMS; branding comes from public doc
+    setAssignedHotel(hotel.hotelId, {
       name: hotel.name,
       logoUrl: hotel.logoUrl,
       themeColor: hotel.themeColor,
       bgWallpaper: hotel.bgWallpaper,
       property_type: hotel.property_type,
       status: hotel.status,
-      branding: hotel.branding,
+      publicSlug: hotel.publicSlug,
     });
     updateHotelMeta({
       name: hotel.name,
@@ -89,6 +68,7 @@ export async function bootstrapTenantFromHostname(opts = {}) {
       bgWallpaper: hotel.bgWallpaper,
       property_type: hotel.property_type,
       status: hotel.status,
+      publicSlug: hotel.publicSlug,
     });
 
     return { slug, hotel, status: 'ready' };

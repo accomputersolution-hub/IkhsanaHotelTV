@@ -10,6 +10,7 @@ import { initAnnouncement } from './announcement.js';
 import { initAnalytics } from './analytics.js';
 import { initNavigation, showModule, setHotelChromeVisible } from './navigation.js';
 import { initStaffManagement } from './staff.js';
+import { initPairingClaim } from './pairing.js';
 import {
   canAccessPropertyPms,
   getDefaultModuleForRole,
@@ -352,6 +353,7 @@ function ensurePmsInited() {
     ['concierge', initConcierge],
     ['analytics', initAnalytics],
     ['staff', initStaffManagement],
+    ['pairing', initPairingClaim],
   ];
 
   for (const [name, init] of steps) {

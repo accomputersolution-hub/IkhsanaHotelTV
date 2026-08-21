@@ -1,27 +1,23 @@
 /**
- * Pure subdomain / query slug helpers for React kiosk (no Firebase imports).
- * Keep in sync with admin-panel/js/tenant-slug.js
+ * Public subdomain slug (NOT the internal Hotels/{hotelId} document id).
+ * Avoids IDOR: kiosk never needs the private hotel document id in the URL.
  */
 
-export const DEFAULT_HOTEL_ID = 'ikhsana_001';
-
-export function normalizeHotelId(raw) {
-  const cleaned = String(raw ?? '')
+export function normalizePublicSlug(raw) {
+  return String(raw ?? '')
     .trim()
     .toLowerCase()
-    .replace(/-/g, '_');
-  if (!cleaned || cleaned === 'ikhsana' || cleaned === 'ikhsana001') {
-    return DEFAULT_HOTEL_ID;
-  }
-  return cleaned;
+    .replace(/-/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+    .slice(0, 63);
 }
 
 /**
- * Extract tenant slug from hostname.
- * ikhsana_001.hostity.in → ikhsana_001
+ * Extract public marketing slug from hostname.
+ * ikhsana.hostity.in → "ikhsana"
  * localhost → null
  */
-export function extractTenantSlug(hostname, opts = {}) {
+export function extractPublicSlug(hostname, opts = {}) {
   const rootDomain = String(opts.rootDomain || 'hostity.in')
     .trim()
     .toLowerCase()
@@ -46,17 +42,15 @@ export function extractTenantSlug(hostname, opts = {}) {
   }
 
   if (host === rootDomain || host === `www.${rootDomain}`) return null;
+  if (host.endsWith('.vercel.app')) return null;
 
   const suffix = `.${rootDomain}`;
-  if (host.endsWith(suffix)) {
-    const sub = host.slice(0, -suffix.length);
-    const label = sub.split('.').filter(Boolean)[0];
-    if (!label || label === 'www') return null;
-    return normalizeHotelId(label);
-  }
+  if (!host.endsWith(suffix)) return null;
 
-  if (host.endsWith('.vercel.app')) return null;
-  return null;
+  const sub = host.slice(0, -suffix.length);
+  const label = sub.split('.').filter(Boolean)[0];
+  if (!label || label === 'www') return null;
+  return normalizePublicSlug(label);
 }
 
 export function isLocalHostname(hostname) {
@@ -74,23 +68,36 @@ export function isLocalHostname(hostname) {
 }
 
 /**
- * Priority: subdomain → ?hotel= → fallback / local default.
+ * Priority: subdomain → ?slug= / ?hotel= → optional fallback.
+ * Query param is the *public* slug, never the internal hotelId.
  */
-export function resolveTenantSlugFromLocation(location = window.location, opts = {}) {
-  const fromHost = extractTenantSlug(location?.hostname, opts);
+export function resolvePublicSlugFromLocation(location = window.location, opts = {}) {
+  const fromHost = extractPublicSlug(location?.hostname, opts);
   if (fromHost) return fromHost;
 
   const params = new URLSearchParams(location?.search || '');
   const fromQuery =
+    params.get('slug') ||
+    params.get('public_slug') ||
     params.get('hotel') ||
-    params.get('hotelId') ||
-    params.get('hotel_id') ||
     params.get('tenant');
-  if (fromQuery) return normalizeHotelId(fromQuery);
+  if (fromQuery) return normalizePublicSlug(fromQuery);
 
-  if (opts.fallback) return normalizeHotelId(opts.fallback);
-  if (opts.useDefaultOnLocal && isLocalHostname(location?.hostname)) {
-    return DEFAULT_HOTEL_ID;
-  }
+  if (opts.fallback) return normalizePublicSlug(opts.fallback);
   return null;
+}
+
+/** @deprecated Use resolvePublicSlugFromLocation — kept for older imports */
+export function resolveTenantSlugFromLocation(location, opts) {
+  return resolvePublicSlugFromLocation(location, opts);
+}
+
+/** @deprecated Use extractPublicSlug */
+export function extractTenantSlug(hostname, opts) {
+  return extractPublicSlug(hostname, opts);
+}
+
+/** @deprecated Do not use internal hotel id normalizer for public URLs */
+export function normalizeHotelId(raw) {
+  return normalizePublicSlug(raw);
 }

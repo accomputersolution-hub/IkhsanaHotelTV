@@ -351,6 +351,12 @@ function setupAddHotelModal() {
     e.preventDefault();
     const name = document.getElementById('hotel-name')?.value?.trim();
     let hotelId = normalizeHotelId(document.getElementById('hotel-slug')?.value);
+    let publicSlug = String(document.getElementById('hotel-public-slug')?.value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/-/g, '_')
+      .replace(/[^a-z0-9_]/g, '')
+      .slice(0, 48);
     const adminEmail = document.getElementById('hotel-admin-email')?.value?.trim();
     const password = document.getElementById('hotel-admin-password')?.value || '';
     const logoUrl = sanitizeImageUrl(document.getElementById('hotel-logo-url')?.value || '');
@@ -360,12 +366,16 @@ function setupAddHotelModal() {
       document.getElementById('hotel-property-type')?.value,
     );
 
-    if (!name || !hotelId || !adminEmail || password.length < 6) {
+    if (!name || !hotelId || !publicSlug || !adminEmail || password.length < 6) {
       toast('Fill all required fields (password min 6 chars)', 'error');
       return;
     }
     if (!/^[a-z0-9][a-z0-9_]{1,62}$/.test(hotelId)) {
-      toast('Hotel ID must be lowercase letters, numbers, underscores (e.g. ikhsana_001)', 'error');
+      toast('Internal Hotel ID must be lowercase letters, numbers, underscores (e.g. ikhsana_001)', 'error');
+      return;
+    }
+    if (!/^[a-z0-9][a-z0-9_]{1,47}$/.test(publicSlug)) {
+      toast('Public slug must be lowercase (e.g. ikhsana) — used as subdomain', 'error');
       return;
     }
     if (!assertDirectImageUrl(logoUrl, 'Logo') || !assertDirectImageUrl(bgWallpaper, 'Wallpaper')) {
@@ -374,7 +384,12 @@ function setupAddHotelModal() {
 
     const existing = await getDoc(doc(db, 'Hotels', hotelId));
     if (existing.exists()) {
-      toast('Hotel ID already exists', 'error');
+      toast('Internal Hotel ID already exists', 'error');
+      return;
+    }
+    const publicExisting = await getDoc(doc(db, 'public_hotels', publicSlug));
+    if (publicExisting.exists()) {
+      toast('Public slug already taken — choose another subdomain', 'error');
       return;
     }
 
@@ -395,6 +410,7 @@ function setupAddHotelModal() {
       await setDoc(doc(db, 'Hotels', hotelId), {
         name,
         hotelId,
+        public_slug: publicSlug,
         adminEmail,
         adminUid,
         property_type: propertyType,
@@ -414,6 +430,19 @@ function setupAddHotelModal() {
           bg_wallpaper: bgWallpaper,
         },
         createdAt: serverTimestamp(),
+      });
+
+      // Public directory — anonymous kiosk may read ONLY this doc (not Hotels/{id})
+      await setDoc(doc(db, 'public_hotels', publicSlug), {
+        hotelId,
+        name,
+        logoUrl,
+        themeColor,
+        bgWallpaper,
+        property_type: propertyType,
+        status: 'active',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
 
       // Seed empty config shell for TV / menu
@@ -447,15 +476,25 @@ function setupAddHotelModal() {
 
   // Auto-slug from name
   document.getElementById('hotel-name')?.addEventListener('input', (e) => {
-    const slugInput = document.getElementById('hotel-slug');
-    if (!slugInput || slugInput.dataset.touched === '1') return;
-    slugInput.value = String(e.target.value || '')
+    const raw = String(e.target.value || '')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '_')
       .replace(/^_|_$/g, '')
       .slice(0, 48);
+    const slugInput = document.getElementById('hotel-slug');
+    const publicInput = document.getElementById('hotel-public-slug');
+    if (slugInput && slugInput.dataset.touched !== '1') {
+      slugInput.value = raw ? `${raw}_001`.slice(0, 48) : '';
+    }
+    if (publicInput && publicInput.dataset.touched !== '1') {
+      // Public subdomain: shorter marketing slug (no _001 suffix)
+      publicInput.value = raw.split('_').filter(Boolean).slice(0, 2).join('_').slice(0, 32);
+    }
   });
   document.getElementById('hotel-slug')?.addEventListener('input', (e) => {
+    e.target.dataset.touched = '1';
+  });
+  document.getElementById('hotel-public-slug')?.addEventListener('input', (e) => {
     e.target.dataset.touched = '1';
   });
 }
