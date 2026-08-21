@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="premium_hotel_name">Royal Orchid Hotels</string>
+    <string name="premium_welcome_guest">Welcome, Mr. Rajesh Gupta</string>
+    <string name="premium_room_badge">Room 1207</string>
+    <string name="premium_sample_time">10:45 PM</string>
+    <string name="premium_sample_date">Fri, 21 Aug</string>
+    <string name="premium_card_entertainment">Entertainment</string>
+    <string name="premium_card_order_food">Order Food</string>
+    <string name="premium_card_guest_services">Guest Services</string>
+    <string name="premium_card_live_tv">Live TV</string>
+    <string name="premium_card_laundry">Laundry</string>
+    <string name="premium_card_bell_desk">Bell Desk</string>
+    <string name="premium_card_message_alerts">Message Alerts</string>
+</resources>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="premium_focus_stroke">3dp</dimen>
+    <dimen name="premium_idle_stroke">1dp</dimen>
+</resources>

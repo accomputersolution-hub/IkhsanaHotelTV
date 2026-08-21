@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="premium_navy_deep">#FF090D16</color>
+    <color name="premium_navy_surface">#CC0B1325</color>
+    <color name="premium_charcoal">#E6121828</color>
+    <color name="premium_gold">#FFC9A962</color>
+    <color name="premium_gold_light">#FFE8D5A3</color>
+    <color name="premium_gold_glow">#FFF5E6C3</color>
+    <color name="premium_white">#FFFFFFFF</color>
+    <color name="premium_white_muted">#B3FFFFFF</color>
+    <color name="premium_focus_stroke">#FFF0E0B0</color>
+    <color name="premium_card_stroke">#26FFFFFF</color>
+    <color name="premium_scrim">#99000000</color>
+</resources>
