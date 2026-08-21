@@ -3164,3 +3164,67 @@ body.modal-open { overflow: hidden; }
   flex: 0 0 auto;
   min-height: 44px;
 }
+
+/* ── Staff RBAC ───────────────────────────────────────────────────────────── */
+.staff-role-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.35rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #0B132B;
+  background: linear-gradient(135deg, #E8D5A3, #C9A962);
+}
+
+.staff-users-table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  padding: 0.5rem 0.4rem;
+  border-bottom: 1px solid rgba(201, 169, 98, 0.15);
+}
+
+.staff-users-table td {
+  padding: 0.75rem 0.4rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.staff-role-pill {
+  display: inline-flex;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid rgba(201, 169, 98, 0.35);
+  color: var(--gold-light);
+  background: rgba(201, 169, 98, 0.12);
+}
+
+.staff-role-kitchen { border-color: rgba(251, 146, 60, 0.45); color: #FDBA74; background: rgba(251, 146, 60, 0.12); }
+.staff-role-reception { border-color: rgba(96, 165, 250, 0.45); color: #93C5FD; background: rgba(96, 165, 250, 0.12); }
+.staff-role-housekeeping { border-color: rgba(52, 211, 153, 0.45); color: #6EE7B7; background: rgba(52, 211, 153, 0.12); }
+.staff-role-admin { border-color: rgba(232, 213, 163, 0.55); color: #E8D5A3; background: rgba(201, 169, 98, 0.16); }
+
+.rbac-module-placeholder {
+  padding: 1.5rem;
+  border-radius: 14px;
+  border: 1px solid rgba(201, 169, 98, 0.18);
+  background: rgba(11, 19, 37, 0.45);
+}
+
+.rbac-module-list {
+  margin: 1rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
