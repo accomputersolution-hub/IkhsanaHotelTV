@@ -73,7 +73,7 @@ async function onClaimSubmit(e) {
       claimedBy: 'staff_admin',
     });
 
-    toast(`Device paired to Room ${escapeHtml(roomNumber)}`);
+    toast(`Device paired to Room ${roomNumber}`);
     closeModal('pairing-claim-modal');
   } catch (err) {
     console.error('[pairing] claim failed', err);
