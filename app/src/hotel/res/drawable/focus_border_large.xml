@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Large immersive cards — stronger gold stroke + soft fill on focus. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#E6121828" />
+            <stroke
+                android:width="3.5dp"
+                android:color="@color/premium_gold_glow" />
+            <corners android:radius="20dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#B30B1325" />
+            <stroke
+                android:width="1dp"
+                android:color="@color/premium_card_stroke" />
+            <corners android:radius="20dp" />
+        </shape>
+    </item>
+</selector>
