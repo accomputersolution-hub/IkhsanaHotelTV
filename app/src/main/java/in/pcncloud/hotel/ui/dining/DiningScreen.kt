@@ -187,25 +187,25 @@ fun DiningScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 Box(
                     modifier = Modifier
-                        .weight(if (BuildConfig.IS_CORPORATE) 1f else 0.54f)
+                        .weight(if (BuildConfig.IS_CORPORATE) 1f else 0.68f)
                         .fillMaxHeight(),
                 ) {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
+                        columns = GridCells.Fixed(if (BuildConfig.IS_CORPORATE) 2 else 3),
                         state = menuGridState,
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(end = 20.dp),
-                        horizontalArrangement = Arrangement.spacedBy(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(18.dp),
+                            .padding(end = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                         contentPadding = PaddingValues(
                             start = 4.dp,
                             top = 12.dp,
-                            end = 12.dp,
+                            end = 10.dp,
                             bottom = 40.dp,
                         ),
                     ) {
@@ -225,11 +225,12 @@ fun DiningScreen(
                                 key = { _, item -> item.id },
                             ) { index, item ->
                                 val qty = uiState.cart.find { it.menuItem.id == item.id }?.quantity ?: 0
+                                val columns = if (BuildConfig.IS_CORPORATE) 2 else 3
                                 MenuItemCard(
                                     item = item,
                                     quantity = qty,
                                     canOrder = !BuildConfig.IS_CORPORATE,
-                                    upFocus = if (index < 2) categoryFocus else null,
+                                    upFocus = if (index < columns) categoryFocus else null,
                                     onAdd = { viewModel.addToCart(item) },
                                     onRemove = { viewModel.removeFromCart(item) },
                                 )
@@ -269,7 +270,7 @@ fun DiningScreen(
                             }
                         },
                         modifier = Modifier
-                            .weight(0.46f)
+                            .weight(0.32f)
                             .fillMaxHeight(),
                     )
                 }
@@ -410,7 +411,7 @@ private fun MenuItemCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(148.dp)
+            .height(136.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
