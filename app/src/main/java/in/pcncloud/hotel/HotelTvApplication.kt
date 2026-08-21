@@ -55,7 +55,7 @@ class HotelTvApplication : Application(), ImageLoaderFactory {
                 val request = chain.request().newBuilder()
                     .header(
                         "User-Agent",
-                        "IkhsanaHotelTV/1.0 (Android TV; PCN Cloud IPTV; +https://pcncloud.in)",
+                        "PCNCloudTV/1.0 (Android TV; PCN Cloud IPTV; +https://pcncloud.in)",
                     )
                     .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
                     .build()

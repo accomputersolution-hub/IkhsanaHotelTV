@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">PCN Cloud</string>
+    <string name="app_name">PCN CLOUD</string>
     <string name="brand_name">Your Hotel</string>
     <string name="brand_subtitle"></string>
     <string name="brand_tagline"></string>
@@ -119,9 +119,9 @@
     <string name="status_preparing">Preparing</string>
     <string name="status_delivered">Delivered</string>
     <string name="pairing_title">Pair this TV</string>
-    <string name="pairing_subtitle">Enter the Hotel ID from Super Admin (e.g. ikhsana_001). We verify Hotels/{id} in Firestore before saving.</string>
+    <string name="pairing_subtitle">Enter the Hotel ID from Super Admin (e.g. hotel_001). We verify Hotels/{id} in Firestore before saving.</string>
     <string name="pairing_hotel_id_label">Hotel ID / Slug</string>
-    <string name="pairing_hotel_id_hint">ikhsana_001</string>
+    <string name="pairing_hotel_id_hint">hotel_001</string>
     <string name="pairing_room_label">Room number</string>
     <string name="pairing_room_hint">101</string>
     <string name="pairing_submit">Pair &amp; Continue</string>

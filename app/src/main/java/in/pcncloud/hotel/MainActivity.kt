@@ -43,7 +43,7 @@ import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.ScreensaverOverlay
 import `in`.pcncloud.hotel.ui.components.ServiceSuspendedScreen
 import `in`.pcncloud.hotel.ui.navigation.HotelNavGraph
-import `in`.pcncloud.hotel.ui.theme.IkhsanaHotelTVTheme
+import `in`.pcncloud.hotel.ui.theme.PcnCloudTvTheme
 import `in`.pcncloud.hotel.ui.theme.NavyDeep
 import com.google.firebase.FirebaseApp
 import com.google.firebase.database.DataSnapshot
@@ -514,8 +514,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Manifest uses Theme.HotelTv.BootSplash (instant black+logo window).
-        // Switch to the main theme before inflating so Compose draws under IkhsanaHotelTV.
-        setTheme(R.style.Theme_IkhsanaHotelTV)
+        // Switch to the main theme before inflating so Compose draws under PcnCloudTv.
+        setTheme(R.style.Theme_PcnCloudTv)
         // Match Home base color so route pops never flash Material / AppCompat blue.
         window.setBackgroundDrawableResource(R.color.dark_bg_or_transparent)
         super.onCreate(savedInstanceState)
@@ -614,7 +614,7 @@ class MainActivity : ComponentActivity() {
                 Log.i(TAG, "Inactivity timeout — showing screen saver")
             }
 
-            IkhsanaHotelTVTheme {
+            PcnCloudTvTheme {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()

@@ -57,7 +57,7 @@
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:directBootAware="true"
-        android:theme="@style/Theme.IkhsanaHotelTV"
+        android:theme="@style/Theme.PcnCloudTv"
         tools:ignore="GoogleAppIndexingWarning">
 
         <activity
@@ -67,7 +67,7 @@
             android:screenOrientation="landscape"
             android:configChanges="keyboard|keyboardHidden|navigation"
             android:defaultFocusHighlightEnabled="false"
-            android:theme="@style/Theme.IkhsanaHotelTV.Splash">
+            android:theme="@style/Theme.PcnCloudTv.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -114,7 +114,7 @@
             android:configChanges="keyboard|keyboardHidden|navigation"
             android:defaultFocusHighlightEnabled="false"
             android:windowSoftInputMode="adjustPan|stateHidden"
-            android:theme="@style/Theme.IkhsanaHotelTV" />
+            android:theme="@style/Theme.PcnCloudTv" />
 
         <!--
           Auto-launch hotel UI after reboot / OEM quick-boot / Direct Boot.

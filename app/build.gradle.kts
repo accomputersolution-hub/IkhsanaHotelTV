@@ -43,7 +43,7 @@ android {
         create("hotel") {
             dimension = "client"
             applicationId = "in.pcncloud.hotel"
-            manifestPlaceholders["appName"] = "Ikhsana Hotel TV"
+            manifestPlaceholders["appName"] = "PCN CLOUD"
             buildConfigField("boolean", "IS_CORPORATE", "false")
         }
         create("corporate") {
