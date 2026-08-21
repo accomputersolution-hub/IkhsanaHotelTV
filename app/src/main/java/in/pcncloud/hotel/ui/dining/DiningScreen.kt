@@ -399,7 +399,6 @@ private fun MenuItemCard(
         label = "cardScale",
     )
     val shape = RoundedCornerShape(14.dp)
-    val thumbShape = RoundedCornerShape(10.dp)
     val context = LocalContext.current
     val imageUrl = item.imageUrl.trim()
     val subtitle = if (canOrder) {
@@ -408,10 +407,10 @@ private fun MenuItemCard(
         item.description.trim()
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 140.dp)
+            .height(148.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -420,80 +419,93 @@ private fun MenuItemCard(
             .onFocusChanged { rowFocused = it.hasFocus }
             .then(if (canOrder) Modifier else Modifier.focusable())
             .clip(shape)
-            .background(NavyDeep.copy(alpha = 0.72f), shape)
             .border(
                 width = if (rowFocused) 2.dp else 1.dp,
                 color = if (rowFocused) ChampagneGold else Color.White.copy(alpha = 0.10f),
                 shape = shape,
-            )
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            ),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+        if (imageUrl.isNotEmpty()) {
+            AsyncImage(
+                model = hotelImageRequest(context, imageUrl, "DiningFood"),
+                contentDescription = item.name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
             Box(
                 modifier = Modifier
-                    .size(56.dp)
-                    .clip(thumbShape)
-                    .background(Color.White.copy(alpha = 0.06f), thumbShape)
-                    .border(1.dp, Color.White.copy(alpha = 0.10f), thumbShape),
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0xFF2A2218), Color(0xFF0F1218)),
+                        ),
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
-                if (imageUrl.isNotEmpty()) {
-                    AsyncImage(
-                        model = hotelImageRequest(context, imageUrl, "DiningFood"),
-                        contentDescription = item.name,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    Text(text = "🍽", fontSize = 22.sp)
-                }
+                Text(text = "🍽", fontSize = 28.sp)
             }
-            VegBadge(isVeg = item.isVeg)
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Text(
-            text = item.name,
-            fontSize = 17.sp,
-            fontWeight = FontWeight.SemiBold,
-            fontFamily = SansBody,
-            color = if (rowFocused) ChampagneGoldBright else TextPrimary,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            lineHeight = 22.sp,
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.15f),
+                        0.40f to Color.Black.copy(alpha = 0.35f),
+                        1f to Color.Black.copy(alpha = 0.82f),
+                    ),
+                ),
         )
 
-        if (subtitle.isNotBlank()) {
-            Spacer(modifier = Modifier.height(4.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+        ) {
+            VegBadge(isVeg = item.isVeg)
+
+            Spacer(modifier = Modifier.weight(1f))
+
             Text(
-                text = subtitle,
-                fontSize = 13.sp,
-                fontWeight = if (canOrder) FontWeight.Bold else FontWeight.Normal,
+                text = item.name,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
                 fontFamily = SansBody,
-                color = if (canOrder) ChampagneGold else TextMuted,
-                maxLines = 1,
+                color = if (rowFocused) ChampagneGoldBright else TextPrimary,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                lineHeight = 22.sp,
             )
-        }
 
-        Spacer(modifier = Modifier.weight(1f))
-
-        if (canOrder) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                QuantityStepper(
-                    quantity = quantity,
-                    onAdd = onAdd,
-                    onRemove = onRemove,
-                    compact = false,
-                    upFocus = upFocus,
+            if (subtitle.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 13.sp,
+                    fontWeight = if (canOrder) FontWeight.Bold else FontWeight.Normal,
+                    fontFamily = SansBody,
+                    color = if (canOrder) ChampagneGold else TextMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+            }
+
+            if (canOrder) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    QuantityStepper(
+                        quantity = quantity,
+                        onAdd = onAdd,
+                        onRemove = onRemove,
+                        compact = false,
+                        upFocus = upFocus,
+                    )
+                }
             }
         }
     }
