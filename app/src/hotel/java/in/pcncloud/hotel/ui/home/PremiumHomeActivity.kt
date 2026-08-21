@@ -1,13 +1,15 @@
 package `in`.pcncloud.hotel.ui.home
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 import android.widget.TextView
 import android.widget.Toast
-import androidx.core.content.ContextCompat
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.google.android.material.card.MaterialCardView
+import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -15,9 +17,7 @@ import java.util.Locale
 
 /**
  * Hotel-flavor only premium 5-star home dashboard (XML / MaterialCardView).
- * Does not touch [src/main] Compose HomeScreen — launch via hotelDebug:
- *
- * adb shell am start -n in.pcncloud.hotel/.ui.home.PremiumHomeActivity
+ * Launched from Splash for hotelDebug builds.
  */
 class PremiumHomeActivity : AppCompatActivity() {
 
@@ -56,13 +56,12 @@ class PremiumHomeActivity : AppCompatActivity() {
             val card = findViewById<MaterialCardView>(id)
             attachFocusScale(card)
             card.setOnClickListener {
-                // Order Food / Guest Services → full Compose app for real features.
                 when (id) {
                     R.id.card_order_food,
                     R.id.card_guest_services,
                     -> {
                         startActivity(
-                            Intent(this, `in`.pcncloud.hotel.MainActivity::class.java).apply {
+                            Intent(this, MainActivity::class.java).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             },
                         )
