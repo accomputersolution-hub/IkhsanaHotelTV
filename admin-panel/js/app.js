@@ -38,6 +38,8 @@ import {
   onHotelChange,
   clearHotelContext,
 } from './tenant-context.js';
+import { extractTenantSlug } from './tenant-slug.js';
+import { bootstrapTenantFromHostname } from './hotel-tenant.js';
 import { initSuperAdmin, startSuperAdminListeners, stopSuperAdminListeners } from './super-admin.js';
 import { initRouter, onRouteChange, navigateTo, getRoute, getModuleFromRoute } from './router.js';
 import { db } from './firebase-config.js';
@@ -466,6 +468,21 @@ function setupChromeActions() {
 document.addEventListener('DOMContentLoaded', () => {
   // Show boot loader immediately — hide login flash until Auth resolves
   setAuthBootUi(true);
+
+  // Multi-tenant: *.hostity.in → bind Hotels/{slug} branding before Auth paints.
+  // Localhost is unchanged (no forced default); use ?hotel=slug when testing.
+  const hostSlug = extractTenantSlug(window.location.hostname);
+  if (hostSlug || new URLSearchParams(window.location.search).get('hotel')) {
+    bootstrapTenantFromHostname({ useDefaultOnLocal: false }).then((result) => {
+      if (result.status === 'not_found') {
+        toast(`Unknown hotel subdomain: ${result.slug}`, 'error');
+      } else if (result.status === 'ready') {
+        console.info('[tenant] bound from hostname', result.slug, result.hotel?.name);
+      } else if (result.status === 'error') {
+        console.error('[tenant] hostname bootstrap failed', result.error);
+      }
+    });
+  }
 
   // Safety net: never leave the boot gate up indefinitely if Auth hangs.
   const bootWatchdog = window.setTimeout(() => {
