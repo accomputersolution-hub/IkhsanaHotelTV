@@ -9,6 +9,7 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -18,27 +19,43 @@ import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.kiosk.HotelSessionManager
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.SetOptions
+import kotlin.random.Random
 
 /**
- * First-run / unpaired TV setup: staff enters Hotel ID (slug), we verify
- * `Hotels/{id}` exists via Firestore get listeners, save prefs, then open [SplashActivity].
+ * First-run / unpaired TV setup (secure pairing):
+ * 1. Staff enters **public slug** (e.g. ikhsana) → resolve `public_hotels/{slug}`
+ * 2. TV creates `Hotels/{hotelId}/pairing_codes/{6digit}` and shows the code
+ * 3. Reception claims the code in Admin (Pair Device Code) and assigns a room
+ * 4. TV listens, saves hotelId + roomNumber, opens [SplashActivity]
  *
- * Uses ScrollView + `adjustPan` so the soft keyboard pans the window and focused
- * fields stay visible for D-pad / soft-keyboard entry on Android TV.
+ * Room number is never typed on the TV (avoids IDOR / guest misuse).
  */
 class PairingActivity : AppCompatActivity() {
 
     private lateinit var hotelConfig: HotelConfig
     private lateinit var scrollView: ScrollView
+    private lateinit var slugSection: LinearLayout
+    private lateinit var codeSection: LinearLayout
     private lateinit var etHotelId: EditText
-    private lateinit var etRoomNumber: EditText
     private lateinit var btnPair: Button
+    private lateinit var btnNewCode: Button
+    private lateinit var tvPairingCode: TextView
+    private lateinit var tvPairingHotelName: TextView
+    private lateinit var tvPairingWaiting: TextView
     private lateinit var tvPairError: TextView
 
     private var pairingInFlight = false
     private var baseBottomPadding = 0
     private var imePaddingPx = 0
     private var pendingScrollPass: Runnable? = null
+    private var codeListener: ListenerRegistration? = null
+
+    private var resolvedHotelId: String = ""
+    private var resolvedPublicSlug: String = ""
+    private var activeCode: String = ""
+    private var deviceId: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,16 +74,22 @@ class PairingActivity : AppCompatActivity() {
             openSplashActivity()
             return
         }
-        // Ensure stale prefs cannot skip this screen.
         HotelSessionManager.resetLogoutGuard()
 
         setContentView(R.layout.activity_pairing)
 
         scrollView = findViewById(R.id.pairing_scroll)
+        slugSection = findViewById(R.id.pairing_slug_section)
+        codeSection = findViewById(R.id.pairing_code_section)
         etHotelId = findViewById(R.id.etHotelId)
-        etRoomNumber = findViewById(R.id.etRoomNumber)
         btnPair = findViewById(R.id.btnPair)
+        btnNewCode = findViewById(R.id.btnNewCode)
+        tvPairingCode = findViewById(R.id.tvPairingCode)
+        tvPairingHotelName = findViewById(R.id.tvPairingHotelName)
+        tvPairingWaiting = findViewById(R.id.tvPairingWaiting)
         tvPairError = findViewById(R.id.tvPairError)
+
+        deviceId = hotelConfig.getOrCreateDeviceId()
 
         applyFlavorCopy()
 
@@ -77,62 +100,37 @@ class PairingActivity : AppCompatActivity() {
             resources.displayMetrics,
         ).toInt()
 
-        // Do not invent a default room — empty field forces staff to enter one.
-        etRoomNumber.setText(hotelConfig.getRoomNumberOrNull().orEmpty())
-
-        // Hotel ID → Next moves focus to Room Number on TV remote / soft keyboard.
-        etHotelId.imeOptions = EditorInfo.IME_ACTION_NEXT or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+        etHotelId.imeOptions = EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
         etHotelId.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_NEXT) {
-                etRoomNumber.requestFocus()
-                applyImeFocusPadding(true)
-                ensureFocusedFieldVisible(etRoomNumber)
-                true
-            } else {
-                false
-            }
-        }
-
-        etRoomNumber.imeOptions = EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
-        etRoomNumber.inputType = EditorInfo.TYPE_CLASS_NUMBER
-        etRoomNumber.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) {
-                beginPairing()
+                beginPairingLookup()
                 true
             } else {
                 false
             }
         }
-
-        val focusListener = View.OnFocusChangeListener { v, hasFocus ->
-            applyImeFocusPadding(hasFocus && (v === etHotelId || v === etRoomNumber))
-            if (hasFocus) {
-                ensureFocusedFieldVisible(v)
-            }
+        etHotelId.onFocusChangeListener = View.OnFocusChangeListener { v, hasFocus ->
+            applyImeFocusPadding(hasFocus)
+            if (hasFocus) ensureFocusedFieldVisible(v)
         }
-        etHotelId.onFocusChangeListener = focusListener
-        etRoomNumber.onFocusChangeListener = focusListener
 
-        btnPair.setOnClickListener { beginPairing() }
+        btnPair.setOnClickListener { beginPairingLookup() }
+        btnNewCode.setOnClickListener { regenerateCode() }
         etHotelId.requestFocus()
     }
 
-    /**
-     * Corporate flavor swaps pairing copy; hotel flavor keeps layout XML / string resources.
-     */
     private fun applyFlavorCopy() {
         if (!BuildConfig.IS_CORPORATE) return
-
         findViewById<TextView>(R.id.pairing_title).text = "Setup Training Display"
         findViewById<TextView>(R.id.pairing_subtitle).text =
-            "Enter the Client ID from Super Admin (e.g. lnt_001). We verify Clients/{id} in Firestore before saving."
-        findViewById<TextView>(R.id.pairing_hotel_id_label).text = "Client ID / Slug"
-        etHotelId.hint = "Client ID / Slug"
-        findViewById<TextView>(R.id.pairing_room_label).text = "Conference Room"
-        etRoomNumber.hint = "Conference Room"
+            "Enter the public client slug. This display shows a 6-digit code — staff claims it in Admin and assigns the conference room."
+        findViewById<TextView>(R.id.pairing_hotel_id_label).text = "Public client slug"
+        etHotelId.hint = "e.g. lnt"
     }
 
     override fun onDestroy() {
+        codeListener?.remove()
+        codeListener = null
         pendingScrollPass?.let { pass ->
             if (::scrollView.isInitialized) {
                 scrollView.removeCallbacks(pass)
@@ -142,10 +140,6 @@ class PairingActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    /**
-     * Extra bottom padding while an EditText is focused so the field (and Pair button)
-     * can scroll above the soft keyboard under adjustPan.
-     */
     private fun applyImeFocusPadding(focused: Boolean) {
         val bottom = if (focused) baseBottomPadding + imePaddingPx else baseBottomPadding
         if (scrollView.paddingBottom == bottom) return
@@ -159,50 +153,86 @@ class PairingActivity : AppCompatActivity() {
 
     private fun ensureFocusedFieldVisible(view: View) {
         pendingScrollPass?.let { scrollView.removeCallbacks(it) }
-
         val scrollPass = Runnable {
             if (isFinishing || isDestroyed) return@Runnable
             if (currentFocus !== view) return@Runnable
-
             val rect = Rect()
             view.getDrawingRect(rect)
-            // Expand downward so Room Number + Pair button clear the IME together.
-            if (view === etHotelId || view === etRoomNumber) {
-                rect.bottom += btnPair.height + (imePaddingPx / 3)
-            }
-            // Walks ViewParents (ScrollView) so the focused rect stays on-screen under adjustPan.
+            rect.bottom += btnPair.height + (imePaddingPx / 3)
             view.requestRectangleOnScreen(rect, false)
         }
         pendingScrollPass = scrollPass
-        // Immediate pass + delayed pass after the IME finishes animating in.
         scrollView.post(scrollPass)
         scrollView.postDelayed(scrollPass, IME_SETTLE_MS)
     }
 
-    /** Immediately disable button → "Pairing..." then run Firestore check. */
-    private fun beginPairing() {
+    /** Step 1: resolve public_hotels/{slug} → internal hotelId, then mint a code. */
+    private fun beginPairingLookup() {
         if (pairingInFlight || !btnPair.isEnabled) return
 
-        btnPair.isEnabled = false
-        btnPair.text = getString(R.string.pairing_verifying)
-        tvPairError.visibility = View.GONE
-        tvPairError.text = ""
-
-        val hotelId = HotelConfig.normalizeHotelId(etHotelId.text?.toString()?.trim().orEmpty())
-        val roomNumber = etRoomNumber.text?.toString()?.trim().orEmpty()
-
-        if (hotelId.isBlank()) {
-            resetPairButton("Enter a Hotel ID / slug")
-            return
-        }
-        if (roomNumber.isBlank()) {
-            resetPairButton("Enter a Room number")
+        val publicSlug = normalizePublicSlug(etHotelId.text?.toString())
+        if (publicSlug.isBlank()) {
+            showError(getString(R.string.pairing_slug_missing))
             return
         }
 
         pairingInFlight = true
-        Log.d(TAG, "Pairing lookup → Hotels/$hotelId room=$roomNumber")
+        btnPair.isEnabled = false
+        btnPair.text = getString(R.string.pairing_verifying)
+        clearError()
 
+        Log.d(TAG, "Public slug lookup → public_hotels/$publicSlug")
+
+        FirebaseFirestore.getInstance()
+            .collection(PUBLIC_HOTELS)
+            .document(publicSlug)
+            .get()
+            .addOnSuccessListener { snapshot ->
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+
+                    if (!snapshot.exists()) {
+                        // Backward-compat: allow typing internal Hotels/{id} if public doc missing
+                        tryInternalHotelFallback(publicSlug)
+                        return@runOnUiThread
+                    }
+
+                    val data = snapshot.data ?: emptyMap()
+                    val hotelId = FirestorePaths.normalizeHotelId(
+                        (data["hotelId"] as? String) ?: (data["hotel_id"] as? String) ?: "",
+                    )
+                    val status = (data["status"] as? String) ?: "active"
+                    val name = (data["name"] as? String).orEmpty()
+
+                    if (hotelId.isBlank()) {
+                        resetSlugButton(getString(R.string.pairing_slug_not_found))
+                        return@runOnUiThread
+                    }
+                    if (status.equals("inactive", ignoreCase = true)) {
+                        resetSlugButton(getString(R.string.pairing_hotel_inactive))
+                        return@runOnUiThread
+                    }
+
+                    resolvedHotelId = hotelId
+                    resolvedPublicSlug = publicSlug
+                    tvPairingHotelName.text = name.ifBlank { publicSlug }
+                    createAndShowPairingCode()
+                }
+            }
+            .addOnFailureListener { error ->
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    Log.e(TAG, "public_hotels lookup failed", error)
+                    resetSlugButton(
+                        error.message ?: "Could not verify hotel. Check network and try again.",
+                    )
+                }
+            }
+    }
+
+    /** Fallback for properties not yet migrated to public_hotels. */
+    private fun tryInternalHotelFallback(maybeHotelId: String) {
+        val hotelId = FirestorePaths.normalizeHotelId(maybeHotelId)
         FirebaseFirestore.getInstance()
             .collection(FirestorePaths.HOTELS)
             .document(hotelId)
@@ -210,53 +240,209 @@ class PairingActivity : AppCompatActivity() {
             .addOnSuccessListener { snapshot ->
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
-
-                    if (snapshot.exists()) {
-                        val status = snapshot.getString("status") ?: "active"
-                        if (status.equals("inactive", ignoreCase = true)) {
-                            Log.w(TAG, "Hotels/$hotelId is inactive — rejecting pair")
-                            resetPairButton(getString(R.string.pairing_hotel_inactive))
-                            return@runOnUiThread
-                        }
-                        Log.i(TAG, "Hotels/$hotelId exists (status=$status) — saving prefs and launching SplashActivity")
-                        try {
-                            hotelConfig.setHotelId(hotelId)
-                            hotelConfig.setRoomNumber(roomNumber)
-                            HotelSessionManager.markSessionPaired(
-                                applicationContext,
-                                hotelId,
-                                roomNumber,
-                            )
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Failed to save HotelConfig", e)
-                            resetPairButton(e.message ?: "Could not save hotel settings")
-                            return@runOnUiThread
-                        }
-                        openSplashActivity()
-                    } else {
-                        Log.w(TAG, "Hotels/$hotelId does not exist")
-                        resetPairButton("Hotel ID does not exist in database")
+                    if (!snapshot.exists()) {
+                        resetSlugButton(getString(R.string.pairing_slug_not_found))
+                        return@runOnUiThread
                     }
+                    val status = snapshot.getString("status") ?: "active"
+                    if (status.equals("inactive", ignoreCase = true)) {
+                        resetSlugButton(getString(R.string.pairing_hotel_inactive))
+                        return@runOnUiThread
+                    }
+                    resolvedHotelId = hotelId
+                    resolvedPublicSlug = snapshot.getString("public_slug")
+                        ?.takeIf { it.isNotBlank() }
+                        ?: hotelId
+                    tvPairingHotelName.text = snapshot.getString("name") ?: hotelId
+                    createAndShowPairingCode()
                 }
             }
             .addOnFailureListener { error ->
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
-                    Log.e(TAG, "Firestore pair lookup failed for Hotels/$hotelId", error)
-                    resetPairButton(
-                        error.message ?: "Could not verify hotel. Check network and try again.",
-                    )
+                    resetSlugButton(error.message ?: getString(R.string.pairing_slug_not_found))
                 }
             }
     }
 
-    private fun resetPairButton(message: String) {
+    private fun regenerateCode() {
+        if (resolvedHotelId.isBlank()) {
+            showSlugStep()
+            return
+        }
+        createAndShowPairingCode()
+    }
+
+    private fun createAndShowPairingCode() {
+        codeListener?.remove()
+        codeListener = null
+
+        val code = randomSixDigitCode()
+        activeCode = code
+        val expiresAt = System.currentTimeMillis() + CODE_TTL_MS
+
+        val payload = hashMapOf<String, Any?>(
+            "code" to code,
+            "hotelId" to resolvedHotelId,
+            "publicSlug" to resolvedPublicSlug,
+            "deviceId" to deviceId,
+            "status" to "pending",
+            "roomNumber" to null,
+            "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
+            "expiresAt" to expiresAt,
+            "claimedAt" to null,
+            "claimedBy" to null,
+        )
+
+        Log.i(TAG, "Creating pairing code $code → Hotels/$resolvedHotelId/pairing_codes/$code")
+
+        FirebaseFirestore.getInstance()
+            .collection(FirestorePaths.HOTELS)
+            .document(resolvedHotelId)
+            .collection(PAIRING_CODES)
+            .document(code)
+            .set(payload, SetOptions.merge())
+            .addOnSuccessListener {
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    showCodeStep(code)
+                    attachCodeListener(code, expiresAt)
+                    pairingInFlight = false
+                }
+            }
+            .addOnFailureListener { error ->
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    Log.e(TAG, "Failed to write pairing code", error)
+                    resetSlugButton(error.message ?: "Could not create pairing code")
+                }
+            }
+    }
+
+    private fun attachCodeListener(code: String, expiresAt: Long) {
+        codeListener?.remove()
+        val ref = FirebaseFirestore.getInstance()
+            .collection(FirestorePaths.HOTELS)
+            .document(resolvedHotelId)
+            .collection(PAIRING_CODES)
+            .document(code)
+
+        codeListener = ref.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                Log.e(TAG, "Pairing code listener failed", error)
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        showError(error.message ?: "Pairing listener failed")
+                    }
+                }
+                return@addSnapshotListener
+            }
+            if (snapshot == null || !snapshot.exists()) {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        showError(getString(R.string.pairing_code_expired))
+                    }
+                }
+                return@addSnapshotListener
+            }
+
+            val data = snapshot.data ?: return@addSnapshotListener
+            val status = data["status"] as? String ?: "pending"
+            val roomNumber = (data["roomNumber"] as? String)?.trim().orEmpty()
+            val boundDevice = data["deviceId"] as? String
+            val docExpires = (data["expiresAt"] as? Number)?.toLong() ?: expiresAt
+
+            if (!boundDevice.isNullOrBlank() && boundDevice != deviceId) {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        showError("This code is bound to another device")
+                    }
+                }
+                return@addSnapshotListener
+            }
+
+            if (status != "claimed" && docExpires < System.currentTimeMillis()) {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        showError(getString(R.string.pairing_code_expired))
+                    }
+                }
+                return@addSnapshotListener
+            }
+
+            if (status == "claimed" && roomNumber.isNotBlank()) {
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    completePairing(roomNumber)
+                }
+            }
+        }
+    }
+
+    private fun completePairing(roomNumber: String) {
+        codeListener?.remove()
+        codeListener = null
+        try {
+            hotelConfig.setHotelId(resolvedHotelId)
+            hotelConfig.setRoomNumber(roomNumber)
+            HotelSessionManager.markSessionPaired(
+                applicationContext,
+                resolvedHotelId,
+                roomNumber,
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save HotelConfig", e)
+            showError(e.message ?: "Could not save hotel settings")
+            showSlugStep()
+            return
+        }
+        Toast.makeText(
+            this,
+            getString(R.string.pairing_claimed, roomNumber),
+            Toast.LENGTH_LONG,
+        ).show()
+        Log.i(TAG, "Paired hotel=$resolvedHotelId room=$roomNumber via code=$activeCode")
+        openSplashActivity()
+    }
+
+    private fun showCodeStep(code: String) {
+        slugSection.visibility = View.GONE
+        codeSection.visibility = View.VISIBLE
+        tvPairingCode.text = code
+        tvPairingWaiting.text = getString(R.string.pairing_waiting)
+        clearError()
+        btnNewCode.requestFocus()
+    }
+
+    private fun showSlugStep() {
+        codeListener?.remove()
+        codeListener = null
+        codeSection.visibility = View.GONE
+        slugSection.visibility = View.VISIBLE
+        resetSlugButton(null)
+        etHotelId.requestFocus()
+    }
+
+    private fun resetSlugButton(message: String?) {
         pairingInFlight = false
         btnPair.isEnabled = true
-        btnPair.text = getString(R.string.pairing_submit)
+        btnPair.text = getString(R.string.pairing_generate_code)
+        if (message.isNullOrBlank()) {
+            clearError()
+        } else {
+            showError(message)
+        }
+    }
+
+    private fun showError(message: String) {
         tvPairError.text = message
         tvPairError.visibility = View.VISIBLE
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+
+    private fun clearError() {
+        tvPairError.text = ""
+        tvPairError.visibility = View.GONE
     }
 
     private fun openSplashActivity() {
@@ -271,8 +457,23 @@ class PairingActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "PairingActivity"
-        /** Extra ScrollView bottom inset while typing so fields clear the IME. */
+        private const val PUBLIC_HOTELS = "public_hotels"
+        private const val PAIRING_CODES = "pairing_codes"
         private const val IME_EXTRA_BOTTOM_DP = 220f
         private const val IME_SETTLE_MS = 180L
+        private const val CODE_TTL_MS = 15 * 60 * 1000L
+
+        fun normalizePublicSlug(raw: String?): String {
+            if (raw.isNullOrBlank()) return ""
+            return raw.trim()
+                .lowercase()
+                .replace('-', '_')
+                .replace(Regex("[^a-z0-9_]"), "")
+                .trim('_')
+                .take(63)
+        }
+
+        fun randomSixDigitCode(): String =
+            Random.nextInt(0, 1_000_000).toString().padStart(6, '0')
     }
 }

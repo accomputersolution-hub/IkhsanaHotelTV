@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
+import java.util.UUID
 
 /**
  * Multi-tenant hotel / room identity for this TV device.
@@ -96,6 +97,20 @@ class HotelConfig(context: Context) {
         Log.d(TAG, "setRoomNumber → $room")
     }
 
+    /** Stable device id for pairing_codes/{code}.deviceId (survives app restarts). */
+    fun getOrCreateDeviceId(): String {
+        val existing = prefs.getString(KEY_DEVICE_ID, null)?.trim()
+        if (!existing.isNullOrBlank() && existing.length >= 16) return existing
+        val created = try {
+            UUID.randomUUID().toString()
+        } catch (_: Exception) {
+            "tv_${System.currentTimeMillis()}_${(1000..9999).random()}"
+        }
+        prefs.edit().putString(KEY_DEVICE_ID, created).apply()
+        Log.d(TAG, "Created deviceId → $created")
+        return created
+    }
+
     init {
         // Migrate hyphenated prefs to underscore form (do not invent a default hotel).
         val raw = prefs.getString(KEY_HOTEL_ID, null)
@@ -123,6 +138,7 @@ class HotelConfig(context: Context) {
         private const val PREFS_NAME = "hotel_tv_config"
         private const val KEY_HOTEL_ID = "hotel_id"
         private const val KEY_ROOM_NUMBER = "room_number"
+        private const val KEY_DEVICE_ID = "device_id"
 
         /**
          * Trim, lowercase, hyphens → underscores.
