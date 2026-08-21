@@ -2,11 +2,11 @@
 <resources>
 
     <!-- Hotel flavor: suppress Android 12+ launcher icon splash so only
-         the in-layout Regenta branding appears on SplashActivity. -->
-    <style name="Theme.IkhsanaHotelTV.Splash" parent="Theme.SplashScreen">
+         the in-layout branding appears on SplashActivity. -->
+    <style name="Theme.PcnCloudTv.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@android:color/black</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_transparent</item>
-        <item name="postSplashScreenTheme">@style/Theme.IkhsanaHotelTV</item>
+        <item name="postSplashScreenTheme">@style/Theme.PcnCloudTv</item>
         <item name="android:windowBackground">@drawable/splash_background</item>
         <item name="android:windowFullscreen">true</item>
     </style>
