@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Solid gold CTA when cart has items; muted when empty (use dining_cta_muted_bg). -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:state_enabled="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/dining_champagne_gold_bright" />
+            <stroke
+                android:width="3dp"
+                android:color="@color/dining_champagne_gold" />
+            <corners android:radius="14dp" />
+        </shape>
+    </item>
+    <item android:state_enabled="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/dining_champagne_gold" />
+            <corners android:radius="14dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/dining_cta_muted" />
+            <stroke
+                android:width="1dp"
+                android:color="#33FFFFFF" />
+            <corners android:radius="14dp" />
+        </shape>
+    </item>
+</selector>
