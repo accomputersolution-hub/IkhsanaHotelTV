@@ -56,7 +56,19 @@ class PremiumHomeActivity : AppCompatActivity() {
             val card = findViewById<MaterialCardView>(id)
             attachFocusScale(card)
             card.setOnClickListener {
-                Toast.makeText(this, getString(labelRes), Toast.LENGTH_SHORT).show()
+                // Order Food / Guest Services → full Compose app for real features.
+                when (id) {
+                    R.id.card_order_food,
+                    R.id.card_guest_services,
+                    -> {
+                        startActivity(
+                            Intent(this, `in`.pcncloud.hotel.MainActivity::class.java).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            },
+                        )
+                    }
+                    else -> Toast.makeText(this, getString(labelRes), Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }

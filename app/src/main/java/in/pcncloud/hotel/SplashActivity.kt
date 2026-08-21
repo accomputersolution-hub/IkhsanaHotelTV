@@ -377,8 +377,14 @@ class SplashActivity : AppCompatActivity() {
         roomListener?.remove()
         roomListener = null
         releaseSplashSurfaces()
+        // Hotel flavor: show premium XML home. Corporate keeps Compose MainActivity.
+        val homeClass = if (BuildConfig.IS_CORPORATE) {
+            MainActivity::class.java
+        } else {
+            `in`.pcncloud.hotel.ui.home.PremiumHomeActivity::class.java
+        }
         startActivity(
-            Intent(this, MainActivity::class.java).apply {
+            Intent(this, homeClass).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             },
         )
