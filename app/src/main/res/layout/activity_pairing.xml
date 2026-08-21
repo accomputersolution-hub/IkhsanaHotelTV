@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  TV pairing: staff enters public hotel slug, TV shows a 6-digit code.
+  Reception claims the code in Admin (Pair Device Code) and binds a room.
+  Guests never type a room number on the TV.
+-->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/pairing_scroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -16,16 +22,16 @@
 
         <LinearLayout
             android:id="@+id/pairing_card"
-            android:layout_width="560dp"
+            android:layout_width="640dp"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:layout_margin="16dp"
             android:background="@drawable/bg_pairing_card"
             android:orientation="vertical"
-            android:paddingLeft="36dp"
-            android:paddingTop="32dp"
-            android:paddingRight="36dp"
-            android:paddingBottom="32dp">
+            android:paddingLeft="40dp"
+            android:paddingTop="36dp"
+            android:paddingRight="40dp"
+            android:paddingBottom="36dp">
 
             <TextView
                 android:id="@+id/pairing_title"
@@ -47,63 +53,127 @@
                 android:textColor="#94A3B8"
                 android:textSize="14sp" />
 
-            <TextView
-                android:id="@+id/pairing_hotel_id_label"
+            <!-- Step 1: public slug -->
+            <LinearLayout
+                android:id="@+id/pairing_slug_section"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:text="@string/pairing_hotel_id_label"
-                android:textColor="#94A3B8"
-                android:textSize="13sp"
-                android:textStyle="bold" />
+                android:orientation="vertical">
 
-            <EditText
-                android:id="@+id/etHotelId"
+                <TextView
+                    android:id="@+id/pairing_hotel_id_label"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="28dp"
+                    android:text="@string/pairing_public_slug_label"
+                    android:textColor="#94A3B8"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <EditText
+                    android:id="@+id/etHotelId"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/bg_pairing_field"
+                    android:hint="@string/pairing_public_slug_hint"
+                    android:imeOptions="actionDone|flagNoExtractUi"
+                    android:inputType="text|textNoSuggestions"
+                    android:maxLines="1"
+                    android:nextFocusDown="@id/btnPair"
+                    android:nextFocusForward="@id/btnPair"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="14dp"
+                    android:singleLine="true"
+                    android:textColor="#F1F5F9"
+                    android:textColorHint="#64748B"
+                    android:textSize="16sp" />
+
+                <Button
+                    android:id="@+id/btnPair"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:background="@drawable/bg_pairing_button"
+                    android:paddingVertical="14dp"
+                    android:text="@string/pairing_generate_code"
+                    android:textAllCaps="false"
+                    android:textColor="#F1F5F9"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- Step 2: show 6-digit code (hidden until generated) -->
+            <LinearLayout
+                android:id="@+id/pairing_code_section"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:background="@drawable/bg_pairing_field"
-                android:hint="@string/pairing_hotel_id_hint"
-                android:imeOptions="actionNext|flagNoExtractUi"
-                android:inputType="text|textNoSuggestions"
-                android:maxLines="1"
-                android:nextFocusDown="@id/etRoomNumber"
-                android:nextFocusForward="@id/etRoomNumber"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
-                android:singleLine="true"
-                android:textColor="#F1F5F9"
-                android:textColorHint="#64748B"
-                android:textSize="16sp" />
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:visibility="gone"
+                tools:visibility="visible">
 
-            <TextView
-                android:id="@+id/pairing_room_label"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="@string/pairing_room_label"
-                android:textColor="#94A3B8"
-                android:textSize="13sp"
-                android:textStyle="bold" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:gravity="center"
+                    android:text="@string/pairing_code_instruction"
+                    android:textColor="#94A3B8"
+                    android:textSize="15sp" />
 
+                <TextView
+                    android:id="@+id/tvPairingCode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:gravity="center"
+                    android:letterSpacing="0.35"
+                    android:textColor="#E8D5A3"
+                    android:textSize="48sp"
+                    android:textStyle="bold"
+                    tools:text="482913" />
+
+                <TextView
+                    android:id="@+id/tvPairingHotelName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center"
+                    android:textColor="#64748B"
+                    android:textSize="13sp"
+                    tools:text="Ikhsana Resort" />
+
+                <TextView
+                    android:id="@+id/tvPairingWaiting"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:gravity="center"
+                    android:text="@string/pairing_waiting"
+                    android:textColor="#94A3B8"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/btnNewCode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:background="@drawable/bg_pairing_button"
+                    android:paddingVertical="14dp"
+                    android:text="@string/pairing_new_code"
+                    android:textAllCaps="false"
+                    android:textColor="#F1F5F9"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- Legacy room field kept gone — room is assigned by reception claim -->
             <EditText
                 android:id="@+id/etRoomNumber"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:background="@drawable/bg_pairing_field"
-                android:hint="@string/pairing_room_hint"
-                android:imeOptions="actionDone|flagNoExtractUi"
-                android:inputType="number"
-                android:maxLines="1"
-                android:nextFocusDown="@id/btnPair"
-                android:nextFocusForward="@id/btnPair"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="14dp"
-                android:singleLine="true"
-                android:textColor="#F1F5F9"
-                android:textColorHint="#64748B"
-                android:textSize="16sp" />
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone" />
 
             <TextView
                 android:id="@+id/tvPairError"
@@ -114,19 +184,6 @@
                 android:textColor="#FB7185"
                 android:textSize="13sp"
                 android:visibility="gone" />
-
-            <Button
-                android:id="@+id/btnPair"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:background="@drawable/bg_pairing_button"
-                android:paddingVertical="14dp"
-                android:text="@string/pairing_submit"
-                android:textAllCaps="false"
-                android:textColor="#F1F5F9"
-                android:textSize="16sp"
-                android:textStyle="bold" />
         </LinearLayout>
     </FrameLayout>
 </ScrollView>
