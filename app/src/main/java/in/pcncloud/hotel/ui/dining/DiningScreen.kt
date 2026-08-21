@@ -399,6 +399,9 @@ private fun MenuItemCard(
         label = "cardScale",
     )
     val shape = RoundedCornerShape(14.dp)
+    val thumbShape = RoundedCornerShape(10.dp)
+    val context = LocalContext.current
+    val imageUrl = item.imageUrl.trim()
     val subtitle = if (canOrder) {
         "₹${item.price.toInt()}"
     } else {
@@ -427,10 +430,28 @@ private fun MenuItemCard(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(thumbShape)
+                    .background(Color.White.copy(alpha = 0.06f), thumbShape)
+                    .border(1.dp, Color.White.copy(alpha = 0.10f), thumbShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (imageUrl.isNotEmpty()) {
+                    AsyncImage(
+                        model = hotelImageRequest(context, imageUrl, "DiningFood"),
+                        contentDescription = item.name,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Text(text = "🍽", fontSize = 22.sp)
+                }
+            }
             VegBadge(isVeg = item.isVeg)
-            Text(text = "🍽", fontSize = 18.sp)
         }
 
         Spacer(modifier = Modifier.height(10.dp))
