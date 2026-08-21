@@ -59,13 +59,8 @@ class HotelTvApplication : Application(), ImageLoaderFactory {
                 val builder = original.newBuilder()
                     .header("User-Agent", CHROME_ANDROID_TV_UA)
                     .header(
-<<<<<<< HEAD
-                        "User-Agent",
-                        "PCNCloudTV/1.0 (Android TV; PCN Cloud IPTV; +https://pcncloud.in)",
-=======
                         "Accept",
                         "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
->>>>>>> origin/cursor/restore-hotel-dining-orders-4bb2
                     )
                     .header("Accept-Language", "en-US,en;q=0.9")
                 if (host == "i.ibb.co" || host == "ibb.co" || host.endsWith(".ibb.co")) {
