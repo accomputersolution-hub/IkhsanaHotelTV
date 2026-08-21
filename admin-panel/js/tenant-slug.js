@@ -1,33 +1,17 @@
 /**
- * Multi-tenant slug from hostname / query string.
- *
- * Production:  ikhsana_001.hostity.in  →  ikhsana_001
- * Localdev:    localhost?hotel=ikhsana_001  →  ikhsana_001
- *
- * Slugs use underscores (matches Firestore Hotels/{hotelId} + Android).
+ * Multi-tenant *public* slug from hostname / query.
+ * Subdomain maps to public_hotels/{slug} — never to Hotels/{docId} directly.
  */
 
-import { DEFAULT_HOTEL_ID, normalizeHotelId } from './firebase-config.js';
+export function normalizePublicSlug(raw) {
+  return String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+    .slice(0, 63);
+}
 
-/** Apex / platform hosts that are NOT a tenant subdomain. */
-export const PLATFORM_ROOT_DOMAINS = Object.freeze([
-  'hostity.in',
-  'www.hostity.in',
-]);
-
-/**
- * Extract the tenant label from a hostname.
- *
- * @param {string} [hostname]
- * @param {{ rootDomain?: string }} [opts]  e.g. { rootDomain: 'hostity.in' }
- * @returns {string|null} normalized hotel slug, or null if apex / localhost / unknown
- *
- * @example
- *   extractTenantSlug('ikhsana_001.hostity.in')     // 'ikhsana_001'
- *   extractTenantSlug('treasure-island.hostity.in') // 'treasure_island'
- *   extractTenantSlug('localhost')                  // null
- *   extractTenantSlug('hostity.in')                 // null
- */
 export function extractTenantSlug(hostname = getWindowHostname(), opts = {}) {
   const rootDomain = String(opts.rootDomain || 'hostity.in')
     .trim()
@@ -37,11 +21,10 @@ export function extractTenantSlug(hostname = getWindowHostname(), opts = {}) {
   const host = String(hostname || '')
     .trim()
     .toLowerCase()
-    .split(':')[0]; // strip port
+    .split(':')[0];
 
   if (!host) return null;
 
-  // Local / loopback — no subdomain tenant
   if (
     host === 'localhost' ||
     host === '127.0.0.1' ||
@@ -53,36 +36,20 @@ export function extractTenantSlug(hostname = getWindowHostname(), opts = {}) {
     return null;
   }
 
-  // Apex + www of the SaaS domain
-  if (host === rootDomain || host === `www.${rootDomain}`) {
-    return null;
-  }
+  if (host === rootDomain || host === `www.${rootDomain}`) return null;
+  if (host.endsWith('.vercel.app')) return null;
 
-  // *.hostity.in → leftmost label is the hotel slug
   const suffix = `.${rootDomain}`;
   if (host.endsWith(suffix)) {
     const sub = host.slice(0, -suffix.length);
-    const label = sub.split('.').filter(Boolean)[0]; // ignore nested preview labels
+    const label = sub.split('.').filter(Boolean)[0];
     if (!label || label === 'www') return null;
-    return normalizeHotelId(label);
-  }
-
-  // Vercel preview / project URLs are not hotel tenants
-  if (host.endsWith('.vercel.app')) {
-    return null;
+    return normalizePublicSlug(label);
   }
 
   return null;
 }
 
-/**
- * Resolve hotel slug from the current page location.
- * Priority: subdomain → ?hotel= / ?hotelId= / ?tenant= → optional default.
- *
- * @param {Location|{hostname?:string,search?:string}} [location]
- * @param {{ rootDomain?: string, fallback?: string|null, useDefaultOnLocal?: boolean }} [opts]
- * @returns {string|null}
- */
 export function resolveTenantSlugFromLocation(location = getWindowLocation(), opts = {}) {
   const fromHost = extractTenantSlug(location?.hostname, opts);
   if (fromHost) return fromHost;
@@ -90,21 +57,13 @@ export function resolveTenantSlugFromLocation(location = getWindowLocation(), op
   const search = location?.search || '';
   const params = new URLSearchParams(search.startsWith('?') ? search : `?${search}`);
   const fromQuery =
+    params.get('slug') ||
+    params.get('public_slug') ||
     params.get('hotel') ||
-    params.get('hotelId') ||
-    params.get('hotel_id') ||
     params.get('tenant');
-  if (fromQuery) return normalizeHotelId(fromQuery);
+  if (fromQuery) return normalizePublicSlug(fromQuery);
 
-  if (opts.fallback != null && opts.fallback !== '') {
-    return normalizeHotelId(opts.fallback);
-  }
-
-  // Local-only convenience: use DEFAULT_HOTEL_ID when explicitly enabled
-  if (opts.useDefaultOnLocal && isLocalHostname(location?.hostname)) {
-    return DEFAULT_HOTEL_ID;
-  }
-
+  if (opts.fallback) return normalizePublicSlug(opts.fallback);
   return null;
 }
 

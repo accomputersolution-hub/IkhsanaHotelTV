@@ -1,50 +1,171 @@
 rules_version = '2';
 
-// Example Firestore security rules — multi-tenant master admin
-// Copy to Firebase Console → Firestore → Rules
+// Hostity multi-tenant Firestore rules
+// Copy into Firebase Console → Firestore → Rules (then publish).
 //
-// ⚠️  DEV ONLY — tighten with Auth custom claims / users/{uid} checks for production.
+// Architecture:
+//   public_hotels/{publicSlug}     → anonymous read (name, logo, theme only)
+//   Hotels/{hotelId}               → staff Auth only (full property record)
+//   Hotels/{hotelId}/Rooms/**      → staff OR paired room context (Custom Claims)
+//   Hotels/{hotelId}/pairing_codes → kiosk creates pending codes; staff claims
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSuperAdmin() {
+      return signedIn() && userDoc().role == 'super_admin';
+    }
+
+    function isHotelStaff(hotelId) {
+      return signedIn()
+        && (isSuperAdmin()
+            || (userDoc().role == 'hotel_admin' && userDoc().hotelId == hotelId)
+            || (request.auth.token.hotelId == hotelId));
+    }
+
+    // Paired kiosk: set Custom Claims { hotelId, roomNumber, deviceId } via Admin SDK
+    // after reception claims the pairing code. Until then, room data stays closed.
+    function isPairedRoom(hotelId, roomNumber) {
+      return signedIn()
+        && request.auth.token.hotelId == hotelId
+        && request.auth.token.roomNumber == roomNumber;
+    }
+
+    function publicHotelKeys() {
+      return [
+        'hotelId', 'hotel_id', 'name', 'logoUrl', 'logo_url',
+        'themeColor', 'bgWallpaper', 'bg_wallpaper',
+        'property_type', 'status', 'updatedAt', 'createdAt'
+      ];
+    }
+
+    // ── Public directory (safe for subdomain bootstrap) ───────────────────
+    // Doc id = marketing slug (e.g. "ikhsana"), NOT the internal hotelId.
+    match /public_hotels/{publicSlug} {
+      allow get, list: if true;
+      allow create, update: if isSuperAdmin()
+        || (isHotelStaff(request.resource.data.hotelId)
+            && request.resource.data.keys().hasOnly(publicHotelKeys()));
+      allow delete: if isSuperAdmin();
+    }
+
+    // ── Private hotel tenant ──────────────────────────────────────────────
+    match /Hotels/{hotelId} {
+      // Full hotel docs are staff-only (admin email, packages, kiosk flags, …)
+      allow read: if isHotelStaff(hotelId);
+      allow write: if isHotelStaff(hotelId);
+
+      match /Rooms/{roomNumber} {
+        allow read: if isHotelStaff(hotelId) || isPairedRoom(hotelId, roomNumber);
+        allow create, update, delete: if isHotelStaff(hotelId);
+        // Paired TV may update limited session fields only (optional tighten):
+        allow update: if isPairedRoom(hotelId, roomNumber)
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['lastSeenAt', 'deviceId', 'sessionKey']);
+      }
+
+      match /Menu/{itemId} {
+        // Menu can be public-read for kiosk browse after pairing, or staff-only.
+        // Prefer paired OR staff:
+        allow read: if isHotelStaff(hotelId) || request.auth.token.hotelId == hotelId;
+        allow write: if isHotelStaff(hotelId);
+      }
+
+      match /Alerts/{alertId} {
+        allow read: if isHotelStaff(hotelId)
+          || (isPairedRoom(hotelId, resource.data.roomNumber));
+        allow write: if isHotelStaff(hotelId)
+          || (isPairedRoom(hotelId, request.resource.data.roomNumber)
+              && request.resource.data.keys().hasAny(['type', 'message', 'roomNumber']));
+      }
+
+      match /Broadcasts/{id} {
+        allow read: if isHotelStaff(hotelId) || request.auth.token.hotelId == hotelId;
+        allow write: if isHotelStaff(hotelId);
+      }
+
+      match /Requests/{id} {
+        allow read: if isHotelStaff(hotelId)
+          || (isPairedRoom(hotelId, resource.data.roomNumber));
+        allow create: if isHotelStaff(hotelId)
+          || (isPairedRoom(hotelId, request.resource.data.roomNumber));
+        allow update, delete: if isHotelStaff(hotelId);
+      }
+
+      match /Config/{docId} {
+        allow read: if isHotelStaff(hotelId) || request.auth.token.hotelId == hotelId;
+        allow write: if isHotelStaff(hotelId);
+      }
+
+      match /Emergency_Contacts/{id} {
+        allow read: if isHotelStaff(hotelId) || request.auth.token.hotelId == hotelId;
+        allow write: if isHotelStaff(hotelId);
+      }
+
+      match /Daily_Agenda/{id} {
+        allow read: if isHotelStaff(hotelId) || request.auth.token.hotelId == hotelId;
+        allow write: if isHotelStaff(hotelId);
+      }
+
+      // ── Device pairing codes (6-digit) ───────────────────────────────────
+      // Kiosk (unauthenticated) may CREATE a pending code for itself.
+      // Anyone who knows the code may GET it (secret-by-obscurity + TTL).
+      // LIST is denied to prevent enumeration. Staff CLAIM (update) the code.
+      match /pairing_codes/{code} {
+        allow get: if true;
+        allow list: if false;
+
+        allow create: if code.matches('^[0-9]{6}$')
+          && request.resource.data.hotelId == hotelId
+          && request.resource.data.status == 'pending'
+          && request.resource.data.roomNumber == null
+          && request.resource.data.deviceId is string
+          && request.resource.data.deviceId.size() >= 16
+          && request.resource.data.keys().hasAll([
+              'code', 'hotelId', 'deviceId', 'status', 'expiresAt'
+            ]);
+
+        allow update: if isHotelStaff(hotelId)
+          && resource.data.status == 'pending'
+          && request.resource.data.status == 'claimed'
+          && request.resource.data.roomNumber is string
+          && request.resource.data.roomNumber.size() > 0;
+
+        allow delete: if isHotelStaff(hotelId)
+          || (resource.data.deviceId is string
+              && resource.data.status == 'claimed');
+      }
+    }
+
     match /users/{userId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if signedIn() && (request.auth.uid == userId || isSuperAdmin());
+      allow write: if isSuperAdmin()
+        || (signedIn() && request.auth.uid == userId
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'hotelId']));
     }
 
     match /Live_Orders/{orderId} {
-      allow read, write: if true;
+      allow read: if isHotelStaff(resource.data.hotelId)
+        || (signedIn()
+            && request.auth.token.hotelId == resource.data.hotelId
+            && request.auth.token.roomNumber == resource.data.roomNumber);
+      allow create: if isHotelStaff(request.resource.data.hotelId)
+        || (signedIn()
+            && request.auth.token.hotelId == request.resource.data.hotelId
+            && request.auth.token.roomNumber == request.resource.data.roomNumber);
+      allow update, delete: if isHotelStaff(resource.data.hotelId);
     }
 
-    // Hotel registry + tenant subcollections (keep name "Hotels" for Android sync)
-    match /Hotels/{hotelId} {
-      allow read, write: if true;
-
-      match /Rooms/{roomNumber} {
-        allow read, write: if true;
-      }
-      match /Menu/{itemId} {
-        allow read, write: if true;
-      }
-      match /Alerts/{alertId} {
-        allow read, write: if true;
-      }
-      match /Broadcasts/{id} {
-        allow read, write: if true;
-      }
-      match /Requests/{id} {
-        allow read, write: if true;
-      }
-      match /Config/{docId} {
-        allow read, write: if true;
-      }
-      match /Emergency_Contacts/{id} {
-        allow read, write: if true;
-      }
-      match /Daily_Agenda/{id} {
-        allow read, write: if true;
-      }
+    match /staff_users/{uid} {
+      allow read, write: if false; // RTDB holds operational roles; keep Firestore locked
     }
   }
 }

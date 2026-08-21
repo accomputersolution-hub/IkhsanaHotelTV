@@ -1,48 +1,62 @@
-# Kiosk web — subdomain tenant bootstrap (React + Firebase)
+# Secure multi-tenant kiosk (public slug + device pairing)
 
-Users open **`https://{hotel_slug}.hostity.in`**. The app:
+## Why not `Hotels/{subdomain}`?
 
-1. Extracts `{hotel_slug}` from `window.location.hostname`
-2. Loads Firestore **`Hotels/{hotel_slug}`**
-3. Shows a loading screen, then branding — or an error if the hotel is missing
+Using the Firestore document id as the subdomain is an **IDOR** risk: anyone who
+guesses `ikhsana_001.hostity.in` can probe your private hotel id space, and a
+direct `get(Hotels/{id})` often returns sensitive fields.
 
-Localdev fallback: `http://localhost:5173/?hotel=ikhsana_001`
+## Secure flow
 
-## Files
+1. **Subdomain** `ikhsana.hostity.in` → public slug `ikhsana`
+2. **Read** `public_hotels/ikhsana` (name, logo, theme, wallpaper, internal `hotelId`)
+3. **Pairing** — kiosk shows a random **6-digit code** (no room number typed on device)
+4. **Reception** claims the code in Admin → binds `roomNumber`
+5. **Custom Claims** (Cloud Function, recommended) mint `{ hotelId, roomNumber, deviceId }` so Security Rules can allow room-scoped reads
 
-| File | Purpose |
-|------|---------|
-| `src/lib/extractSubdomain.js` | Pure hostname / query → slug |
-| `src/hooks/useHotelTenant.js` | React hook + Firestore fetch |
-| `src/components/HotelTenantGate.jsx` | Loading + error + ready gate |
-| `src/App.example.jsx` | Drop-in usage example |
+```
+public_hotels/{publicSlug}          ← anonymous read (branding only)
+Hotels/{hotelId}/                   ← staff only
+Hotels/{hotelId}/Rooms/{room}       ← staff OR paired device claims
+Hotels/{hotelId}/pairing_codes/{6}  ← kiosk create; staff claim
+```
 
-## Usage
+## React usage
 
 ```jsx
 import { HotelTenantGate } from './components/HotelTenantGate.jsx';
 
-<HotelTenantGate db={db} rootDomain="hostity.in" useDefaultOnLocal>
-  {(hotel) => <KioskApp hotel={hotel} />}
+<HotelTenantGate db={db} rootDomain="hostity.in">
+  {(hotel, session) => (
+    <KioskApp hotel={hotel} roomNumber={session.roomNumber} />
+  )}
 </HotelTenantGate>
 ```
 
-Or the hook alone:
+Local: `http://localhost:5173/?slug=ikhsana`
 
-```jsx
-const { status, hotel, slug, error, reload } = useHotelTenant({ db });
+## Files
+
+| File | Role |
+|------|------|
+| `src/lib/extractSubdomain.js` | Public slug from hostname |
+| `src/lib/fetchPublicHotelConfig.js` | `public_hotels/{slug}` fetch |
+| `src/hooks/useHotelTenant.js` | Loading / not_found / ready |
+| `src/hooks/useDevicePairing.js` | 6-digit code + listen for claim |
+| `src/components/DevicePairingScreen.jsx` | Pairing UI |
+| `src/components/HotelTenantGate.jsx` | Public config + pairing gate |
+| `admin-panel/firestore.rules.example` | Production-oriented rules |
+
+## Custom Claims (after claim)
+
+Use a callable Cloud Function when staff claims a code:
+
+```js
+await admin.auth().setCustomUserClaims(deviceAuthUid, {
+  hotelId,
+  roomNumber,
+  deviceId,
+});
 ```
 
-## Hook states
-
-| `status` | Meaning |
-|----------|---------|
-| `loading` | Fetching `Hotels/{slug}` |
-| `ready` | Hotel found — use `hotel.logoUrl`, `themeColor`, `bgWallpaper` |
-| `not_found` | Slug resolved but no Firestore doc |
-| `missing_slug` | Apex / localhost without `?hotel=` |
-| `error` | Network / Firebase failure |
-
-## DNS note
-
-Point `*.hostity.in` (wildcard) at your Vercel project so every hotel slug resolves without adding each subdomain manually. See Vercel multi-tenant wildcard docs.
+Anonymous Auth + claims, or a short-lived custom token issued to the kiosk after claim, is the cleanest way to satisfy `isPairedRoom()` in the rules file.

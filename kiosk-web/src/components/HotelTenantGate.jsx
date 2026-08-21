@@ -1,8 +1,8 @@
+import { useState } from 'react';
 import { useHotelTenant } from '../hooks/useHotelTenant.js';
+import { readDeviceSession } from '../hooks/useDevicePairing.js';
+import { DevicePairingScreen } from './DevicePairingScreen.jsx';
 
-/**
- * Full-screen loading while Hotels/{slug} is fetched from Firestore.
- */
 export function TenantLoadingScreen({ slug }) {
   return (
     <div
@@ -48,9 +48,6 @@ export function TenantLoadingScreen({ slug }) {
   );
 }
 
-/**
- * Fallback when slug is missing or Hotels/{slug} does not exist.
- */
 export function TenantErrorScreen({ status, slug, error, onRetry }) {
   const title =
     status === 'not_found'
@@ -62,8 +59,8 @@ export function TenantErrorScreen({ status, slug, error, onRetry }) {
   const detail =
     error ||
     (status === 'not_found'
-      ? `No document at Hotels/${slug || '…'} in Firestore.`
-      : 'Open a tenant URL like https://ikhsana_001.hostity.in');
+      ? `No public_hotels/${slug || '…'} document.`
+      : 'Open https://{slug}.hostity.in');
 
   return (
     <div
@@ -95,7 +92,7 @@ export function TenantErrorScreen({ status, slug, error, onRetry }) {
         <p style={{ marginTop: 12, lineHeight: 1.5, color: '#94A3B8' }}>{detail}</p>
         {slug ? (
           <p style={{ marginTop: 8, fontSize: 13, color: '#64748B' }}>
-            Slug: <code style={{ color: '#E8D5A3' }}>{slug}</code>
+            Public slug: <code style={{ color: '#E8D5A3' }}>{slug}</code>
           </p>
         ) : null}
         {typeof onRetry === 'function' ? (
@@ -122,18 +119,16 @@ export function TenantErrorScreen({ status, slug, error, onRetry }) {
 }
 
 /**
- * Gate children until the hotel tenant is ready.
+ * 1) Load public branding by subdomain slug (`public_hotels/{slug}`)
+ * 2) Require 6-digit device pairing before rendering children
  *
- * @example
- *   <HotelTenantGate db={db}>
- *     {(hotel) => <KioskApp hotel={hotel} />}
- *   </HotelTenantGate>
+ * children(hotel, session)
  */
 export function HotelTenantGate({
   db,
   rootDomain = 'hostity.in',
   fallback = null,
-  useDefaultOnLocal = true,
+  requirePairing = true,
   children,
   loadingScreen,
   errorScreen,
@@ -142,7 +137,7 @@ export function HotelTenantGate({
     db,
     rootDomain,
     fallback,
-    useDefaultOnLocal,
+    useDefaultOnLocal: false,
   });
 
   if (tenant.status === 'loading') {
@@ -162,9 +157,38 @@ export function HotelTenantGate({
     );
   }
 
-  if (typeof children === 'function') {
-    return children(tenant.hotel, tenant);
+  if (requirePairing) {
+    return (
+      <PairedHotelShell db={db} hotel={tenant.hotel}>
+        {children}
+      </PairedHotelShell>
+    );
   }
 
+  if (typeof children === 'function') {
+    return children(tenant.hotel, null);
+  }
+  return children;
+}
+
+function PairedHotelShell({ db, hotel, children }) {
+  const [session, setSession] = useState(() => {
+    const existing = readDeviceSession();
+    return existing?.hotelId === hotel.hotelId ? existing : null;
+  });
+
+  if (!session) {
+    return (
+      <DevicePairingScreen
+        db={db}
+        hotel={hotel}
+        onPaired={(next) => setSession(next)}
+      />
+    );
+  }
+
+  if (typeof children === 'function') {
+    return children(hotel, session);
+  }
   return children;
 }
