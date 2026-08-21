@@ -6,16 +6,24 @@ import { isSuperAdmin } from './auth.js';
 import { isCorporateProperty, onHotelMetaChange } from './tenant-context.js';
 import { applyHelpdeskChrome } from './emergency-contacts.js';
 import { applyAgendaChrome } from './daily-agenda.js';
+import {
+  applyRbacNavChrome,
+  canAccessModule,
+  resolveAllowedModule,
+  getDefaultModuleForRole,
+} from './rbac.js';
 
 const MODULES = {
-  pms: { label: 'Room & Guest PMS', title: 'Room & Guest PMS' },
-  kds: { label: 'Kitchen KDS', title: 'Kitchen Display System' },
-  menu: { label: 'Digital Menu Config', title: 'Digital Menu Configuration' },
+  pms: { label: 'Room Status', title: 'Room & Guest PMS' },
+  kds: { label: 'Food Orders', title: 'Kitchen Display System' },
+  menu: { label: 'Menu Management', title: 'Digital Menu Configuration' },
   messaging: { label: 'TV Mass Messaging', title: 'TV Mass Messaging' },
-  housekeeping: { label: 'Housekeeping Queue', title: 'Housekeeping Queue' },
+  housekeeping: { label: 'Housekeeping', title: 'Housekeeping Queue' },
   agenda: { label: 'Daily Agenda', title: "Today's Agenda" },
   concierge: { label: 'Travel & Concierge', title: 'Travel & Concierge' },
   analytics: { label: 'Executive Analytics', title: 'Executive Analytics' },
+  billing: { label: 'Billing', title: 'Billing' },
+  staff: { label: 'Staff Management', title: 'Staff Management' },
 };
 
 function moduleTitle(id) {
@@ -47,20 +55,22 @@ export function initNavigation() {
     console.error('[nav] agenda chrome failed', err);
   }
   applyCorporateNavChrome();
+  applyRbacNavChrome();
 
   try {
     if (activeModule === 'agenda' && !isCorporateProperty()) {
-      activeModule = 'pms';
+      activeModule = getDefaultModuleForRole();
     }
     if (isCorporateProperty() && (activeModule === 'concierge' || activeModule === 'analytics')) {
-      activeModule = 'pms';
+      activeModule = getDefaultModuleForRole();
     }
+    activeModule = resolveAllowedModule(activeModule);
     showModule(activeModule);
   } catch (err) {
     console.error('[nav] showModule failed', err);
-    activeModule = 'pms';
+    activeModule = getDefaultModuleForRole();
     try {
-      showModule('pms');
+      showModule(activeModule);
     } catch (_) {
       /* ignore */
     }
@@ -78,15 +88,22 @@ export function initNavigation() {
       console.error('[nav] agenda chrome failed', err);
     }
     applyCorporateNavChrome();
+    applyRbacNavChrome();
     try {
       if (activeModule === 'agenda' && !isCorporateProperty()) {
-        showModule('pms');
-        navigateTo('/pms/pms');
+        showModule(getDefaultModuleForRole());
+        navigateTo(`/pms/${getDefaultModuleForRole()}`);
         return;
       }
       if (isCorporateProperty() && (activeModule === 'concierge' || activeModule === 'analytics')) {
-        showModule('pms');
-        navigateTo('/pms/pms');
+        showModule(getDefaultModuleForRole());
+        navigateTo(`/pms/${getDefaultModuleForRole()}`);
+        return;
+      }
+      if (!canAccessModule(activeModule)) {
+        const next = getDefaultModuleForRole();
+        showModule(next);
+        navigateTo(`/pms/${next}`);
         return;
       }
       if (activeModule === 'kds' || activeModule === 'housekeeping') {
@@ -122,12 +139,16 @@ export function applyCorporateNavChrome() {
 
 export function showModule(id) {
   if (id === 'agenda' && !isCorporateProperty()) {
-    id = 'pms';
+    id = getDefaultModuleForRole();
   }
   if (isCorporateProperty() && (id === 'concierge' || id === 'analytics')) {
-    id = 'pms';
+    id = getDefaultModuleForRole();
   }
+  id = resolveAllowedModule(id);
   if (!MODULES[id]) return;
+  if (!canAccessModule(id)) {
+    id = getDefaultModuleForRole();
+  }
   activeModule = id;
   localStorage.setItem('activeModule', id);
 

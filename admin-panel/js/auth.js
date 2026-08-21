@@ -10,13 +10,15 @@ import {
   setDoc,
   serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
-import { db, auth, secondaryAuth } from './firebase-config.js';
+import { db, auth, secondaryAuth, rtdb } from './firebase-config.js';
 import {
   TenantManager,
   setAssignedHotel,
   clearHotelContext,
   getHotelId,
 } from './tenant-context.js';
+import { ref, get, set } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js';
+import { normalizeStaffRole } from './rbac-roles.js';
 
 export { auth };
 
@@ -120,6 +122,7 @@ async function loadUserProfile(user) {
       email: data.email || user.email || '',
       displayName: data.displayName || '',
       uid: user.uid,
+      staffRole: normalizeStaffRole(data.staffRole || data.operationalRole) || null,
     };
     return currentProfile;
   } catch (err) {
@@ -142,17 +145,76 @@ function withTimeout(promise, ms, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+/**
+ * Load staff_users/{uid} from Realtime Database (operational RBAC role).
+ * @returns {Promise<{role:string,hotelId?:string,displayName?:string,email?:string}|null>}
+ */
+async function loadStaffUserRecord(uid) {
+  if (!uid) return null;
+  try {
+    const snap = await get(ref(rtdb, `staff_users/${uid}`));
+    if (!snap.exists()) return null;
+    const data = snap.val() || {};
+    return {
+      role: normalizeStaffRole(data.role) || null,
+      hotelId: data.hotelId || data.hotel_id || '',
+      displayName: data.displayName || data.name || '',
+      email: data.email || '',
+      raw: data,
+    };
+  } catch (err) {
+    console.error('[auth] loadStaffUserRecord failed', err);
+    return null;
+  }
+}
+
+/** Merge RTDB staff role into the in-memory profile used by RBAC. */
+async function attachStaffRole(user) {
+  if (!user?.uid || !currentProfile) return currentProfile;
+  const staff = await loadStaffUserRecord(user.uid);
+  if (!staff) {
+    // Property admins without a staff_users node keep full admin module access.
+    if (currentProfile.role === 'hotel_admin' && !currentProfile.staffRole) {
+      currentProfile.staffRole = 'admin';
+    }
+    return currentProfile;
+  }
+
+  if (staff.role) currentProfile.staffRole = staff.role;
+  if (staff.hotelId && !currentProfile.hotelId) {
+    currentProfile.hotelId = staff.hotelId;
+  }
+  if (staff.displayName && !currentProfile.displayName) {
+    currentProfile.displayName = staff.displayName;
+  }
+
+  // Staff-only accounts (no Firestore role yet) still need PMS access.
+  if (
+    staff.role &&
+    (!currentProfile.role || currentProfile.role === 'unknown') &&
+    (staff.hotelId || currentProfile.hotelId)
+  ) {
+    currentProfile.role = 'hotel_admin';
+  }
+
+  return currentProfile;
+}
+
 /** Authenticated session bind. Super Admin skips all property binding. */
 async function loadAuthenticatedSession(user) {
   await loadUserProfile(user);
+  await attachStaffRole(user);
 
   // Super Admin is not tied to a single property — never bind hotel / property_type.
   if (currentProfile?.role === 'super_admin') {
     return currentProfile;
   }
 
-  // Property admins only: bind their assigned hotel (property_type comes later from Hotels/{id}).
-  if (currentProfile?.role === 'hotel_admin' && currentProfile?.hotelId) {
+  // Property admins / staff: bind their assigned hotel (property_type comes later from Hotels/{id}).
+  if (
+    (currentProfile?.role === 'hotel_admin' || normalizeStaffRole(currentProfile?.staffRole)) &&
+    currentProfile?.hotelId
+  ) {
     setAssignedHotel(currentProfile.hotelId, { name: currentProfile.hotelId });
   }
   return currentProfile;
@@ -301,16 +363,36 @@ export async function logout() {
  * Creates Auth user + users/{uid} with role hotel_admin + hotelId
  * without signing out the current Super Admin (uses secondaryAuth).
  */
-export async function createHotelAdminAccount({ email, password, hotelId, displayName }) {
+export async function createHotelAdminAccount({
+  email,
+  password,
+  hotelId,
+  displayName,
+  staffRole = 'admin',
+}) {
   const cred = await createUserWithEmailAndPassword(secondaryAuth, email.trim(), password);
   const uid = cred.user.uid;
+  const opsRole = normalizeStaffRole(staffRole) || 'admin';
   await setDoc(doc(db, 'users', uid), {
     role: 'hotel_admin',
     hotelId,
     email: email.trim(),
     displayName: displayName || '',
+    staffRole: opsRole,
     createdAt: serverTimestamp(),
   });
+  // Mirror operational role for RBAC (staff_users/{uid}/role).
+  try {
+    await set(ref(rtdb, `staff_users/${uid}`), {
+      role: opsRole,
+      hotelId,
+      email: email.trim(),
+      displayName: displayName || '',
+      createdAt: Date.now(),
+    });
+  } catch (err) {
+    console.warn('[auth] staff_users mirror failed (Firestore admin still created)', err);
+  }
   await signOut(secondaryAuth);
   return uid;
 }

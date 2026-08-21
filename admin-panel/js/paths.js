@@ -37,6 +37,9 @@ export const paths = {
   /** RTDB TV ticker — hotel_settings/{hotelId}/global_announcement */
   rtdbAnnouncement: (hotelId = getHotelId()) =>
     `hotel_settings/${normalizeHotelId(hotelId)}/global_announcement`,
+  /** RTDB staff RBAC — staff_users/{uid}/role */
+  rtdbStaffUser: (uid) => `staff_users/${uid}`,
+  rtdbStaffUsers: () => 'staff_users',
 };
 
 export function logFirestoreWrite(label, docPath, payload) {

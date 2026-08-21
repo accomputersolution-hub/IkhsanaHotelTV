@@ -9,6 +9,14 @@ import { initDailyAgenda } from './daily-agenda.js';
 import { initAnnouncement } from './announcement.js';
 import { initAnalytics } from './analytics.js';
 import { initNavigation, showModule, setHotelChromeVisible } from './navigation.js';
+import { initStaffManagement } from './staff.js';
+import {
+  canAccessPropertyPms,
+  getDefaultModuleForRole,
+  resolveAllowedModule,
+  applyRbacNavChrome,
+  getOperationalRole,
+} from './rbac.js';
 import {
   initAuth,
   loginWithEmail,
@@ -153,8 +161,8 @@ function handleInactiveForCurrentUser(status) {
     return false;
   }
 
-  // Hotel admins are hard-blocked from PMS.
-  if (profile?.role === 'hotel_admin') {
+  // Hotel admins / staff are hard-blocked from PMS.
+  if (canAccessPropertyPms(profile)) {
     showShell('pms');
     setHotelChromeVisible(true);
     showDeactivatedGate(true, label);
@@ -253,13 +261,13 @@ async function applyRoute(route) {
       showShell('pms');
       setHotelChromeVisible(true);
       ensurePmsInited();
-      showModule(getModuleFromRoute());
+      showModule(resolveAllowedModule(getModuleFromRoute()));
       updateImpersonationBanner();
       return;
     }
 
-    // ── Property / hotel admin: bind hotel + property_type via Hotels/{id} ──
-    if (profile.role === 'hotel_admin') {
+    // ── Property admin / staff (RTDB staff_users role) ──
+    if (canAccessPropertyPms(profile)) {
       stopSuperAdminListeners();
       if (!hasHotelContext() && profile?.hotelId) {
         setAssignedHotel(profile.hotelId, { name: profile.hotelId });
@@ -283,7 +291,7 @@ async function applyRoute(route) {
             showShell('pms');
             setHotelChromeVisible(true);
             ensurePmsInited();
-            showModule(getModuleFromRoute());
+            showModule(resolveAllowedModule(getModuleFromRoute()));
           }
         }
       });
@@ -296,7 +304,8 @@ async function applyRoute(route) {
       showShell('pms');
       setHotelChromeVisible(true);
       ensurePmsInited();
-      showModule(getModuleFromRoute());
+      applyRbacNavChrome();
+      showModule(resolveAllowedModule(getModuleFromRoute()));
       document.getElementById('impersonation-bar')?.classList.add('hidden');
       document.getElementById('pms-impersonate-wrap')?.classList.add('hidden');
       return;
@@ -340,6 +349,7 @@ function ensurePmsInited() {
     ['announcement', initAnnouncement],
     ['concierge', initConcierge],
     ['analytics', initAnalytics],
+    ['staff', initStaffManagement],
   ];
 
   for (const [name, init] of steps) {
@@ -388,8 +398,10 @@ function setupLoginForm() {
         return;
       }
 
-      if (profile?.role === 'hotel_admin') {
-        navigateTo('/pms');
+      if (canAccessPropertyPms(profile)) {
+        const home = getDefaultModuleForRole(profile);
+        console.info('[rbac] signed in as', getOperationalRole(profile), '→', home);
+        navigateTo(`/pms/${home}`);
         await applyRoute(getRoute());
         return;
       }
