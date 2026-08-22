@@ -69,7 +69,7 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
-import `in`.pcncloud.hotel.integration.OnyxIptvLauncher
+import `in`.pcncloud.hotel.integration.LiveTvLauncher
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.BaseScreen
 import `in`.pcncloud.hotel.ui.components.BroadcastAlertOverlay
@@ -240,7 +240,7 @@ fun HomeScreen(
                         onCardFocused = { lastFocusedCard = it },
                         onLiveTv = {
                             lastFocusedCard = HomeNavCard.LiveTv
-                            OnyxIptvLauncher.launch(context)
+                            LiveTvLauncher.launch(context)
                         },
                         onEntertainment = {
                             lastFocusedCard = HomeNavCard.Entertainment
