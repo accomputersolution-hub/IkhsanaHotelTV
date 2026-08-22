@@ -131,6 +131,8 @@ function startHotelStatusWatch(hotelId, onStatus) {
         bgWallpaper: data?.branding?.bgWallpaper || data?.bgWallpaper || '',
         branding: data?.branding || {},
         property_type: data?.property_type || data?.propertyType || 'hotel',
+        public_slug: data?.public_slug || data?.publicSlug || '',
+        publicSlug: data?.public_slug || data?.publicSlug || '',
       });
       onStatus?.(status, data);
     },

@@ -20,7 +20,6 @@ import `in`.pcncloud.hotel.kiosk.HotelSessionManager
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
-import com.google.firebase.firestore.SetOptions
 import kotlin.random.Random
 
 /**
@@ -277,6 +276,7 @@ class PairingActivity : AppCompatActivity() {
         codeListener?.remove()
         codeListener = null
 
+        val previousCode = activeCode
         val code = randomSixDigitCode()
         activeCode = code
         val expiresAt = System.currentTimeMillis() + CODE_TTL_MS
@@ -290,33 +290,49 @@ class PairingActivity : AppCompatActivity() {
             "roomNumber" to null,
             "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
             "expiresAt" to expiresAt,
+            "ttlMs" to CODE_TTL_MS,
             "claimedAt" to null,
             "claimedBy" to null,
         )
 
         Log.i(TAG, "Creating pairing code $code → Hotels/$resolvedHotelId/pairing_codes/$code")
 
-        FirebaseFirestore.getInstance()
-            .collection(FirestorePaths.HOTELS)
+        val db = FirebaseFirestore.getInstance()
+        val newRef = db.collection(FirestorePaths.HOTELS)
             .document(resolvedHotelId)
             .collection(PAIRING_CODES)
             .document(code)
-            .set(payload, SetOptions.merge())
-            .addOnSuccessListener {
-                runOnUiThread {
-                    if (isFinishing || isDestroyed) return@runOnUiThread
-                    showCodeStep(code)
-                    attachCodeListener(code, expiresAt)
-                    pairingInFlight = false
+
+        // Remove stale code doc so the same 6 digits cannot collide with an expired entry.
+        fun writeNewCode() {
+            newRef.set(payload)
+                .addOnSuccessListener {
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        showCodeStep(code)
+                        attachCodeListener(code, expiresAt)
+                        pairingInFlight = false
+                    }
                 }
-            }
-            .addOnFailureListener { error ->
-                runOnUiThread {
-                    if (isFinishing || isDestroyed) return@runOnUiThread
-                    Log.e(TAG, "Failed to write pairing code", error)
-                    resetSlugButton(error.message ?: "Could not create pairing code")
+                .addOnFailureListener { error ->
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        Log.e(TAG, "Failed to write pairing code", error)
+                        resetSlugButton(error.message ?: "Could not create pairing code")
+                    }
                 }
-            }
+        }
+
+        if (previousCode.isNotBlank() && previousCode != code) {
+            db.collection(FirestorePaths.HOTELS)
+                .document(resolvedHotelId)
+                .collection(PAIRING_CODES)
+                .document(previousCode)
+                .delete()
+                .addOnCompleteListener { writeNewCode() }
+        } else {
+            writeNewCode()
+        }
     }
 
     private fun attachCodeListener(code: String, expiresAt: Long) {
@@ -350,7 +366,6 @@ class PairingActivity : AppCompatActivity() {
             val status = data["status"] as? String ?: "pending"
             val roomNumber = (data["roomNumber"] as? String)?.trim().orEmpty()
             val boundDevice = data["deviceId"] as? String
-            val docExpires = (data["expiresAt"] as? Number)?.toLong() ?: expiresAt
 
             if (!boundDevice.isNullOrBlank() && boundDevice != deviceId) {
                 runOnUiThread {
@@ -361,7 +376,7 @@ class PairingActivity : AppCompatActivity() {
                 return@addSnapshotListener
             }
 
-            if (status != "claimed" && docExpires < System.currentTimeMillis()) {
+            if (status != "claimed" && isCodeExpired(data, expiresAt)) {
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed) {
                         showError(getString(R.string.pairing_code_expired))
@@ -377,6 +392,15 @@ class PairingActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun isCodeExpired(data: Map<String, Any?>, fallbackExpiresAt: Long): Boolean {
+        val createdAt = (data["createdAt"] as? com.google.firebase.Timestamp)?.toDate()?.time
+        if (createdAt != null) {
+            return createdAt + CODE_TTL_MS < System.currentTimeMillis()
+        }
+        val expiresAt = (data["expiresAt"] as? Number)?.toLong() ?: fallbackExpiresAt
+        return expiresAt < System.currentTimeMillis()
     }
 
     private fun completePairing(roomNumber: String) {

@@ -11,6 +11,30 @@ const DEVICE_KEY = 'hostity_device_id';
 const SESSION_KEY = 'hostity_device_session';
 const PAIRING_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
+function parseTimestampMs(raw) {
+  if (raw == null) return null;
+  if (typeof raw?.toMillis === 'function') return raw.toMillis();
+  if (typeof raw?.seconds === 'number') return raw.seconds * 1000;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return raw < 1e12 ? raw * 1000 : raw;
+  }
+  return null;
+}
+
+function isPairingCodeExpired(data = {}) {
+  if (data.status === 'claimed') return false;
+  const now = Date.now();
+  const created = parseTimestampMs(data.createdAt);
+  if (created != null) {
+    return created + PAIRING_TTL_MS < now;
+  }
+  const expires = parseTimestampMs(data.expiresAt);
+  if (expires != null) {
+    return expires < now;
+  }
+  return false;
+}
+
 function randomDigits(length = 6) {
   const max = 10 ** length;
   const n = crypto.getRandomValues(new Uint32Array(1))[0] % max;
@@ -121,6 +145,7 @@ export function useDevicePairing({ db, hotelId, publicSlug = '' } = {}) {
         roomNumber: null,
         createdAt: serverTimestamp(),
         expiresAt: expires,
+        ttlMs: PAIRING_TTL_MS,
         claimedAt: null,
         claimedBy: null,
       });
@@ -148,7 +173,7 @@ export function useDevicePairing({ db, hotelId, publicSlug = '' } = {}) {
           setStatus('error');
           return;
         }
-        if (data.expiresAt && Number(data.expiresAt) < Date.now() && data.status !== 'claimed') {
+        if (isPairingCodeExpired(data)) {
           setError('Pairing code expired — generate a new one');
           setStatus('error');
           return;
