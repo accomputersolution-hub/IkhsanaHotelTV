@@ -1,9 +1,10 @@
 package `in`.pcncloud.hotel.ui.intro
 
-import android.net.Uri
+import android.os.Build
 import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +14,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -27,10 +30,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -39,37 +45,113 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
-import `in`.pcncloud.hotel.ui.HotelViewModelFactory
+import `in`.pcncloud.hotel.config.IntroVideoCache
+import `in`.pcncloud.hotel.config.IntroVideoFileStore
 import `in`.pcncloud.hotel.ui.theme.GoldLuxury
 import `in`.pcncloud.hotel.ui.theme.NavyDeep
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.delay
+import okhttp3.ConnectionSpec
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
 
 /**
- * Fullscreen branded intro after pairing splash → MainActivity.
- * Plays [IntroVideoUiState.videoUrl] with Media3 ExoPlayer (no controls).
- * Skip / real end / hard error / timeout → [onFinished].
+ * Fullscreen intro playback. Prefer [videoUrl] as a local `file://` path from
+ * [IntroVideoFileStore]; falls back to remote http(s) on first boot while downloading.
  *
- * Buffering / READY / transient states do **not** finish the intro.
+ * API &lt; 30: longer buffers, OkHttp COMPATIBLE_TLS, retries, delayed Home fallback.
  */
 @OptIn(ExperimentalTvMaterial3Api::class, UnstableApi::class)
 @Composable
 fun IntroVideoScreen(
-    viewModelFactory: HotelViewModelFactory,
-    onFinished: () -> Unit,
+    videoUrl: String,
+    onFinished: (reason: String) -> Unit,
+    remoteUrlForDownload: String? = null,
+    viewModel: IntroVideoViewModel = viewModel(),
 ) {
-    val viewModel: IntroVideoViewModel = viewModel(factory = viewModelFactory)
-    val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val finished = remember { AtomicBoolean(false) }
     val skipFocus = remember { FocusRequester() }
+    val mediaUri = remember(videoUrl) { IntroVideoCache.parseMediaUri(videoUrl) }
+    val playerGeneration by viewModel.playerGeneration.collectAsState()
+    var playbackEverStarted by remember(videoUrl) { mutableStateOf(false) }
+    var mountGeneration by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(uiState.shouldEnterHome) {
-        if (uiState.shouldEnterHome) onFinished()
+    fun finishOnce(reason: String) {
+        if (!finished.compareAndSet(false, true)) return
+        Log.i(TAG, "IntroVideoScreen finish ($reason) sdk=${Build.VERSION.SDK_INT}")
+        onFinished(reason)
     }
 
-    LaunchedEffect(uiState.phase) {
-        if (uiState.phase == IntroPhase.Playing) {
-            // Focus Skip for D-pad, but do not auto-click it.
-            runCatching { skipFocus.requestFocus() }
+    fun handlePlayerFailure(message: String?) {
+        val detail = message?.trim().orEmpty().ifBlank { "unknown" }
+        Log.e(TAG, "player failure → $detail")
+        if (finished.get()) return
+        if (playbackEverStarted) {
+            finishOnce("error_after_start")
+            return
         }
+        if (viewModel.tryRetryAfterError(detail)) {
+            return
+        }
+        finishOnce("error")
+    }
+
+    BackHandler(enabled = true) {
+        finishOnce("back")
+    }
+
+    LaunchedEffect(mediaUri) {
+        if (mediaUri == null) {
+            Log.e(TAG, "Invalid intro URI — Home. raw=${videoUrl.take(80)}")
+            finishOnce("bad_uri")
+        }
+    }
+
+    // Background refresh of local MP4 when admin URL is known (does not block playback).
+    LaunchedEffect(remoteUrlForDownload) {
+        val remote = remoteUrlForDownload?.trim().orEmpty()
+        if (remote.isBlank()) return@LaunchedEffect
+        runCatching {
+            IntroVideoFileStore(context.applicationContext).ensureCached(remote)
+        }.onFailure { Log.e(TAG, "background ensureCached failed", it) }
+    }
+
+    LaunchedEffect(Unit) {
+        runCatching { skipFocus.requestFocus() }
+    }
+
+    LaunchedEffect(videoUrl, viewModel.playbackWatchdogMs) {
+        delay(viewModel.playbackWatchdogMs)
+        if (!playbackEverStarted) {
+            Log.e(TAG, "watchdog — never started after ${viewModel.playbackWatchdogMs}ms")
+        }
+        finishOnce("playback_watchdog")
+    }
+
+    LaunchedEffect(playerGeneration) {
+        if (playerGeneration == 0) {
+            mountGeneration = 0
+            return@LaunchedEffect
+        }
+        // Tear down broken player immediately, wait, then rebuild.
+        mountGeneration = -1
+        Log.i(TAG, "grace ${viewModel.errorGraceMs}ms before retry gen=$playerGeneration")
+        delay(viewModel.errorGraceMs)
+        if (!finished.get()) {
+            mountGeneration = playerGeneration
+        }
+    }
+
+    if (mediaUri == null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(NavyDeep),
+        )
+        return
     }
 
     Box(
@@ -77,50 +159,37 @@ fun IntroVideoScreen(
             .fillMaxSize()
             .background(NavyDeep),
     ) {
-        when (uiState.phase) {
-            IntroPhase.Resolving -> {
-                // Silent navy hold while Config/intro resolves — no "Loading intro…" flash
-                // over a prematurely composed HomeScreen.
-                Box(modifier = Modifier.fillMaxSize())
-            }
-            IntroPhase.Playing -> {
+        if (mountGeneration >= 0) {
+            key(mountGeneration) {
                 IntroExoPlayer(
-                    videoUrl = uiState.videoUrl,
-                    onPlaybackStarted = viewModel::onPlaybackStarted,
-                    onEnded = viewModel::onPlaybackEnded,
-                    onError = viewModel::onPlaybackError,
+                    videoUrl = videoUrl,
+                    policy = viewModel,
+                    onPlaybackStarted = {
+                        playbackEverStarted = true
+                        Log.i(TAG, "ExoPlayer playing (gen=$mountGeneration)")
+                    },
+                    onEnded = { finishOnce("ended") },
+                    onError = { handlePlayerFailure(it) },
                     modifier = Modifier.fillMaxSize(),
                 )
-                if (uiState.playerError.isNotBlank()) {
-                    Text(
-                        text = uiState.playerError,
-                        color = Color(0xFFFFCDD2),
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 48.dp, start = 32.dp, end = 32.dp),
-                    )
-                }
-                Button(
-                    onClick = viewModel::onSkip,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 36.dp, bottom = 36.dp)
-                        .focusRequester(skipFocus),
-                    colors = ButtonDefaults.colors(
-                        containerColor = Color.Black.copy(alpha = 0.45f),
-                        focusedContainerColor = GoldLuxury.copy(alpha = 0.9f),
-                        pressedContainerColor = GoldLuxury,
-                        contentColor = TextPrimary,
-                        focusedContentColor = NavyDeep,
-                        pressedContentColor = NavyDeep,
-                    ),
-                ) {
-                    Text(text = "Skip")
-                }
             }
-            IntroPhase.Finished -> {
-                // Brief blank while parent swaps to Home.
-            }
+        }
+        Button(
+            onClick = { finishOnce("skip") },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 36.dp, bottom = 36.dp)
+                .focusRequester(skipFocus),
+            colors = ButtonDefaults.colors(
+                containerColor = Color.Black.copy(alpha = 0.45f),
+                focusedContainerColor = GoldLuxury.copy(alpha = 0.9f),
+                pressedContainerColor = GoldLuxury,
+                contentColor = TextPrimary,
+                focusedContentColor = NavyDeep,
+                pressedContentColor = NavyDeep,
+            ),
+        ) {
+            Text(text = "Skip")
         }
     }
 }
@@ -129,6 +198,7 @@ fun IntroVideoScreen(
 @Composable
 private fun IntroExoPlayer(
     videoUrl: String,
+    policy: IntroVideoViewModel,
     onPlaybackStarted: () -> Unit,
     onEnded: () -> Unit,
     onError: (String?) -> Unit,
@@ -136,26 +206,65 @@ private fun IntroExoPlayer(
 ) {
     val context = LocalContext.current
     var playbackEverStarted by remember(videoUrl) { mutableStateOf(false) }
+    val mediaUri = remember(videoUrl) { IntroVideoCache.parseMediaUri(videoUrl) }
 
     val exoPlayer = remember(videoUrl) {
-        Log.i(TAG, "ExoPlayer create+prepare url=$videoUrl")
-        val httpFactory = DefaultHttpDataSource.Factory()
+        val uri = mediaUri
+        if (uri == null) {
+            Log.e(TAG, "ExoPlayer skip create — bad URI")
+            return@remember null
+        }
+        Log.i(
+            TAG,
+            "ExoPlayer create sdk=${Build.VERSION.SDK_INT} legacy=${policy.isLegacyApi} " +
+                "scheme=${uri.scheme} host=${uri.host} path=${uri.path?.takeLast(40)} " +
+                "connectMs=${policy.connectTimeoutMs} readMs=${policy.readTimeoutMs}",
+        )
+
+        val okHttp = buildIntroOkHttpClient(policy)
+        val httpFactory = OkHttpDataSource.Factory(okHttp)
             .setUserAgent(INTRO_HTTP_USER_AGENT)
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(20_000)
+        // DefaultDataSource: file:// from internal cache + http(s) via OkHttp.
+        val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
+
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                policy.minBufferMs,
+                policy.maxBufferMs,
+                policy.bufferForPlaybackMs,
+                policy.bufferForPlaybackAfterRebufferMs,
+            )
+            .build()
+
+        val isLocalFile = uri.scheme.equals("file", ignoreCase = true)
+        val mimeType = when {
+            isLocalFile || videoUrl.contains(".mp4", ignoreCase = true) -> MimeTypes.VIDEO_MP4
+            videoUrl.contains(".webm", ignoreCase = true) -> MimeTypes.VIDEO_WEBM
+            else -> null
+        }
 
         ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .setLoadControl(loadControl)
             .build()
             .apply {
                 playWhenReady = true
                 repeatMode = Player.REPEAT_MODE_OFF
                 volume = 1f
-                // Keep control of when we leave intro — ignore short auto-transitions.
-                setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl.trim())))
+                val item = MediaItem.Builder()
+                    .setUri(uri)
+                    .apply {
+                        if (mimeType != null) setMimeType(mimeType)
+                    }
+                    .build()
+                setMediaItem(item)
                 prepare()
             }
+    }
+
+    if (exoPlayer == null) {
+        LaunchedEffect(Unit) { onError("bad_uri") }
+        return
     }
 
     DisposableEffect(exoPlayer, videoUrl) {
@@ -166,62 +275,52 @@ private fun IntroExoPlayer(
                 val position = exoPlayer.currentPosition
                 Log.i(
                     TAG,
-                    "ExoPlayer onPlaybackStateChanged state=$name " +
-                        "playWhenReady=${exoPlayer.playWhenReady} " +
-                        "isPlaying=${exoPlayer.isPlaying} " +
-                        "durationMs=$duration positionMs=$position " +
-                        "everStarted=$playbackEverStarted",
+                    "ExoPlayer state=$name playWhenReady=${exoPlayer.playWhenReady} " +
+                        "isPlaying=${exoPlayer.isPlaying} durationMs=$duration " +
+                        "positionMs=$position everStarted=$playbackEverStarted " +
+                        "sdk=${Build.VERSION.SDK_INT}",
                 )
 
                 when (playbackState) {
                     Player.STATE_BUFFERING -> {
-                        // Buffering is normal — never finish intro here.
-                        Log.d(TAG, "ExoPlayer buffering — keep waiting")
+                        Log.d(TAG, "buffering — keep waiting (no Home fallback)")
                     }
                     Player.STATE_READY -> {
-                        if (exoPlayer.playWhenReady) {
-                            // Duration known after READY; 0 / UNSET ⇒ empty or bad source.
-                            if (duration == 0L) {
-                                val msg =
-                                    "Media duration is 0 ms — URL likely returns an empty file " +
-                                        "(e.g. Catbox 0-byte). Re-upload a real .mp4 or paste a " +
-                                        "direct HTTPS link that downloads >0 bytes. url=$videoUrl"
-                                Log.e(TAG, msg)
-                                onError(msg)
-                                return
+                        if (duration == 0L) {
+                            Log.w(
+                                TAG,
+                                "READY with duration=0 — wait readyGrace=${policy.readyGraceMs}ms",
+                            )
+                        } else {
+                            if (exoPlayer.playWhenReady) {
+                                playbackEverStarted = true
+                                onPlaybackStarted()
                             }
-                            playbackEverStarted = true
-                            onPlaybackStarted()
                         }
                     }
                     Player.STATE_ENDED -> {
-                        // Empty / failed sources often jump IDLE→ENDED with duration UNSET/0.
                         if (!playbackEverStarted ||
                             duration == C.TIME_UNSET ||
                             duration <= 0L ||
                             position < 250L
                         ) {
-                            val msg =
+                            onError(
                                 "STATE_ENDED before real playback " +
                                     "(everStarted=$playbackEverStarted durationMs=$duration " +
-                                    "positionMs=$position). Source may be empty or unreadable. " +
-                                    "url=$videoUrl"
-                            Log.e(TAG, msg)
-                            onError(msg)
+                                    "positionMs=$position sdk=${Build.VERSION.SDK_INT}). " +
+                                    "url=$videoUrl",
+                            )
                         } else {
-                            Log.i(TAG, "STATE_ENDED after playback — intro complete")
                             onEnded()
                         }
                     }
-                    Player.STATE_IDLE -> {
-                        Log.d(TAG, "ExoPlayer IDLE — ignore (not a finish signal)")
-                    }
+                    Player.STATE_IDLE -> Unit
                     else -> Unit
                 }
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                Log.i(TAG, "ExoPlayer onIsPlayingChanged isPlaying=$isPlaying")
+                Log.i(TAG, "onIsPlayingChanged isPlaying=$isPlaying")
                 if (isPlaying) {
                     playbackEverStarted = true
                     onPlaybackStarted()
@@ -232,7 +331,7 @@ private fun IntroExoPlayer(
                 val causeChain = buildString {
                     var c: Throwable? = error
                     var depth = 0
-                    while (c != null && depth < 6) {
+                    while (c != null && depth < 8) {
                         if (depth > 0) append(" ← ")
                         append(c.javaClass.simpleName)
                         append(": ")
@@ -243,33 +342,54 @@ private fun IntroExoPlayer(
                 }
                 Log.e(
                     TAG,
-                    "ExoPlayer onPlayerError " +
-                        "errorCode=${error.errorCode} " +
-                        "errorCodeName=${error.errorCodeName} " +
-                        "message=${error.message} " +
-                        "timestampMs=${error.timestampMs} " +
-                        "url=$videoUrl " +
-                        "causeChain=[$causeChain]",
+                    "onPlayerError sdk=${Build.VERSION.SDK_INT} " +
+                        "errorCode=${error.errorCode} name=${error.errorCodeName} " +
+                        "message=${error.message} timestampMs=${error.timestampMs} " +
+                        "url=$videoUrl causeChain=[$causeChain]",
                     error,
                 )
-                // Dump nested causes separately for logcat filters.
                 var nested: Throwable? = error.cause
                 var i = 1
-                while (nested != null && i <= 5) {
-                    Log.e(TAG, "ExoPlayer cause[$i]=${nested.javaClass.name}: ${nested.message}", nested)
+                while (nested != null && i <= 6) {
+                    Log.e(
+                        TAG,
+                        "onPlayerError cause[$i]=${nested.javaClass.name}: ${nested.message}",
+                        nested,
+                    )
                     nested = nested.cause
                     i++
                 }
-                onError("${error.errorCodeName} (${error.errorCode}): ${error.message} | $causeChain")
+                onError(
+                    "${error.errorCodeName} (${error.errorCode}): ${error.message} | $causeChain",
+                )
             }
         }
 
-        Log.i(TAG, "ExoPlayer addListener url=$videoUrl")
         exoPlayer.addListener(listener)
         onDispose {
-            Log.i(TAG, "ExoPlayer removeListener+release")
             exoPlayer.removeListener(listener)
             exoPlayer.release()
+        }
+    }
+
+    // Only fail on READY+duration=0 after grace — never while still BUFFERING.
+    LaunchedEffect(exoPlayer, policy.readyGraceMs) {
+        delay(policy.readyGraceMs)
+        if (playbackEverStarted) return@LaunchedEffect
+        val duration = exoPlayer.duration
+        val state = exoPlayer.playbackState
+        if (state == Player.STATE_READY && duration == 0L) {
+            Log.e(TAG, "readyGrace: READY with duration=0 — treating as bad source")
+            onError(
+                "No playable duration after ${policy.readyGraceMs}ms " +
+                    "(READY duration=0). url=$videoUrl",
+            )
+        } else {
+            Log.d(
+                TAG,
+                "readyGrace elapsed state=${stateName(state)} durationMs=$duration " +
+                    "everStarted=$playbackEverStarted — continue waiting",
+            )
         }
     }
 
@@ -283,11 +403,37 @@ private fun IntroExoPlayer(
                 useController = false
                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                 player = exoPlayer
+                setShutterBackgroundColor(android.graphics.Color.BLACK)
             }
         },
         update = { view -> view.player = exoPlayer },
         modifier = modifier,
     )
+}
+
+@UnstableApi
+private fun buildIntroOkHttpClient(policy: IntroVideoViewModel): OkHttpClient {
+    val protocols = if (policy.isLegacyApi) {
+        listOf(Protocol.HTTP_1_1)
+    } else {
+        listOf(Protocol.HTTP_2, Protocol.HTTP_1_1)
+    }
+    return OkHttpClient.Builder()
+        .connectTimeout(policy.connectTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
+        .readTimeout(policy.readTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
+        .writeTimeout(policy.readTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
+        .callTimeout(policy.callTimeoutMs, TimeUnit.MILLISECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .retryOnConnectionFailure(true)
+        .protocols(protocols)
+        .connectionSpecs(
+            listOf(
+                ConnectionSpec.MODERN_TLS,
+                ConnectionSpec.COMPATIBLE_TLS,
+            ),
+        )
+        .build()
 }
 
 private fun stateName(playbackState: Int): String = when (playbackState) {
@@ -300,7 +446,6 @@ private fun stateName(playbackState: Int): String = when (playbackState) {
 
 private const val TAG = "IntroVideoScreen"
 
-/** Browser-like UA — some CDNs reject the default ExoPlayer user-agent. */
 private const val INTRO_HTTP_USER_AGENT =
-    "Mozilla/5.0 (Linux; Android 12; Android TV) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 HostityIntro/1.0"
+    "Mozilla/5.0 (Linux; Android 9; Android TV) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36 HostityIntro/1.1"

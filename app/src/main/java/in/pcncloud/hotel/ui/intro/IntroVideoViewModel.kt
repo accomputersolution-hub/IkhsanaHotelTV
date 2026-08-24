@@ -1,203 +1,74 @@
 package `in`.pcncloud.hotel.ui.intro
 
+import android.os.Build
 import android.util.Log
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import `in`.pcncloud.hotel.config.HotelConfig
-import `in`.pcncloud.hotel.data.repository.FirestoreRepository
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.merge
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Resolves intro video URL for cold-start playback.
+ * Intro playback policy for API 28 TV boxes vs modern devices.
  *
- * Sources (same as admin):
- * 1. `Hotels/{hotelId}/Config/intro.introVideoUrl`
- * 2. `Hotels/{hotelId}.introVideoUrl` (admin mirror)
- *
- * Fail-open only after both sources miss / timeout — never on the first empty
- * listener tick alone.
+ * Older SoCs need longer HTTP / buffer / watchdog windows and a retry before
+ * falling back to Home — otherwise ExoPlayer is still handshaking TLS while
+ * the UI already navigates away.
  */
-data class IntroVideoUiState(
-    val phase: IntroPhase = IntroPhase.Resolving,
-    val videoUrl: String = "",
-    val statusMessage: String = "",
-    val hotelId: String = "",
-    /** Last ExoPlayer failure (shown briefly before Home). */
-    val playerError: String = "",
-) {
-    val shouldEnterHome: Boolean
-        get() = phase == IntroPhase.Finished
-}
+class IntroVideoViewModel : ViewModel() {
 
-enum class IntroPhase {
-    /** Waiting for Firestore Config/intro (or timeout). */
-    Resolving,
-    /** Valid URL ready — ExoPlayer should start. */
-    Playing,
-    /** Skip / ended / empty / error / timeout — navigate to Home. */
-    Finished,
-}
+    private val _playerGeneration = MutableStateFlow(0)
+    val playerGeneration: StateFlow<Int> = _playerGeneration.asStateFlow()
 
-class IntroVideoViewModel(
-    private val repository: FirestoreRepository,
-    private val config: HotelConfig,
-) : ViewModel() {
+    /** Must be initialized before any property that reads it (e.g. [retriesLeft]). */
+    val isLegacyApi: Boolean = Build.VERSION.SDK_INT < 30
 
-    private val _uiState = MutableStateFlow(
-        IntroVideoUiState(hotelId = config.getHotelId().orEmpty()),
-    )
-    val uiState: StateFlow<IntroVideoUiState> = _uiState.asStateFlow()
+    private val retriesLeft = AtomicInteger(if (isLegacyApi) LEGACY_RETRIES else MODERN_RETRIES)
 
-    private var finished = false
-    private var playbackWatchdog: Job? = null
+    val connectTimeoutMs: Int = if (isLegacyApi) 45_000 else 15_000
+    val readTimeoutMs: Int = if (isLegacyApi) 60_000 else 20_000
+    val callTimeoutMs: Long = if (isLegacyApi) 90_000L else 45_000L
+    val playbackWatchdogMs: Long = if (isLegacyApi) 180_000L else 90_000L
+    /** Hold after READY before treating duration=0 as fatal (decoder lag). */
+    val readyGraceMs: Long = if (isLegacyApi) 5_000L else 750L
+    /** Hold after error before Home / before retry rebuild. */
+    val errorGraceMs: Long = if (isLegacyApi) 8_000L else 1_500L
+    val minBufferMs: Int = if (isLegacyApi) 8_000 else 3_500
+    val maxBufferMs: Int = if (isLegacyApi) 60_000 else 50_000
+    val bufferForPlaybackMs: Int = if (isLegacyApi) 5_000 else 1_500
+    val bufferForPlaybackAfterRebufferMs: Int = if (isLegacyApi) 8_000 else 3_000
 
     init {
-        resolveIntroUrl()
-    }
-
-    private fun resolveIntroUrl() {
-        viewModelScope.launch {
-            val hotelId = config.getHotelId().orEmpty()
-            Log.i(TAG, "resolveIntroUrl start hotelId=$hotelId timeoutMs=$RESOLVE_TIMEOUT_MS")
-            _uiState.update {
-                it.copy(
-                    phase = IntroPhase.Resolving,
-                    hotelId = hotelId,
-                    statusMessage = "Resolving intro for $hotelId…",
-                )
-            }
-
-            // Race: one-shot get (Config + hotel root) vs live non-blank snapshots.
-            val resolved = withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
-                merge(
-                    flow {
-                        val url = runCatching { repository.fetchIntroVideoUrl() }
-                            .onFailure { Log.e(TAG, "fetchIntroVideoUrl threw", it) }
-                            .getOrDefault("")
-                        Log.i(TAG, "one-shot result blank=${url.isBlank()} len=${url.length}")
-                        emit(url)
-                    },
-                    repository.observeIntroVideoUrl(),
-                )
-                    .filter { candidate ->
-                        val ok = candidate.isNotBlank() && looksLikeHttpUrl(candidate)
-                        if (!ok && candidate.isNotBlank()) {
-                            Log.w(TAG, "reject non-http intro URL prefix=${candidate.take(64)}")
-                        }
-                        ok
-                    }
-                    .first()
-                    .trim()
-            }
-
-            if (finished) return@launch
-
-            if (resolved.isNullOrBlank()) {
-                Log.e(
-                    TAG,
-                    "Intro skip — no valid URL hotelId=$hotelId " +
-                        "(check TV is paired to the same hotel as admin, e.g. 3210)",
-                )
-                finish("no_url")
-                return@launch
-            }
-
-            Log.i(
-                TAG,
-                "Intro play → hotelId=$hotelId urlLen=${resolved.length} prefix=${resolved.take(72)}",
-            )
-            _uiState.update {
-                it.copy(
-                    phase = IntroPhase.Playing,
-                    videoUrl = resolved,
-                    statusMessage = "",
-                    hotelId = hotelId,
-                )
-            }
-            startPlaybackWatchdog()
-        }
-    }
-
-    /** If ExoPlayer never reaches ready/playing, fail open to Home. */
-    private fun startPlaybackWatchdog() {
-        playbackWatchdog?.cancel()
-        playbackWatchdog = viewModelScope.launch {
-            delay(PLAYBACK_TIMEOUT_MS)
-            if (!finished && _uiState.value.phase == IntroPhase.Playing) {
-                Log.e(
-                    TAG,
-                    "Intro playback timeout → Home url=${_uiState.value.videoUrl.take(72)}",
-                )
-                finish("playback_timeout")
-            }
-        }
-    }
-
-    fun onPlaybackStarted() {
-        Log.i(TAG, "ExoPlayer playing — cancel watchdog")
-        playbackWatchdog?.cancel()
-        playbackWatchdog = null
-    }
-
-    fun onPlaybackEnded() {
-        Log.i(TAG, "ExoPlayer STATE_ENDED (real playback)")
-        finish("ended")
+        Log.i(
+            TAG,
+            "policy sdk=${Build.VERSION.SDK_INT} legacy=$isLegacyApi " +
+                "watchdogMs=$playbackWatchdogMs connectMs=$connectTimeoutMs " +
+                "readMs=$readTimeoutMs bufferForPlaybackMs=$bufferForPlaybackMs " +
+                "retries=${retriesLeft.get()}",
+        )
     }
 
     /**
-     * Hard player failure. Logs and briefly surfaces the message, then goes Home.
-     * Does **not** run for buffering / READY — only explicit [Player.Listener.onPlayerError]
-     * or empty-media guards from the screen.
+     * @return true if a new [playerGeneration] was issued (caller should rebuild ExoPlayer).
      */
-    fun onPlaybackError(message: String?) {
-        val detail = message?.trim().orEmpty().ifBlank { "unknown ExoPlayer error" }
-        Log.e(TAG, "ExoPlayer error (will leave intro shortly): $detail")
-        _uiState.update { it.copy(playerError = detail.take(220)) }
-        // Give logcat / on-screen message a moment before tearing down.
-        viewModelScope.launch {
-            delay(ERROR_HOLD_MS)
-            finish("error")
+    fun tryRetryAfterError(errorDetail: String): Boolean {
+        val left = retriesLeft.decrementAndGet()
+        if (left < 0) {
+            Log.e(TAG, "no retries left — will fall back to Home. error=$errorDetail")
+            return false
         }
-    }
-
-    fun onSkip() {
-        Log.i(TAG, "Intro skip pressed")
-        finish("skip")
-    }
-
-    private fun finish(reason: String) {
-        if (finished) return
-        finished = true
-        playbackWatchdog?.cancel()
-        playbackWatchdog = null
-        Log.i(TAG, "Intro finished ($reason) → Home hotelId=${_uiState.value.hotelId}")
-        _uiState.update {
-            it.copy(phase = IntroPhase.Finished, statusMessage = reason)
-        }
+        val next = _playerGeneration.value + 1
+        _playerGeneration.value = next
+        Log.w(
+            TAG,
+            "retry ExoPlayer generation=$next remaining=$left after error=$errorDetail",
+        )
+        return true
     }
 
     companion object {
         private const val TAG = "IntroVideoVM"
-        /** Wait for Config/intro + hotel-root get before skipping. */
-        const val RESOLVE_TIMEOUT_MS = 15_000L
-        /** Max wait for first successful playback after URL is known. */
-        const val PLAYBACK_TIMEOUT_MS = 25_000L
-        /** Keep error text visible briefly before Home. */
-        private const val ERROR_HOLD_MS = 2_500L
-
-        private fun looksLikeHttpUrl(url: String): Boolean =
-            url.startsWith("https://", ignoreCase = true) ||
-                url.startsWith("http://", ignoreCase = true)
+        private const val LEGACY_RETRIES = 2
+        private const val MODERN_RETRIES = 0
     }
 }

@@ -102,6 +102,9 @@ class KioskWatchdogService : Service() {
         }
 
         // Reclaim MainActivity only — Splash mid-frame finish → EGL 12301.
+        // While intro is playing, bring to front WITHOUT NAVIGATE_TO_HOME so
+        // ExoPlayer is not torn down by finishReturnFromExternalApp.
+        val introPlaying = KioskPolicy.isIntroPlaybackActive()
         val launch = Intent(this, MainActivity::class.java).apply {
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -109,7 +112,11 @@ class KioskWatchdogService : Service() {
                     Intent.FLAG_ACTIVITY_SINGLE_TOP or
                     Intent.FLAG_ACTIVITY_NO_ANIMATION,
             )
-            putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
+            if (!introPlaying) {
+                putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
+            } else {
+                Log.i(TAG, "maybeBringToFront — intro playing, omit NAVIGATE_TO_HOME ($reason)")
+            }
         }
         KioskPolicy.startActivityIfAllowed(this, launch, reason)
     }

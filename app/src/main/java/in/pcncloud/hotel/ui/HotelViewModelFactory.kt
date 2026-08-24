@@ -7,7 +7,6 @@ import `in`.pcncloud.hotel.data.repository.FirestoreRepository
 import `in`.pcncloud.hotel.ui.agenda.AgendaViewModel
 import `in`.pcncloud.hotel.ui.dining.DiningViewModel
 import `in`.pcncloud.hotel.ui.home.HomeViewModel
-import `in`.pcncloud.hotel.ui.intro.IntroVideoViewModel
 import `in`.pcncloud.hotel.ui.services.CorporateServicesViewModel
 import `in`.pcncloud.hotel.ui.services.ServicesViewModel
 
@@ -28,8 +27,6 @@ class HotelViewModelFactory(
             CorporateServicesViewModel(repository) as T
         modelClass.isAssignableFrom(AgendaViewModel::class.java) ->
             AgendaViewModel(repository) as T
-        modelClass.isAssignableFrom(IntroVideoViewModel::class.java) ->
-            IntroVideoViewModel(repository, config) as T
         else -> throw IllegalArgumentException("Unknown ViewModel: ${modelClass.name}")
     }
 }

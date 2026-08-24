@@ -15,6 +15,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.isVisible
 import `in`.pcncloud.hotel.config.HotelConfig
+import `in`.pcncloud.hotel.config.IntroVideoCache
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.ui.home.BrandAssets
@@ -29,7 +30,11 @@ import com.google.firebase.firestore.MetadataChanges
  * Dedicated cold-start splash:
  * - Default local flavor logo first, then hotel Firestore logo when available
  * - Welcome tagline + circular progress
- * - Waits for Hotels/{id} + Rooms/{room} snapshots (or timeout) before [MainActivity]
+ * - Prefetches introVideoUrl into [IntroVideoCache] so MainActivity cold boot is cache-first
+ * - Waits for Hotels/{id} + Rooms/{room} + intro cache (or timeout) before [MainActivity]
+ *
+ * Android 9 / API &lt; 30 uses a longer data timeout so Firestore + intro prefetch
+ * can finish before MainActivity reads the cache.
  */
 class SplashActivity : AppCompatActivity() {
 
@@ -45,6 +50,7 @@ class SplashActivity : AppCompatActivity() {
     private var hasNavigated = false
     private var brandingReady = false
     private var roomReady = false
+    private var introCacheReady = false
     private var mainTransitionScheduled = false
     private var unpairedFlow = false
 
@@ -59,11 +65,13 @@ class SplashActivity : AppCompatActivity() {
     private val forceProceedMain = Runnable {
         Log.w(
             TAG,
-            "Splash timeout — brandingReady=$brandingReady roomReady=$roomReady → MainActivity",
+            "Splash timeout — brandingReady=$brandingReady roomReady=$roomReady " +
+                "introCacheReady=$introCacheReady → MainActivity",
         )
         splashStatus.text = getString(R.string.splash_status_ready)
         brandingReady = true
         roomReady = true
+        introCacheReady = true
         scheduleMain(minRemainingMs = 0L)
     }
 
@@ -230,6 +238,9 @@ class SplashActivity : AppCompatActivity() {
         if (roomListener == null) {
             bindRoomConfig(hotelId, roomNumber)
         }
+        if (!introCacheReady) {
+            prefetchIntroVideoCache(hotelId)
+        }
         if (KioskPolicy.canActivityNavigate(lifecycle)) {
             resumePendingNavigation()
         }
@@ -260,11 +271,85 @@ class SplashActivity : AppCompatActivity() {
             return
         }
         splashRoot().removeCallbacks(forceProceedMain)
-        splashRoot().postDelayed(forceProceedMain, DATA_TIMEOUT_MS)
+        splashRoot().postDelayed(forceProceedMain, dataTimeoutMs())
         tryScheduleMainWhenReady()
     }
 
     private fun splashRoot() = findViewById<android.view.View>(R.id.splash_root)
+
+    /**
+     * Seeds [IntroVideoCache] URL from Firestore and kicks a background MP4 download
+     * into [IntroVideoFileStore]. If a local file already exists, Splash does not wait
+     * on the network (offline cold boot).
+     */
+    private fun prefetchIntroVideoCache(hotelId: String) {
+        val cache = IntroVideoCache(applicationContext)
+        // Offline / already-downloaded: unblock Splash immediately.
+        if (cache.canStartIntro()) {
+            Log.i(
+                TAG,
+                "Intro ready locally url=${!cache.getValidHttpUrl().isNullOrBlank()} " +
+                    "file=${cache.fileStore().hasReadyFile()} " +
+                    "len=${cache.fileStore().localFileLength()}",
+            )
+            introCacheReady = true
+            tryScheduleMainWhenReady()
+        }
+
+        FirebaseFirestore.getInstance()
+            .collection(FirestorePaths.HOTELS)
+            .document(hotelId)
+            .collection(FirestorePaths.CONFIG)
+            .document("intro")
+            .get()
+            .addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    val snap = task.result
+                    val raw = if (snap != null && snap.exists()) {
+                        firstNonBlank(
+                            asTrimmedString(snap.getString("introVideoUrl")),
+                            asTrimmedString(snap.getString("intro_video_url")),
+                        )
+                    } else {
+                        ""
+                    }
+                    val normalized = IntroVideoCache.normalizeHttpUrl(raw).orEmpty()
+                    if (normalized.isNotBlank()) {
+                        cache.setUrl(normalized)
+                        // Background download — do not block Splash / MainActivity.
+                        Thread(
+                            {
+                                try {
+                                    kotlinx.coroutines.runBlocking {
+                                        cache.fileStore().ensureCached(normalized)
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Intro MP4 background download failed", e)
+                                }
+                            },
+                            "intro-mp4-download",
+                        ).start()
+                    } else if (task.isSuccessful && snap != null && !snap.exists()) {
+                        // Explicit empty config — only clear if we know doc is missing.
+                        Log.i(TAG, "Intro Config/intro missing — keep prior URL/file")
+                    }
+                    Log.i(
+                        TAG,
+                        "Intro cache prefetch OK blank=${normalized.isBlank()} " +
+                            "len=${normalized.length} prefix=${normalized.take(64)}",
+                    )
+                } else {
+                    Log.w(
+                        TAG,
+                        "Intro cache prefetch failed — keep existing cache " +
+                            "prefix=${cache.getUrl().take(64)} file=${cache.fileStore().hasReadyFile()}",
+                        task.exception,
+                    )
+                }
+                introCacheReady = true
+                tryScheduleMainWhenReady()
+            }
+    }
 
     private fun bindHotelBranding(hotelId: String) {
         hotelListener?.remove()
@@ -304,6 +389,17 @@ class SplashActivity : AppCompatActivity() {
                     asTrimmedString(data["logoUrl"]),
                     asTrimmedString(data["logo"]),
                 )
+
+                // Admin mirrors introVideoUrl on the hotel root — seed local cache early.
+                val mirroredIntro = IntroVideoCache.normalizeHttpUrl(
+                    firstNonBlank(
+                        asTrimmedString(data["introVideoUrl"]),
+                        asTrimmedString(data["intro_video_url"]),
+                    ),
+                )
+                if (!mirroredIntro.isNullOrBlank()) {
+                    IntroVideoCache(applicationContext).setUrl(mirroredIntro)
+                }
 
                 // Keep corporate welcome tagline stable; hotel may refine with name.
                 if (hotelName.isNotBlank() && !BuildConfig.IS_CORPORATE) {
@@ -355,14 +451,14 @@ class SplashActivity : AppCompatActivity() {
     }
 
     private fun tryScheduleMainWhenReady() {
-        if (!brandingReady || !roomReady) return
+        if (!brandingReady || !roomReady || !introCacheReady) return
         splashStatus.text = getString(R.string.splash_status_ready)
         scheduleMain()
     }
 
     private fun scheduleMain(minRemainingMs: Long = MIN_DISPLAY_MS) {
         if (hasNavigated || mainTransitionScheduled || !overlayGatePassed) return
-        if (!brandingReady || !roomReady) return
+        if (!brandingReady || !roomReady || !introCacheReady) return
         if (!KioskPolicy.canActivityNavigate(lifecycle)) {
             Log.d(TAG, "scheduleMain skipped — lifecycle=${lifecycle.currentState}")
             return
@@ -528,7 +624,13 @@ class SplashActivity : AppCompatActivity() {
         private const val REQUEST_OVERLAY_PERMISSION = 1001
         private const val UNPAIRED_DELAY_MS = 900L
         private const val MIN_DISPLAY_MS = 1_100L
+        /** Modern devices — branding + room + intro cache. */
         private const val DATA_TIMEOUT_MS = 10_000L
+        /** API &lt; 30 TV boxes — Firestore / TLS often slower on cold boot. */
+        private const val DATA_TIMEOUT_LEGACY_MS = 22_000L
         private const val OVERLAY_DENY_CONTINUE_MS = 2_500L
+
+        private fun dataTimeoutMs(): Long =
+            if (Build.VERSION.SDK_INT < 30) DATA_TIMEOUT_LEGACY_MS else DATA_TIMEOUT_MS
     }
 }

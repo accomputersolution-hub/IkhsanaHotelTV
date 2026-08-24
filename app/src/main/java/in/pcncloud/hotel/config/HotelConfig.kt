@@ -20,6 +20,7 @@ class HotelConfig(context: Context) {
     private val appContext: Context = context.applicationContext
     private val prefs: SharedPreferences =
         appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val introCache = IntroVideoCache(appContext)
 
     /**
      * Paired tenant id, or null if this TV has not been paired yet.
@@ -71,8 +72,9 @@ class HotelConfig(context: Context) {
             .remove(KEY_HOTEL_ID)
             .remove(KEY_ROOM_NUMBER)
             .apply()
+        introCache.clear()
         KioskPolicy.clearTenantKioskCache(appContext)
-        Log.i(TAG, "clearPairingSession — hotel/room prefs + kiosk cache wiped")
+        Log.i(TAG, "clearPairingSession — hotel/room prefs + intro cache + kiosk cache wiped")
     }
 
     /** True only when both hotel id and room number are present. */
