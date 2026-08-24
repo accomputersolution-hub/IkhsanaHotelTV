@@ -32,6 +32,9 @@ import com.google.firebase.firestore.MetadataChanges
  * - Welcome tagline + circular progress
  * - Prefetches introVideoUrl into [IntroVideoCache] so MainActivity cold boot is cache-first
  * - Waits for Hotels/{id} + Rooms/{room} + intro cache (or timeout) before [MainActivity]
+ *
+ * Android 9 / API &lt; 30 uses a longer data timeout so Firestore + intro prefetch
+ * can finish before MainActivity reads the cache.
  */
 class SplashActivity : AppCompatActivity() {
 
