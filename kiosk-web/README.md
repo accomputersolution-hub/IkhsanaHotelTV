@@ -45,7 +45,7 @@ Local: `http://localhost:5173/?slug=ikhsana`
 | `src/hooks/useDevicePairing.js` | 6-digit code + listen for claim |
 | `src/components/DevicePairingScreen.jsx` | Pairing UI |
 | `src/components/HotelTenantGate.jsx` | Public config + pairing gate |
-| `admin-panel/firestore.rules.example` | Production-oriented rules |
+| `admin-panel/firestore.rules` | Deployed Firestore rules |
 
 ## Custom Claims (after claim)
 
