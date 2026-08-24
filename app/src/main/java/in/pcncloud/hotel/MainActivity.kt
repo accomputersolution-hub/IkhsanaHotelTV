@@ -569,25 +569,8 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "Path requests → ${FirestorePaths.requestsCollection(hotelId)}")
         Log.d(TAG, "Path alerts → ${FirestorePaths.alertsCollection(hotelId)}")
 
-        // Bind diagnostic SnapshotListeners to Hotels/{saved_hotel_id}/…
-        syncListeners += repository.attachSyncDiagnostics(
-            onBranding = { branding ->
-                Log.d(
-                    TAG,
-                    "MainActivity branding update → logo_url=${branding.logoUrl} " +
-                        "bg_wallpaper=${branding.bgWallpaperUrl} name=${branding.hotelName} " +
-                        "status=${branding.status}",
-                )
-            },
-            onRooms = { rooms ->
-                Log.d(
-                    TAG,
-                    "MainActivity Rooms update → count=${rooms.size} " +
-                        rooms.joinToString { "${it.roomNumber}:${it.status}:${it.guestName}" },
-                )
-            },
-        )
-
+        // Paint Compose ASAP with NavHost startDestination=intro — never leave the
+        // boot window sitting long enough for a Home-like first frame.
         setContent {
             val view = LocalView.current
             SideEffect {
@@ -642,6 +625,25 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        // Bind diagnostic SnapshotListeners after first Compose frame (intro startDestination).
+        syncListeners += repository.attachSyncDiagnostics(
+            onBranding = { branding ->
+                Log.d(
+                    TAG,
+                    "MainActivity branding update → logo_url=${branding.logoUrl} " +
+                        "bg_wallpaper=${branding.bgWallpaperUrl} name=${branding.hotelName} " +
+                        "status=${branding.status}",
+                )
+            },
+            onRooms = { rooms ->
+                Log.d(
+                    TAG,
+                    "MainActivity Rooms update → count=${rooms.size} " +
+                        rooms.joinToString { "${it.roomNumber}:${it.status}:${it.guestName}" },
+                )
+            },
+        )
     }
 
     /**
