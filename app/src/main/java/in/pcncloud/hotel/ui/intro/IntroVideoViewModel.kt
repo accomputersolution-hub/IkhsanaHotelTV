@@ -19,33 +19,37 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Resolves intro video URL for cold-start playback.
+ * Non-blocking cold-start intro: resolve URL + prepare media in the background while
+ * Home is already visible. Overlay only after ExoPlayer reports READY with real media.
  *
  * Sources (same as admin):
  * 1. `Hotels/{hotelId}/Config/intro.introVideoUrl`
  * 2. `Hotels/{hotelId}.introVideoUrl` (admin mirror)
- *
- * Fail-open only after both sources miss / timeout — never on the first empty
- * listener tick alone.
  */
 data class IntroVideoUiState(
-    val phase: IntroPhase = IntroPhase.Resolving,
+    val phase: IntroPhase = IntroPhase.Checking,
     val videoUrl: String = "",
     val statusMessage: String = "",
     val hotelId: String = "",
-    /** Last ExoPlayer failure (shown briefly before Home). */
     val playerError: String = "",
 ) {
-    val shouldEnterHome: Boolean
+    /** Fullscreen overlay should paint — media is prepared. */
+    val shouldShowOverlay: Boolean
+        get() = phase == IntroPhase.Playing
+
+    /** Session over — host may dispose (never showed, or finished/skipped). */
+    val isSessionComplete: Boolean
         get() = phase == IntroPhase.Finished
 }
 
 enum class IntroPhase {
-    /** Waiting for Firestore Config/intro (or timeout). */
-    Resolving,
-    /** Valid URL ready — ExoPlayer should start. */
+    /** Silent Firestore / cache lookup — Home stays fully interactive. */
+    Checking,
+    /** Valid URL — ExoPlayer preparing offscreen; still no overlay. */
+    Preparing,
+    /** Media READY — fullscreen overlay visible and playing. */
     Playing,
-    /** Skip / ended / empty / error / timeout — navigate to Home. */
+    /** No URL / timeout / error / skip / ended — stay on Home silently. */
     Finished,
 }
 
@@ -60,25 +64,24 @@ class IntroVideoViewModel(
     val uiState: StateFlow<IntroVideoUiState> = _uiState.asStateFlow()
 
     private var finished = false
-    private var playbackWatchdog: Job? = null
+    private var prepareWatchdog: Job? = null
 
     init {
-        resolveIntroUrl()
+        resolveIntroUrlInBackground()
     }
 
-    private fun resolveIntroUrl() {
+    private fun resolveIntroUrlInBackground() {
         viewModelScope.launch {
             val hotelId = config.getHotelId().orEmpty()
-            Log.i(TAG, "resolveIntroUrl start hotelId=$hotelId timeoutMs=$RESOLVE_TIMEOUT_MS")
+            Log.i(TAG, "background resolve start hotelId=$hotelId timeoutMs=$RESOLVE_TIMEOUT_MS")
             _uiState.update {
                 it.copy(
-                    phase = IntroPhase.Resolving,
+                    phase = IntroPhase.Checking,
                     hotelId = hotelId,
-                    statusMessage = "Resolving intro for $hotelId…",
+                    statusMessage = "",
                 )
             }
 
-            // Race: one-shot get (Config + hotel root) vs live non-blank snapshots.
             val resolved = withTimeoutOrNull(RESOLVE_TIMEOUT_MS) {
                 merge(
                     flow {
@@ -104,71 +107,76 @@ class IntroVideoViewModel(
             if (finished) return@launch
 
             if (resolved.isNullOrBlank()) {
-                Log.e(
-                    TAG,
-                    "Intro skip — no valid URL hotelId=$hotelId " +
-                        "(check TV is paired to the same hotel as admin, e.g. 3210)",
-                )
-                finish("no_url")
+                Log.i(TAG, "Intro silent skip — no URL / slow fetch hotelId=$hotelId")
+                finish("no_url_or_timeout")
                 return@launch
             }
 
             Log.i(
                 TAG,
-                "Intro play → hotelId=$hotelId urlLen=${resolved.length} prefix=${resolved.take(72)}",
+                "Intro prepare (offscreen) → hotelId=$hotelId urlLen=${resolved.length} " +
+                    "prefix=${resolved.take(72)}",
             )
             _uiState.update {
                 it.copy(
-                    phase = IntroPhase.Playing,
+                    phase = IntroPhase.Preparing,
                     videoUrl = resolved,
                     statusMessage = "",
                     hotelId = hotelId,
                 )
             }
-            startPlaybackWatchdog()
+            startPrepareWatchdog()
         }
     }
 
-    /** If ExoPlayer never reaches ready/playing, fail open to Home. */
-    private fun startPlaybackWatchdog() {
-        playbackWatchdog?.cancel()
-        playbackWatchdog = viewModelScope.launch {
-            delay(PLAYBACK_TIMEOUT_MS)
-            if (!finished && _uiState.value.phase == IntroPhase.Playing) {
-                Log.e(
+    /** Fail open if media never becomes READY quickly enough. */
+    private fun startPrepareWatchdog() {
+        prepareWatchdog?.cancel()
+        prepareWatchdog = viewModelScope.launch {
+            delay(PREPARE_TIMEOUT_MS)
+            if (!finished && _uiState.value.phase == IntroPhase.Preparing) {
+                Log.w(
                     TAG,
-                    "Intro playback timeout → Home url=${_uiState.value.videoUrl.take(72)}",
+                    "Intro prepare timeout — stay on Home url=${_uiState.value.videoUrl.take(72)}",
                 )
-                finish("playback_timeout")
+                finish("prepare_timeout")
             }
         }
     }
 
-    fun onPlaybackStarted() {
-        Log.i(TAG, "ExoPlayer playing — cancel watchdog")
-        playbackWatchdog?.cancel()
-        playbackWatchdog = null
-    }
-
-    fun onPlaybackEnded() {
-        Log.i(TAG, "ExoPlayer STATE_ENDED (real playback)")
-        finish("ended")
+    /**
+     * ExoPlayer reached STATE_READY with valid duration while still offscreen.
+     * Promote to Playing so the host can overlay without a loading screen.
+     */
+    fun onMediaReady() {
+        if (finished) return
+        if (_uiState.value.phase != IntroPhase.Preparing) return
+        prepareWatchdog?.cancel()
+        prepareWatchdog = null
+        Log.i(TAG, "Intro media READY — show overlay")
+        _uiState.update { it.copy(phase = IntroPhase.Playing, statusMessage = "") }
     }
 
     /**
-     * Hard player failure. Logs and briefly surfaces the message, then goes Home.
-     * Does **not** run for buffering / READY — only explicit [Player.Listener.onPlayerError]
-     * or empty-media guards from the screen.
+     * Guest left Home (submenu) before prepare finished — abandon without flashing overlay.
      */
+    fun abandonBecauseBusy(reason: String = "guest_busy") {
+        if (finished) return
+        if (_uiState.value.phase == IntroPhase.Playing) return
+        Log.i(TAG, "Intro abandon ($reason) — stay on current UI")
+        finish(reason)
+    }
+
+    fun onPlaybackEnded() {
+        Log.i(TAG, "ExoPlayer STATE_ENDED")
+        finish("ended")
+    }
+
     fun onPlaybackError(message: String?) {
         val detail = message?.trim().orEmpty().ifBlank { "unknown ExoPlayer error" }
-        Log.e(TAG, "ExoPlayer error (will leave intro shortly): $detail")
-        _uiState.update { it.copy(playerError = detail.take(220)) }
-        // Give logcat / on-screen message a moment before tearing down.
-        viewModelScope.launch {
-            delay(ERROR_HOLD_MS)
-            finish("error")
-        }
+        Log.e(TAG, "ExoPlayer error — dismiss silently: $detail")
+        // No error banner — Home stays (or returns) without a dead loading screen.
+        finish("error")
     }
 
     fun onSkip() {
@@ -179,22 +187,20 @@ class IntroVideoViewModel(
     private fun finish(reason: String) {
         if (finished) return
         finished = true
-        playbackWatchdog?.cancel()
-        playbackWatchdog = null
-        Log.i(TAG, "Intro finished ($reason) → Home hotelId=${_uiState.value.hotelId}")
+        prepareWatchdog?.cancel()
+        prepareWatchdog = null
+        Log.i(TAG, "Intro session done ($reason) hotelId=${_uiState.value.hotelId}")
         _uiState.update {
-            it.copy(phase = IntroPhase.Finished, statusMessage = reason)
+            it.copy(phase = IntroPhase.Finished, statusMessage = reason, playerError = "")
         }
     }
 
     companion object {
         private const val TAG = "IntroVideoVM"
-        /** Wait for Config/intro + hotel-root get before skipping. */
-        const val RESOLVE_TIMEOUT_MS = 15_000L
-        /** Max wait for first successful playback after URL is known. */
-        const val PLAYBACK_TIMEOUT_MS = 25_000L
-        /** Keep error text visible briefly before Home. */
-        private const val ERROR_HOLD_MS = 2_500L
+        /** Keep Home snappy — abandon if Firestore is slow. */
+        const val RESOLVE_TIMEOUT_MS = 4_000L
+        /** Abandon if media is not READY soon after URL resolve. */
+        const val PREPARE_TIMEOUT_MS = 6_000L
 
         private fun looksLikeHttpUrl(url: String): Boolean =
             url.startsWith("https://", ignoreCase = true) ||

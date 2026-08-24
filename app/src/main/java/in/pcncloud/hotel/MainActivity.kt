@@ -569,25 +569,7 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "Path requests → ${FirestorePaths.requestsCollection(hotelId)}")
         Log.d(TAG, "Path alerts → ${FirestorePaths.alertsCollection(hotelId)}")
 
-        // Bind diagnostic SnapshotListeners to Hotels/{saved_hotel_id}/…
-        syncListeners += repository.attachSyncDiagnostics(
-            onBranding = { branding ->
-                Log.d(
-                    TAG,
-                    "MainActivity branding update → logo_url=${branding.logoUrl} " +
-                        "bg_wallpaper=${branding.bgWallpaperUrl} name=${branding.hotelName} " +
-                        "status=${branding.status}",
-                )
-            },
-            onRooms = { rooms ->
-                Log.d(
-                    TAG,
-                    "MainActivity Rooms update → count=${rooms.size} " +
-                        rooms.joinToString { "${it.roomNumber}:${it.status}:${it.guestName}" },
-                )
-            },
-        )
-
+        // Paint Home ASAP — intro prepares in the background and overlays only when READY.
         setContent {
             val view = LocalView.current
             SideEffect {
@@ -642,6 +624,25 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        // Diagnostic SnapshotListeners after first Compose frame (Home already visible).
+        syncListeners += repository.attachSyncDiagnostics(
+            onBranding = { branding ->
+                Log.d(
+                    TAG,
+                    "MainActivity branding update → logo_url=${branding.logoUrl} " +
+                        "bg_wallpaper=${branding.bgWallpaperUrl} name=${branding.hotelName} " +
+                        "status=${branding.status}",
+                )
+            },
+            onRooms = { rooms ->
+                Log.d(
+                    TAG,
+                    "MainActivity Rooms update → count=${rooms.size} " +
+                        rooms.joinToString { "${it.roomNumber}:${it.status}:${it.guestName}" },
+                )
+            },
+        )
     }
 
     /**
