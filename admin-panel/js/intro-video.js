@@ -396,8 +396,24 @@ async function saveIntroUrl(url, { fromManualUrl = false } = {}) {
   uploading = true;
   setUploadBusy(true);
   try {
-    await persistIntroUrl(hotelId, trimmed, { fromManualUrl: Boolean(fromManualUrl) });
-    toast('Intro video URL saved');
+    const sizeHint = await probeVideoUrlBytes(trimmed);
+    if (sizeHint === 0) {
+      toast(
+        'Warning: that URL reports 0 bytes (empty file). TV will skip playback. Use a real .mp4 host link.',
+        'error',
+      );
+    } else if (sizeHint != null && sizeHint > 0) {
+      console.info('[Intro] URL Content-Length=', sizeHint);
+    }
+    await persistIntroUrl(hotelId, trimmed, {
+      fromManualUrl: Boolean(fromManualUrl),
+      probedBytes: sizeHint,
+    });
+    toast(
+      sizeHint === 0
+        ? 'URL saved, but file looks empty — replace with a valid .mp4'
+        : 'Intro video URL saved',
+    );
   } catch (err) {
     console.error('[Firestore ERROR] Intro URL save failed:', err);
     toast(err?.message || 'Failed to save intro video URL', 'error');
@@ -405,6 +421,35 @@ async function saveIntroUrl(url, { fromManualUrl = false } = {}) {
     uploading = false;
     setUploadBusy(false);
   }
+}
+
+/** Best-effort HEAD/Range probe — catches 0-byte Catbox/CDN links before TV fails. */
+async function probeVideoUrlBytes(url) {
+  try {
+    const head = await fetch(url, { method: 'HEAD', mode: 'cors' });
+    const len = head.headers.get('content-length');
+    if (len != null && len !== '') {
+      const n = Number(len);
+      if (Number.isFinite(n)) return n;
+    }
+  } catch (err) {
+    console.warn('[Intro] HEAD probe failed (CORS?)', err?.message || err);
+  }
+  try {
+    const range = await fetch(url, {
+      method: 'GET',
+      headers: { Range: 'bytes=0-0' },
+      mode: 'cors',
+    });
+    const cr = range.headers.get('content-range'); // bytes 0-0/12345
+    const m = cr && /\/(\d+)\s*$/.exec(cr);
+    if (m) return Number(m[1]);
+    const len = range.headers.get('content-length');
+    if (len != null) return Number(len);
+  } catch (err) {
+    console.warn('[Intro] Range probe failed', err?.message || err);
+  }
+  return null;
 }
 
 async function persistIntroUrl(hotelId, introVideoUrl, meta = {}) {
