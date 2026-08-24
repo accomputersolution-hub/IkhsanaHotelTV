@@ -170,8 +170,9 @@ function formatStorageError(err) {
   }
   if (code === 'storage/unauthorized' || code === 'storage/permission-denied') {
     return (
-      'Firebase Storage rules blocked this upload. In Firebase Console → Storage → Rules, ' +
-      'allow authenticated writes to hotels/{hotelId}/intro/** (see admin-panel/storage.rules.example).'
+      'Firebase Storage blocked this upload. Enable Storage (Blaze) at ' +
+      'Console → Storage → Get Started, then publish rules for hotels/{hotelId}/intro/** ' +
+      '(see storage.rules.example). Or paste a public HTTPS .mp4 URL below.'
     );
   }
   if (code === 'storage/canceled') {
@@ -179,14 +180,20 @@ function formatStorageError(err) {
   }
   if (code === 'storage/stall' || /stall/i.test(raw)) {
     return (
-      'Upload stuck at 0% (no bytes transferred). Usually Storage security rules or CORS. ' +
-      'Check Console → Storage → Rules, or paste a public HTTPS .mp4 URL below as a workaround.'
+      'Upload stuck at 0% — Firebase Storage is not set up or billing is off on this project. ' +
+      'Open Console → Storage → Get Started (needs Blaze), publish storage rules, then retry. ' +
+      'Meanwhile paste a public HTTPS .mp4 URL below — Save URL works without Storage.'
     );
   }
-  if (code === 'storage/retry-limit-exceeded' || /cors|network|failed to fetch/i.test(raw)) {
+  if (
+    code === 'storage/retry-limit-exceeded' ||
+    code === 'storage/unknown' ||
+    /cors|network|failed to fetch|bucket|404|billing/i.test(raw)
+  ) {
     return (
-      `Network/CORS error talking to Firebase Storage: ${raw}. ` +
-      'Confirm storageBucket in firebase-config.js and that Storage is enabled for this project.'
+      `Storage error (${code || 'network'}): ${raw}. ` +
+      'If Storage was never enabled, open Firebase Console → Storage → Get Started. ' +
+      'Or paste a public HTTPS .mp4 URL below.'
     );
   }
   if (code === 'storage/quota-exceeded') {
