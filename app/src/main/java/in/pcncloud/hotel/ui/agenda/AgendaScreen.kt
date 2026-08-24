@@ -9,8 +9,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -57,7 +55,7 @@ import `in`.pcncloud.hotel.ui.theme.TextMuted
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
 
 /**
- * Corporate-only Today's Agenda — large-text timeline from Hotels/{id}.daily_agenda.
+ * Corporate Today's Agenda — live from Hotels/{id}/Daily_Agenda (admin / .docx sync).
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -76,10 +74,10 @@ fun AgendaScreen(
         }
     }
 
-    val subtitle = if (uiState.isLoading) {
-        stringResource(R.string.agenda_loading_subtitle)
-    } else {
-        stringResource(R.string.agenda_subtitle)
+    val subtitle = when {
+        uiState.isLoading -> stringResource(R.string.agenda_loading_subtitle)
+        uiState.items.isEmpty() -> stringResource(R.string.agenda_subtitle)
+        else -> stringResource(R.string.agenda_subtitle_live, uiState.items.size)
     }
 
     BaseScreen(
@@ -138,24 +136,44 @@ fun AgendaScreen(
             }
 
             else -> {
-                LazyColumn(
+                Column(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                    contentPadding = PaddingValues(top = 20.dp, bottom = 32.dp),
                 ) {
-                    itemsIndexed(
-                        items = uiState.items,
-                        key = { _, item -> item.id.ifBlank { "${item.time}_${item.title}" } },
-                    ) { index, item ->
-                        AgendaTimelineRow(
-                            item = item,
-                            modifier = if (index == 0) {
-                                Modifier.focusRequester(firstItemFocus)
-                            } else {
-                                Modifier
-                            },
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(top = 20.dp, bottom = 16.dp),
+                    ) {
+                        itemsIndexed(
+                            items = uiState.items,
+                            key = { _, item -> item.id.ifBlank { "${item.time}_${item.title}" } },
+                        ) { index, item ->
+                            TodayAgendaSessionCard(
+                                item = item,
+                                modifier = if (index == 0) {
+                                    Modifier.focusRequester(firstItemFocus)
+                                } else {
+                                    Modifier
+                                },
+                            )
+                        }
+                    }
+                    if (uiState.contactsFooter.isNotBlank()) {
+                        Text(
+                            text = uiState.contactsFooter,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 12.dp),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            fontFamily = FontFamily.SansSerif,
+                            color = TextMuted,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -164,9 +182,10 @@ fun AgendaScreen(
     }
 }
 
+/** Single schedule row for the TV timeline. */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun AgendaTimelineRow(
+fun TodayAgendaSessionCard(
     item: AgendaItem,
     modifier: Modifier = Modifier,
 ) {

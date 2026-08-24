@@ -1176,15 +1176,19 @@
             <div class="module-card-header">
               <div>
                 <h2 class="text-base font-bold">Today’s Agenda</h2>
+                <p class="text-xs mt-1" style="color:var(--text-dim)">Manual rows or import a Word (.docx) schedule — TVs sync live via Firestore.</p>
               </div>
               <div class="agenda-header-actions">
                 <span id="agenda-item-count" class="count-badge">0</span>
+                <input id="agenda-docx-input" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="hidden" />
+                <button type="button" id="agenda-docx-import-btn" class="quick-btn">Import .docx</button>
                 <button type="button" id="agenda-clear-all-btn" class="quick-btn quick-btn-danger" disabled>
                   Clear All
                 </button>
               </div>
             </div>
             <div class="module-card-body flex flex-col gap-5 min-h-0">
+              <p id="agenda-docx-status" class="text-xs" style="color:var(--text-dim)"></p>
               <form id="agenda-item-form" class="agenda-form grid grid-cols-1 md:grid-cols-3 gap-3">
                 <input type="hidden" id="agenda-item-id" value="" />
                 <div>
@@ -1477,6 +1481,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260821pair2"></script>
+  <script type="module" src="js/app.js?v=20260824agenda1"></script>
 </body>
 </html>

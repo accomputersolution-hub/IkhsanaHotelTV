@@ -34,6 +34,7 @@
     <string name="feature_agenda_subtitle">Today\'s schedule &amp; sessions</string>
     <string name="agenda_title">Today\'s Agenda</string>
     <string name="agenda_subtitle">Your schedule for today</string>
+    <string name="agenda_subtitle_live">%1$d sessions today · live from admin</string>
     <string name="agenda_loading_subtitle">Loading schedule…</string>
     <string name="agenda_loading">Loading today\'s agenda…</string>
     <string name="agenda_empty">No agenda scheduled for today.</string>

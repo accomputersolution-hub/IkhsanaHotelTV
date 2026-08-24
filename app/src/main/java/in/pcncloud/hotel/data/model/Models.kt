@@ -44,12 +44,16 @@ data class EmergencyContact(
     val extension: String = "",
 )
 
-/** One entry from Hotels/{hotelId}/Daily_Agenda (admin Daily Agenda). */
+/** One entry from Hotels/{hotelId}/Daily_Agenda (admin Daily Agenda / docx import). */
 data class AgendaItem(
     val id: String = "",
     val time: String = "",
     val title: String = "",
     val location: String = "",
+    /** Optional calendar day (`yyyy-MM-dd` or display label). Blank = show on today's board. */
+    val date: String = "",
+    /** Contacts / footnotes from the schedule document. */
+    val notes: String = "",
 )
 
 /** Live room / guest status from Hotels/{hotelId}/Rooms/{roomNumber}. */

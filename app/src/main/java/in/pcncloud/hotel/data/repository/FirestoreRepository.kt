@@ -975,14 +975,59 @@ class FirestoreRepository(
         val title = firstNonBlank(
             data["title"] as? String,
             data["name"] as? String,
+            data["session"] as? String,
         )
         val location = firstNonBlank(
             data["location"] as? String,
             data["place"] as? String,
             data["venue"] as? String,
         )
+        val date = firstNonBlank(data["date"] as? String, data["day"] as? String)
+        val notes = firstNonBlank(
+            data["notes"] as? String,
+            data["contacts"] as? String,
+            data["contact"] as? String,
+        )
         if (time.isBlank() && title.isBlank() && location.isBlank()) return null
-        return AgendaItem(id = id, time = time, title = title, location = location)
+        return AgendaItem(
+            id = id,
+            time = time,
+            title = title,
+            location = location,
+            date = date,
+            notes = notes,
+        )
+    }
+
+    /** Keep items for today: blank date = current board; matching ISO/display date = today. */
+    fun filterAgendaForToday(
+        items: List<AgendaItem>,
+        todayIso: String = todayIsoDate(),
+    ): List<AgendaItem> {
+        if (items.isEmpty()) return emptyList()
+        val dated = items.filter { it.date.isNotBlank() }
+        if (dated.isEmpty()) return items
+        val todayItems = items.filter { item ->
+            item.date.isBlank() ||
+                item.date == todayIso ||
+                item.date.contains(todayIso) ||
+                matchesLooseToday(item.date, todayIso)
+        }
+        return todayItems.ifEmpty { items }
+    }
+
+    private fun todayIsoDate(): String {
+        val cal = java.util.Calendar.getInstance()
+        val y = cal.get(java.util.Calendar.YEAR)
+        val m = cal.get(java.util.Calendar.MONTH) + 1
+        val d = cal.get(java.util.Calendar.DAY_OF_MONTH)
+        return "%04d-%02d-%02d".format(y, m, d)
+    }
+
+    private fun matchesLooseToday(dateLabel: String, todayIso: String): Boolean {
+        val day = todayIso.substringAfterLast('-').trimStart('0')
+        if (day.isBlank()) return false
+        return Regex("""\b$day\b""").containsMatchIn(dateLabel)
     }
 
     /** Parse start of a time range for chronological sort (e.g. "09:00 AM - 10:30 AM"). */

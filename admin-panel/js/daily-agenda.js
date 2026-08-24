@@ -27,8 +27,9 @@ import {
   onHotelMetaChange,
   isCorporateProperty,
 } from './tenant-context.js';
+import { parseAgendaPlainText } from './agenda-docx-parser.js';
 
-/** @type {{ id: string, time: string, title: string, location: string }[]} */
+/** @type {{ id: string, time: string, title: string, location: string, date?: string, notes?: string }[]} */
 let agendaItems = [];
 /** @type {(() => void) | null} */
 let agendaUnsub = null;
@@ -40,6 +41,7 @@ const migratedHotels = new Set();
 
 export function initDailyAgenda() {
   setupForm();
+  setupDocxImport();
   applyAgendaChrome();
   onHotelChange(() => {
     editingId = null;
@@ -102,7 +104,9 @@ function listenAgenda() {
             id: d.id,
             time: String(d.data()?.time || '').trim(),
             title: String(d.data()?.title || '').trim(),
-            location: String(d.data()?.location || '').trim(),
+            location: String(d.data()?.location || d.data()?.venue || '').trim(),
+            date: String(d.data()?.date || '').trim(),
+            notes: String(d.data()?.notes || d.data()?.contacts || '').trim(),
           }))
           .filter((item) => item.time || item.title || item.location);
       }
@@ -168,6 +172,145 @@ function setupForm() {
   document.getElementById('agenda-clear-all-btn')?.addEventListener('click', () => {
     clearAll();
   });
+}
+
+function setupDocxImport() {
+  const input = document.getElementById('agenda-docx-input');
+  const btn = document.getElementById('agenda-docx-import-btn');
+  btn?.addEventListener('click', () => input?.click());
+  input?.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    await importDocxSchedule(file);
+  });
+}
+
+async function loadMammoth() {
+  if (window.mammoth?.extractRawText) return window.mammoth;
+  await new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-mammoth]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('error', reject);
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = 'https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js';
+    s.dataset.mammoth = '1';
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Could not load Mammoth (.docx) parser'));
+    document.head.appendChild(s);
+  });
+  if (!window.mammoth?.extractRawText) {
+    throw new Error('Mammoth failed to initialize');
+  }
+  return window.mammoth;
+}
+
+/**
+ * Admin workflow: .docx → plain text → parse → replace Hotels/{id}/Daily_Agenda.
+ * @param {File} file
+ */
+async function importDocxSchedule(file) {
+  const hotelId = getHotelId();
+  if (!hotelId) {
+    toast('No property selected', 'error');
+    return;
+  }
+  if (!/\.docx$/i.test(file.name)) {
+    toast('Please upload a .docx Word schedule', 'error');
+    return;
+  }
+
+  const statusEl = document.getElementById('agenda-docx-status');
+  const btn = document.getElementById('agenda-docx-import-btn');
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.textContent = `Reading ${file.name}…`;
+
+  try {
+    const mammoth = await loadMammoth();
+    const arrayBuffer = await file.arrayBuffer();
+    const { value: text } = await mammoth.extractRawText({ arrayBuffer });
+    const parsed = parseAgendaPlainText(text);
+    if (!parsed.items.length) {
+      toast('No time slots found in the document. Use lines like “09:00 AM - Session | Venue”.', 'error');
+      if (statusEl) statusEl.textContent = '';
+      return;
+    }
+
+    const preview = parsed.items
+      .slice(0, 8)
+      .map((i) => `• ${i.time} — ${i.title}${i.location ? ` @ ${i.location}` : ''}`)
+      .join('\n');
+    const ok = confirm(
+      `Import ${parsed.items.length} session(s) from “${file.name}”?\n\nThis replaces the current Daily Agenda.\n\n${preview}${
+        parsed.items.length > 8 ? '\n…' : ''
+      }`,
+    );
+    if (!ok) {
+      if (statusEl) statusEl.textContent = '';
+      return;
+    }
+
+    if (statusEl) statusEl.textContent = `Writing ${parsed.items.length} items to Firestore…`;
+
+    const existing = await getDocs(agendaCol(hotelId));
+    if (!existing.empty) {
+      let deleteBatch = writeBatch(db);
+      let deleteOps = 0;
+      for (const d of existing.docs) {
+        deleteBatch.delete(d.ref);
+        deleteOps += 1;
+        if (deleteOps >= 400) {
+          await deleteBatch.commit();
+          deleteBatch = writeBatch(db);
+          deleteOps = 0;
+        }
+      }
+      if (deleteOps > 0) await deleteBatch.commit();
+    }
+
+    let writeBatchRef = writeBatch(db);
+    let writeOps = 0;
+    for (let index = 0; index < parsed.items.length; index += 1) {
+      const item = parsed.items[index];
+      const ref = doc(agendaCol(hotelId));
+      writeBatchRef.set(ref, {
+        time: item.time,
+        title: item.title,
+        location: item.location || 'TBD',
+        venue: item.location || 'TBD',
+        date: item.date || '',
+        notes: item.notes || '',
+        sortOrder: index,
+        source: 'docx_import',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      writeOps += 1;
+      if (writeOps >= 400) {
+        await writeBatchRef.commit();
+        writeBatchRef = writeBatch(db);
+        writeOps = 0;
+      }
+    }
+    if (writeOps > 0) await writeBatchRef.commit();
+    logFirestoreWrite('Daily Agenda Docx Import', `Hotels/${hotelId}/Daily_Agenda`, {
+      count: parsed.items.length,
+      file: file.name,
+    });
+    toast(`Imported ${parsed.items.length} agenda sessions — TVs update live`);
+    if (statusEl) {
+      statusEl.textContent = `Imported ${parsed.items.length} sessions from ${file.name}`;
+    }
+  } catch (err) {
+    console.error('[agenda] docx import failed', err);
+    toast(err.message || 'Failed to import .docx schedule', 'error');
+    if (statusEl) statusEl.textContent = '';
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function resetForm() {
@@ -336,11 +479,11 @@ function renderAgenda() {
   list.innerHTML = sorted
     .map(
       (item) => `
-      <article class="agenda-item-card" data-id="${escapeHtml(item.id)}" data-searchable data-search-text="${escapeHtml(`${item.time} ${item.title} ${item.location}`)}">
+      <article class="agenda-item-card" data-id="${escapeHtml(item.id)}" data-searchable data-search-text="${escapeHtml(`${item.time} ${item.title} ${item.location} ${item.date || ''}`)}">
         <div class="agenda-item-time">${escapeHtml(item.time)}</div>
         <div class="agenda-item-body">
           <h4 class="agenda-item-title">${escapeHtml(item.title)}</h4>
-          <p class="agenda-item-location">${escapeHtml(item.location)}</p>
+          <p class="agenda-item-location">${escapeHtml(item.location)}${item.date ? ` · ${escapeHtml(item.date)}` : ''}</p>
         </div>
         <div class="agenda-item-actions">
           <button type="button" class="quick-btn quick-btn-edit" data-action="edit" data-id="${escapeHtml(item.id)}">Edit</button>

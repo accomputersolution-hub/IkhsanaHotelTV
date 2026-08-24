@@ -13,10 +13,12 @@ import kotlinx.coroutines.launch
 data class AgendaUiState(
     val isLoading: Boolean = true,
     val items: List<AgendaItem> = emptyList(),
+    /** Contacts / footnotes rolled up from today's sessions. */
+    val contactsFooter: String = "",
 )
 
 /**
- * Live daily agenda from Hotels/{pairedHotelId}/Daily_Agenda.
+ * Live daily agenda from Hotels/{pairedHotelId}/Daily_Agenda — filtered to today.
  */
 class AgendaViewModel(
     private val repository: FirestoreRepository,
@@ -27,11 +29,18 @@ class AgendaViewModel(
 
     init {
         viewModelScope.launch {
-            repository.observeDailyAgenda().collect { items ->
+            repository.observeDailyAgenda().collect { all ->
+                val today = repository.filterAgendaForToday(all)
+                val footer = today
+                    .map { it.notes }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .joinToString(" · ")
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        items = items, // always replace, including empty after last delete
+                        items = today,
+                        contactsFooter = footer,
                     )
                 }
             }
