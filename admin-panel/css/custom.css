@@ -3237,6 +3237,18 @@ body.modal-open { overflow: hidden; }
   min-width: 5.5rem;
 }
 
+.intro-video-progress.is-error .intro-video-progress-fill {
+  background: linear-gradient(90deg, #f87171, #fb7185);
+}
+
+.intro-video-progress.is-error .intro-video-progress-text {
+  color: #fca5a5;
+  min-width: 0;
+  flex: 1 1 auto;
+  white-space: normal;
+  line-height: 1.35;
+}
+
 .intro-video-preview {
   display: block;
   width: min(100%, 480px);
