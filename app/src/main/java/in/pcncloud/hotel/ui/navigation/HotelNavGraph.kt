@@ -182,125 +182,9 @@ fun HotelNavGraph(
             .fillMaxSize()
             .background(NavyDeep),
     ) {
-        // Retained Home — always composed; never destroyed when opening sub-screens.
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .focusProperties { canFocus = onGuestHome },
-        ) {
-            HomeScreen(
-                viewModelFactory = viewModelFactory,
-                isHomeVisible = onGuestHome,
-                onNavigateToDining = { showOverlay(Routes.DINING) },
-                onNavigateToAlerts = { showOverlay(Routes.ALERTS) },
-                onNavigateToServices = { showOverlay(Routes.SERVICES) },
-                onNavigateToAgenda = { showOverlay(Routes.AGENDA) },
-                onNavigateToEntertainment = { showOverlay(Routes.ENTERTAINMENT) },
-                onNavigateToAdmin = { openStaffSettings() },
-            )
-        }
-
-        // Sub-screens layered above Home — clearing overlayRoute reveals Home with 0ms inflate.
-        when (overlayRoute) {
-            Routes.DINING -> {
-                DiningScreen(
-                    viewModelFactory = viewModelFactory,
-                    onBack = { navigateToHomeView() },
-                    onOpenAdmin = { openStaffSettings() },
-                )
-            }
-            Routes.HOTEL_INFO -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(NavyDeep),
-                ) {
-                    HotelInfoScreen(
-                        viewModelFactory = viewModelFactory,
-                        onBack = { navigateToHomeView() },
-                        onOpenAdmin = { openStaffSettings() },
-                    )
-                }
-            }
-            Routes.ALERTS -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(NavyDeep),
-                ) {
-                    AlertsScreen(
-                        viewModelFactory = viewModelFactory,
-                        onBack = { navigateToHomeView() },
-                        onOpenAdmin = { openStaffSettings() },
-                    )
-                }
-            }
-            Routes.SERVICES,
-            Routes.SERVICES_HOUSEKEEPING,
-            Routes.SERVICES_CONCIERGE,
-            -> {
-                val departmentFilter = when (overlayRoute) {
-                    Routes.SERVICES_HOUSEKEEPING -> "housekeeping"
-                    Routes.SERVICES_CONCIERGE -> "concierge"
-                    else -> null
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(NavyDeep),
-                ) {
-                    ServicesScreen(
-                        viewModelFactory = viewModelFactory,
-                        onBack = { navigateToHomeView() },
-                        onOpenAdmin = { openStaffSettings() },
-                        departmentFilter = departmentFilter,
-                    )
-                }
-            }
-            Routes.AGENDA -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(NavyDeep),
-                ) {
-                    AgendaScreen(
-                        viewModelFactory = viewModelFactory,
-                        onBack = { navigateToHomeView() },
-                        onOpenAdmin = { openStaffSettings() },
-                    )
-                }
-            }
-            Routes.ENTERTAINMENT -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(NavyDeep),
-                ) {
-                    EntertainmentHubScreen(
-                        viewModelFactory = viewModelFactory,
-                        onBack = {
-                            KioskPolicy.clearOttLaunchState(context)
-                            navigateToHomeView()
-                        },
-                        onOpenAdmin = { openStaffSettings() },
-                    )
-                }
-            }
-            Routes.ADMIN -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(NavyDeep),
-                ) {
-                    AdminSettingsScreen(
-                        onExitToHome = { navigateToHomeView() },
-                        sessionEpoch = adminSessionEpoch,
-                    )
-                }
-            }
-        }
-
         if (!introFinished) {
+            // Cold start: never compose Home underneath — that caused a Home flash
+            // before IntroVideoScreen painted. Opaque intro gate only.
             IntroVideoScreen(
                 viewModelFactory = viewModelFactory,
                 onFinished = {
@@ -308,6 +192,124 @@ fun HotelNavGraph(
                     introFinished = true
                 },
             )
+        } else {
+            // Retained Home — composed only after intro gate; kept alive for overlays.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .focusProperties { canFocus = onGuestHome },
+            ) {
+                HomeScreen(
+                    viewModelFactory = viewModelFactory,
+                    isHomeVisible = onGuestHome,
+                    onNavigateToDining = { showOverlay(Routes.DINING) },
+                    onNavigateToAlerts = { showOverlay(Routes.ALERTS) },
+                    onNavigateToServices = { showOverlay(Routes.SERVICES) },
+                    onNavigateToAgenda = { showOverlay(Routes.AGENDA) },
+                    onNavigateToEntertainment = { showOverlay(Routes.ENTERTAINMENT) },
+                    onNavigateToAdmin = { openStaffSettings() },
+                )
+            }
+
+            // Sub-screens layered above Home — clearing overlayRoute reveals Home with 0ms inflate.
+            when (overlayRoute) {
+                Routes.DINING -> {
+                    DiningScreen(
+                        viewModelFactory = viewModelFactory,
+                        onBack = { navigateToHomeView() },
+                        onOpenAdmin = { openStaffSettings() },
+                    )
+                }
+                Routes.HOTEL_INFO -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(NavyDeep),
+                    ) {
+                        HotelInfoScreen(
+                            viewModelFactory = viewModelFactory,
+                            onBack = { navigateToHomeView() },
+                            onOpenAdmin = { openStaffSettings() },
+                        )
+                    }
+                }
+                Routes.ALERTS -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(NavyDeep),
+                    ) {
+                        AlertsScreen(
+                            viewModelFactory = viewModelFactory,
+                            onBack = { navigateToHomeView() },
+                            onOpenAdmin = { openStaffSettings() },
+                        )
+                    }
+                }
+                Routes.SERVICES,
+                Routes.SERVICES_HOUSEKEEPING,
+                Routes.SERVICES_CONCIERGE,
+                -> {
+                    val departmentFilter = when (overlayRoute) {
+                        Routes.SERVICES_HOUSEKEEPING -> "housekeeping"
+                        Routes.SERVICES_CONCIERGE -> "concierge"
+                        else -> null
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(NavyDeep),
+                    ) {
+                        ServicesScreen(
+                            viewModelFactory = viewModelFactory,
+                            onBack = { navigateToHomeView() },
+                            onOpenAdmin = { openStaffSettings() },
+                            departmentFilter = departmentFilter,
+                        )
+                    }
+                }
+                Routes.AGENDA -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(NavyDeep),
+                    ) {
+                        AgendaScreen(
+                            viewModelFactory = viewModelFactory,
+                            onBack = { navigateToHomeView() },
+                            onOpenAdmin = { openStaffSettings() },
+                        )
+                    }
+                }
+                Routes.ENTERTAINMENT -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(NavyDeep),
+                    ) {
+                        EntertainmentHubScreen(
+                            viewModelFactory = viewModelFactory,
+                            onBack = {
+                                KioskPolicy.clearOttLaunchState(context)
+                                navigateToHomeView()
+                            },
+                            onOpenAdmin = { openStaffSettings() },
+                        )
+                    }
+                }
+                Routes.ADMIN -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(NavyDeep),
+                    ) {
+                        AdminSettingsScreen(
+                            onExitToHome = { navigateToHomeView() },
+                            sessionEpoch = adminSessionEpoch,
+                        )
+                    }
+                }
+            }
         }
     }
 }

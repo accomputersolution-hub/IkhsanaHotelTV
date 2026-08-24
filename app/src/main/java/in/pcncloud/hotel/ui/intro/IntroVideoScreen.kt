@@ -79,15 +79,9 @@ fun IntroVideoScreen(
     ) {
         when (uiState.phase) {
             IntroPhase.Resolving -> {
-                Text(
-                    text = if (uiState.hotelId.isNotBlank()) {
-                        "Loading intro… (${uiState.hotelId})"
-                    } else {
-                        "Loading intro…"
-                    },
-                    color = TextPrimary.copy(alpha = 0.7f),
-                    modifier = Modifier.align(Alignment.Center),
-                )
+                // Silent navy hold while Config/intro resolves — no "Loading intro…" flash
+                // over a prematurely composed HomeScreen.
+                Box(modifier = Modifier.fillMaxSize())
             }
             IntroPhase.Playing -> {
                 IntroExoPlayer(
