@@ -271,7 +271,7 @@ class SplashActivity : AppCompatActivity() {
             return
         }
         splashRoot().removeCallbacks(forceProceedMain)
-        splashRoot().postDelayed(forceProceedMain, DATA_TIMEOUT_MS)
+        splashRoot().postDelayed(forceProceedMain, dataTimeoutMs())
         tryScheduleMainWhenReady()
     }
 
@@ -594,7 +594,13 @@ class SplashActivity : AppCompatActivity() {
         private const val REQUEST_OVERLAY_PERMISSION = 1001
         private const val UNPAIRED_DELAY_MS = 900L
         private const val MIN_DISPLAY_MS = 1_100L
+        /** Modern devices — branding + room + intro cache. */
         private const val DATA_TIMEOUT_MS = 10_000L
+        /** API &lt; 30 TV boxes — Firestore / TLS often slower on cold boot. */
+        private const val DATA_TIMEOUT_LEGACY_MS = 22_000L
         private const val OVERLAY_DENY_CONTINUE_MS = 2_500L
+
+        private fun dataTimeoutMs(): Long =
+            if (Build.VERSION.SDK_INT < 30) DATA_TIMEOUT_LEGACY_MS else DATA_TIMEOUT_MS
     }
 }
