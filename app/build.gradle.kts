@@ -101,6 +101,8 @@ dependencies {
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.database)
     implementation("com.google.firebase:firebase-config-ktx")
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.coroutines.android)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
