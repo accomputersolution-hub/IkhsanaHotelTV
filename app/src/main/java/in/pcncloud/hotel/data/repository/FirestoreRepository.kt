@@ -320,13 +320,19 @@ class FirestoreRepository(
      */
     suspend fun syncIntroVideoUrlToCache(): String {
         val url = fetchIntroVideoUrl()
-        introCache.setUrl(url)
+        if (url.isNotBlank()) {
+            introCache.setUrl(url)
+            runCatching { introCache.fileStore().ensureCached(url) }
+                .onFailure { Log.e(TAG, "syncIntroVideoUrlToCache file ensure failed", it) }
+        } else {
+            Log.w(TAG, "syncIntroVideoUrlToCache blank — keep prior URL/file")
+        }
         Log.i(
             TAG,
-            "syncIntroVideoUrlToCache blank=${url.isBlank()} len=${url.length} " +
-                "prefix=${url.take(72)}",
+            "syncIntroVideoUrlToCache result blank=${url.isBlank()} len=${url.length} " +
+                "prefix=${url.take(72)} local=${introCache.fileStore().hasReadyFile()}",
         )
-        return url
+        return url.ifBlank { introCache.getUrl() }
     }
 
     /**
@@ -385,9 +391,9 @@ class FirestoreRepository(
             Log.e(TAG, "fetchIntroVideoUrl Hotel root GET failed hotelId=$id", e)
         }
 
-        Log.w(TAG, "fetchIntroVideoUrl MISS hotelId=$id — no introVideoUrl")
-        introCache.setUrl("")
-        return ""
+        Log.w(TAG, "fetchIntroVideoUrl MISS hotelId=$id — keep prior cache for offline")
+        // Do not clear URL/file on miss — offline TVs must keep intro_cached.mp4.
+        return introCache.getUrl()
     }
 
     private fun parseIntroVideoUrl(data: Map<String, Any?>?): String {

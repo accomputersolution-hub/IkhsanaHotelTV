@@ -34,6 +34,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
@@ -45,6 +46,7 @@ import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.config.IntroVideoCache
+import `in`.pcncloud.hotel.config.IntroVideoFileStore
 import `in`.pcncloud.hotel.ui.theme.GoldLuxury
 import `in`.pcncloud.hotel.ui.theme.NavyDeep
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
@@ -56,18 +58,20 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 
 /**
- * Fullscreen intro playback. URL from [IntroVideoCache].
+ * Fullscreen intro playback. Prefer [videoUrl] as a local `file://` path from
+ * [IntroVideoFileStore]; falls back to remote http(s) on first boot while downloading.
  *
- * API &lt; 30: longer buffers, OkHttp COMPATIBLE_TLS, retries, delayed Home fallback
- * so Android 9 TV boxes are not skipped during TLS / decoder warmup.
+ * API &lt; 30: longer buffers, OkHttp COMPATIBLE_TLS, retries, delayed Home fallback.
  */
 @OptIn(ExperimentalTvMaterial3Api::class, UnstableApi::class)
 @Composable
 fun IntroVideoScreen(
     videoUrl: String,
     onFinished: (reason: String) -> Unit,
+    remoteUrlForDownload: String? = null,
     viewModel: IntroVideoViewModel = viewModel(),
 ) {
+    val context = LocalContext.current
     val finished = remember { AtomicBoolean(false) }
     val skipFocus = remember { FocusRequester() }
     val mediaUri = remember(videoUrl) { IntroVideoCache.parseMediaUri(videoUrl) }
@@ -104,6 +108,15 @@ fun IntroVideoScreen(
             Log.e(TAG, "Invalid intro URI — Home. raw=${videoUrl.take(80)}")
             finishOnce("bad_uri")
         }
+    }
+
+    // Background refresh of local MP4 when admin URL is known (does not block playback).
+    LaunchedEffect(remoteUrlForDownload) {
+        val remote = remoteUrlForDownload?.trim().orEmpty()
+        if (remote.isBlank()) return@LaunchedEffect
+        runCatching {
+            IntroVideoFileStore(context.applicationContext).ensureCached(remote)
+        }.onFailure { Log.e(TAG, "background ensureCached failed", it) }
     }
 
     LaunchedEffect(Unit) {
@@ -204,13 +217,15 @@ private fun IntroExoPlayer(
         Log.i(
             TAG,
             "ExoPlayer create sdk=${Build.VERSION.SDK_INT} legacy=${policy.isLegacyApi} " +
-                "scheme=${uri.scheme} host=${uri.host} " +
+                "scheme=${uri.scheme} host=${uri.host} path=${uri.path?.takeLast(40)} " +
                 "connectMs=${policy.connectTimeoutMs} readMs=${policy.readTimeoutMs}",
         )
 
         val okHttp = buildIntroOkHttpClient(policy)
         val httpFactory = OkHttpDataSource.Factory(okHttp)
             .setUserAgent(INTRO_HTTP_USER_AGENT)
+        // DefaultDataSource: file:// from internal cache + http(s) via OkHttp.
+        val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
 
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
@@ -221,14 +236,15 @@ private fun IntroExoPlayer(
             )
             .build()
 
+        val isLocalFile = uri.scheme.equals("file", ignoreCase = true)
         val mimeType = when {
-            videoUrl.contains(".mp4", ignoreCase = true) -> MimeTypes.VIDEO_MP4
+            isLocalFile || videoUrl.contains(".mp4", ignoreCase = true) -> MimeTypes.VIDEO_MP4
             videoUrl.contains(".webm", ignoreCase = true) -> MimeTypes.VIDEO_WEBM
             else -> null
         }
 
         ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .setLoadControl(loadControl)
             .build()
             .apply {

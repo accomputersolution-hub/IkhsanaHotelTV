@@ -1895,13 +1895,15 @@ class MainActivity : ComponentActivity() {
         if (intent?.getBooleanExtra(EXTRA_NAVIGATE_TO_HOME, false) != true) {
             return false
         }
-        // Cold start with a cached intro: do not fire Root Home before Compose mounts
-        // IntroVideoScreen (kiosk reclaim extras are common on API 28 launchers).
-        val cachedIntro = IntroVideoCache(applicationContext).getValidHttpUrl()
-        if (cachedIntro != null) {
+        // Cold start with a cached intro URL or local MP4: do not fire Root Home
+        // before Compose mounts IntroVideoScreen.
+        val introCache = IntroVideoCache(applicationContext)
+        if (introCache.canStartIntro()) {
             Log.i(
                 TAG,
-                "cold NAVIGATE_TO_HOME deferred — intro cache hit, play first",
+                "cold NAVIGATE_TO_HOME deferred — intro ready " +
+                    "(url=${!introCache.getValidHttpUrl().isNullOrBlank()} " +
+                    "file=${introCache.fileStore().hasReadyFile()})",
             )
             KioskPolicy.setIntroPlaybackActive(true)
             intent.removeExtra(EXTRA_NAVIGATE_TO_HOME)

@@ -4,26 +4,29 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
 import android.util.Log
+import java.io.File
 import java.util.Locale
 
 /**
- * Local source of truth for cold-boot intro playback.
+ * Local source of truth for cold-boot intro playback (URL prefs).
  *
- * Admin / Firestore updates are written here as soon as the TV learns the URL.
- * Cold start reads this synchronously — never waits on a network race.
+ * Binary MP4 bytes live in [IntroVideoFileStore] (`intro_cached.mp4`) for offline play.
+ * Admin / Firestore updates write the URL here; a background download fills the file.
  */
 class IntroVideoCache(context: Context) {
 
+    private val appContext = context.applicationContext
     private val prefs: SharedPreferences =
-        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val fileStore = IntroVideoFileStore(appContext)
 
     /** Raw cached string (may be blank). Sync read. */
     fun getUrl(): String =
         prefs.getString(KEY_INTRO_VIDEO_URL, null)?.trim().orEmpty()
 
     /**
-     * Valid http(s) URL for immediate playback, or null → start at Home.
-     * Pure SharedPreferences — no Firestore / no coroutines.
+     * Valid http(s) URL for immediate playback, or null → start at Home
+     * (unless a local file already exists — see [canStartIntro]).
      */
     fun getValidHttpUrl(): String? {
         val raw = getUrl()
@@ -31,22 +34,36 @@ class IntroVideoCache(context: Context) {
         return normalizeHttpUrl(raw)
     }
 
+    /** Cold boot: intro if URL known **or** a previous download is on disk. */
+    fun canStartIntro(): Boolean =
+        fileStore.canPlayIntro(getValidHttpUrl())
+
+    fun fileStore(): IntroVideoFileStore = fileStore
+
     /**
      * Persist URL for the next cold boot. Uses [SharedPreferences.Editor.commit]
      * so a process kill right after admin sync still keeps the value.
+     * Blank URL clears the local MP4 as well.
      */
     fun setUrl(url: String?) {
         val normalized = url?.let { normalizeHttpUrl(it.trim()) }.orEmpty()
+        val previous = getUrl()
         val ok = prefs.edit().putString(KEY_INTRO_VIDEO_URL, normalized).commit()
         Log.i(
             TAG,
             "setUrl commitOk=$ok blank=${normalized.isBlank()} len=${normalized.length} " +
                 "prefix=${normalized.take(72)}",
         )
+        if (normalized.isBlank()) {
+            fileStore.clear()
+        } else if (previous != normalized) {
+            Log.i(TAG, "URL changed — background download should refresh local file")
+        }
     }
 
     fun clear() {
         val ok = prefs.edit().remove(KEY_INTRO_VIDEO_URL).commit()
+        fileStore.clear()
         Log.i(TAG, "clear commitOk=$ok")
     }
 
@@ -73,7 +90,6 @@ class IntroVideoCache(context: Context) {
                     Log.w(TAG, "reject blank host prefix=${trimmed.take(64)}")
                     return null
                 }
-                // Rebuild encoded URI string for Media3 on API 28+.
                 uri.toString()
             } catch (e: Exception) {
                 Log.e(TAG, "Uri.parse failed prefix=${trimmed.take(64)}", e)
@@ -82,7 +98,21 @@ class IntroVideoCache(context: Context) {
         }
 
         fun parseMediaUri(raw: String): Uri? {
-            val normalized = normalizeHttpUrl(raw) ?: return null
+            val trimmed = raw.trim()
+            if (trimmed.isBlank()) return null
+            // Local offline file
+            if (trimmed.startsWith("file:", ignoreCase = true) ||
+                trimmed.startsWith("/")
+            ) {
+                return try {
+                    if (trimmed.startsWith("/")) Uri.fromFile(File(trimmed))
+                    else Uri.parse(trimmed)
+                } catch (e: Exception) {
+                    Log.e(TAG, "parse file Uri failed", e)
+                    null
+                }
+            }
+            val normalized = normalizeHttpUrl(trimmed) ?: return null
             return try {
                 Uri.parse(normalized)
             } catch (e: Exception) {

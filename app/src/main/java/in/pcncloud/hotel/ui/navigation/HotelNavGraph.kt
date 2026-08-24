@@ -68,17 +68,25 @@ fun HotelNavGraph(
     val activity = context as? Activity
     val mainActivity = context as? MainActivity
 
-    // Cold-boot decision: sync SharedPreferences only — never Firestore.
+    // Cold-boot decision: sync prefs + local file — never Firestore.
     val introCache = remember { IntroVideoCache(context.applicationContext) }
+    val fileStore = remember { introCache.fileStore() }
     val cachedIntroUrl = remember { introCache.getValidHttpUrl() }
     val startDestination = remember {
-        if (cachedIntroUrl != null) {
-            Log.i(TAG, "startDestination=INTRO (cache hit len=${cachedIntroUrl.length})")
+        if (introCache.canStartIntro()) {
+            Log.i(
+                TAG,
+                "startDestination=INTRO url=${cachedIntroUrl != null} " +
+                    "localFile=${fileStore.hasReadyFile()} len=${fileStore.localFileLength()}",
+            )
             Routes.INTRO
         } else {
-            Log.i(TAG, "startDestination=HOME (cache empty — no spinner)")
+            Log.i(TAG, "startDestination=HOME (no url / no local file)")
             Routes.HOME
         }
+    }
+    val initialPlaybackUri = remember {
+        fileStore.resolvePlaybackUri(cachedIntroUrl)?.toString().orEmpty()
     }
 
     val navController = rememberNavController()
@@ -207,13 +215,16 @@ fun HotelNavGraph(
         navigateToHomeView()
     }
 
-    // Background Firestore → cache only (next cold boot). Never blocks / redirects this boot.
+    // Background Firestore URL sync + MP4 download (next boot / offline). Never blocks this frame.
     LaunchedEffect(repository) {
-        runCatching { repository.syncIntroVideoUrlToCache() }
-            .onFailure { Log.e(TAG, "background intro cache sync failed", it) }
+        runCatching {
+            val url = repository.syncIntroVideoUrlToCache()
+            fileStore.ensureCached(url.ifBlank { cachedIntroUrl })
+        }.onFailure { Log.e(TAG, "background intro file sync failed", it) }
         repository.observeIntroVideoUrl().collect { url ->
-            // Repository already writes IntroVideoCache on each snapshot.
             Log.d(TAG, "background intro observe tick blank=${url.isBlank()}")
+            runCatching { fileStore.ensureCached(url) }
+                .onFailure { Log.e(TAG, "intro file ensure after observe failed", it) }
         }
     }
 
@@ -259,13 +270,21 @@ fun HotelNavGraph(
             .background(NavyDeep),
     ) {
         composable(Routes.INTRO) {
-            val url = cachedIntroUrl
-            if (url.isNullOrBlank()) {
-                // Should not happen when startDestination=INTRO; fail open.
-                LaunchedEffect(Unit) { goHomeReplacingIntro("intro_missing_url") }
+            val playback = initialPlaybackUri.ifBlank {
+                fileStore.resolvePlaybackUri(cachedIntroUrl)?.toString().orEmpty()
+            }
+            if (playback.isBlank()) {
+                LaunchedEffect(Unit) { goHomeReplacingIntro("intro_missing_playback") }
             } else {
+                // Keep downloading in background if we are on remote for the first time.
+                LaunchedEffect(cachedIntroUrl) {
+                    if (!cachedIntroUrl.isNullOrBlank()) {
+                        fileStore.ensureCached(cachedIntroUrl)
+                    }
+                }
                 IntroVideoScreen(
-                    videoUrl = url,
+                    videoUrl = playback,
+                    remoteUrlForDownload = cachedIntroUrl,
                     onFinished = { reason -> goHomeReplacingIntro(reason) },
                 )
             }

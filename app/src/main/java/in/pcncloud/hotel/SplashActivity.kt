@@ -278,12 +278,24 @@ class SplashActivity : AppCompatActivity() {
     private fun splashRoot() = findViewById<android.view.View>(R.id.splash_root)
 
     /**
-     * Writes Firestore intro URL into [IntroVideoCache] before MainActivity starts.
-     * MainActivity cold-boot decision is sync prefs-only; this seeds that cache.
-     * On network failure, keeps the previous cached URL (offline / Android 9 TV friendly).
+     * Seeds [IntroVideoCache] URL from Firestore and kicks a background MP4 download
+     * into [IntroVideoFileStore]. If a local file already exists, Splash does not wait
+     * on the network (offline cold boot).
      */
     private fun prefetchIntroVideoCache(hotelId: String) {
         val cache = IntroVideoCache(applicationContext)
+        // Offline / already-downloaded: unblock Splash immediately.
+        if (cache.canStartIntro()) {
+            Log.i(
+                TAG,
+                "Intro ready locally url=${!cache.getValidHttpUrl().isNullOrBlank()} " +
+                    "file=${cache.fileStore().hasReadyFile()} " +
+                    "len=${cache.fileStore().localFileLength()}",
+            )
+            introCacheReady = true
+            tryScheduleMainWhenReady()
+        }
+
         FirebaseFirestore.getInstance()
             .collection(FirestorePaths.HOTELS)
             .document(hotelId)
@@ -302,7 +314,25 @@ class SplashActivity : AppCompatActivity() {
                         ""
                     }
                     val normalized = IntroVideoCache.normalizeHttpUrl(raw).orEmpty()
-                    cache.setUrl(normalized)
+                    if (normalized.isNotBlank()) {
+                        cache.setUrl(normalized)
+                        // Background download — do not block Splash / MainActivity.
+                        Thread(
+                            {
+                                try {
+                                    kotlinx.coroutines.runBlocking {
+                                        cache.fileStore().ensureCached(normalized)
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Intro MP4 background download failed", e)
+                                }
+                            },
+                            "intro-mp4-download",
+                        ).start()
+                    } else if (task.isSuccessful && snap != null && !snap.exists()) {
+                        // Explicit empty config — only clear if we know doc is missing.
+                        Log.i(TAG, "Intro Config/intro missing — keep prior URL/file")
+                    }
                     Log.i(
                         TAG,
                         "Intro cache prefetch OK blank=${normalized.isBlank()} " +
@@ -312,7 +342,7 @@ class SplashActivity : AppCompatActivity() {
                     Log.w(
                         TAG,
                         "Intro cache prefetch failed — keep existing cache " +
-                            "prefix=${cache.getUrl().take(64)}",
+                            "prefix=${cache.getUrl().take(64)} file=${cache.fileStore().hasReadyFile()}",
                         task.exception,
                     )
                 }
