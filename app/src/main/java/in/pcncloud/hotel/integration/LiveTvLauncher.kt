@@ -5,14 +5,14 @@ import `in`.pcncloud.hotel.BuildConfig
 
 /**
  * Routes Live TV card taps to the correct destination per product flavor:
- * - **Corporate** (L&T): Panasonic Viera Wi‑Fi → HDMI 2 (`NRC_HDMI2-ONOFF`)
+ * - **Corporate** (L&T): shell `input keyevent 244` (KEYCODE_TV_INPUT_HDMI_2)
  * - **Hotel**: Onyx IPTV app
  */
 object LiveTvLauncher {
 
     fun launch(context: Context) {
         if (BuildConfig.IS_CORPORATE) {
-            PanasonicVieraRemote.switchToHdmi2(context)
+            HdmiInputKeyInjector.switchToHdmi2(context)
         } else {
             OnyxIptvLauncher.launch(context)
         }
