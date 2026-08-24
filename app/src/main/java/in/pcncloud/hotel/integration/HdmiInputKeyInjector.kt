@@ -4,13 +4,12 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.view.KeyEvent
 import android.widget.Toast
 import `in`.pcncloud.hotel.R
 import java.util.concurrent.Executors
 
 /**
- * Corporate Live TV: inject [KeyEvent.KEYCODE_TV_INPUT_HDMI_2] (244) via
+ * Corporate Live TV: inject KEYCODE_TV_INPUT_HDMI_2 (244) via
  * `input keyevent` so the box switches HDMI 2 the same way a hardware key would.
  *
  * Panasonic network control is unused — that API is blocked on this TV.
