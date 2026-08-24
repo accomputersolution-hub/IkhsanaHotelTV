@@ -29,7 +29,7 @@ class HotelViewModelFactory(
         modelClass.isAssignableFrom(AgendaViewModel::class.java) ->
             AgendaViewModel(repository) as T
         modelClass.isAssignableFrom(IntroVideoViewModel::class.java) ->
-            IntroVideoViewModel(repository) as T
+            IntroVideoViewModel(repository, config) as T
         else -> throw IllegalArgumentException("Unknown ViewModel: ${modelClass.name}")
     }
 }

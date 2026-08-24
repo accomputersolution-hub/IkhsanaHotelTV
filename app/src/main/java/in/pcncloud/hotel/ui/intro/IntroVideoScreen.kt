@@ -72,7 +72,11 @@ fun IntroVideoScreen(
         when (uiState.phase) {
             IntroPhase.Resolving -> {
                 Text(
-                    text = "Loading…",
+                    text = if (uiState.hotelId.isNotBlank()) {
+                        "Loading intro… (${uiState.hotelId})"
+                    } else {
+                        "Loading intro…"
+                    },
                     color = TextPrimary.copy(alpha = 0.7f),
                     modifier = Modifier.align(Alignment.Center),
                 )
@@ -121,6 +125,7 @@ private fun IntroExoPlayer(
 ) {
     val context = LocalContext.current
     val exoPlayer = remember(videoUrl) {
+        Log.i(TAG, "ExoPlayer prepare urlLen=${videoUrl.length} prefix=${videoUrl.take(72)}")
         ExoPlayer.Builder(context).build().apply {
             playWhenReady = true
             repeatMode = Player.REPEAT_MODE_OFF
@@ -133,6 +138,14 @@ private fun IntroExoPlayer(
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
+                val name = when (playbackState) {
+                    Player.STATE_IDLE -> "IDLE"
+                    Player.STATE_BUFFERING -> "BUFFERING"
+                    Player.STATE_READY -> "READY"
+                    Player.STATE_ENDED -> "ENDED"
+                    else -> "OTHER($playbackState)"
+                }
+                Log.d(TAG, "ExoPlayer state=$name playWhenReady=${exoPlayer.playWhenReady}")
                 when (playbackState) {
                     Player.STATE_READY -> {
                         if (exoPlayer.isPlaying || exoPlayer.playWhenReady) {
@@ -145,16 +158,23 @@ private fun IntroExoPlayer(
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
+                Log.d(TAG, "ExoPlayer isPlaying=$isPlaying")
                 if (isPlaying) onPlaybackStarted()
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                Log.e(TAG, "ExoPlayer error: ${error.message}", error)
-                onError(error.message)
+                Log.e(
+                    TAG,
+                    "ExoPlayer error code=${error.errorCodeName} msg=${error.message} " +
+                        "cause=${error.cause?.message} urlPrefix=${videoUrl.take(72)}",
+                    error,
+                )
+                onError("${error.errorCodeName}: ${error.message}")
             }
         }
         exoPlayer.addListener(listener)
         onDispose {
+            Log.d(TAG, "ExoPlayer release")
             exoPlayer.removeListener(listener)
             exoPlayer.release()
         }

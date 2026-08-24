@@ -274,10 +274,13 @@ class FirestoreRepository(
     /**
      * Hotels/{hotelId}/Config/intro — branded splash / intro video URL.
      * Empty string = skip intro and go straight to Home.
+     *
+     * Note: do **not** emit "" on the first permission/network error — that made
+     * [IntroVideoViewModel] skip before the hotel-root fallback could run.
      */
     fun observeIntroVideoUrl(): Flow<String> = callbackFlow {
         val docPath = FirestorePaths.introConfigDocument(hotelId)
-        Log.d(TAG, "LISTEN Intro video → $docPath")
+        Log.i(TAG, "LISTEN Intro video → $docPath (hotelId=$hotelId)")
 
         val listener = firestore
             .collection(FirestorePaths.HOTELS)
@@ -287,21 +290,96 @@ class FirestoreRepository(
             .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
                 if (error != null) {
                     Log.e(TAG, "FAIL Intro video listener at $docPath: ${error.message}", error)
+                    // Do not trySend("") here — keep waiting / let one-shot fetch handle fallback.
+                    return@addSnapshotListener
+                }
+                if (snapshot == null || !snapshot.exists()) {
+                    Log.i(TAG, "EMPTY Intro Config/intro missing at $docPath")
                     trySend("")
                     return@addSnapshotListener
                 }
-                val data = snapshot?.data ?: emptyMap()
-                val url = firstNonBlank(
-                    data["introVideoUrl"] as? String,
-                    data["intro_video_url"] as? String,
-                ).trim()
-                Log.d(TAG, "OK Intro video → path=$docPath urlBlank=${url.isBlank()} len=${url.length}")
+                val url = parseIntroVideoUrl(snapshot.data)
+                Log.i(
+                    TAG,
+                    "OK Intro Config/intro → path=$docPath blank=${url.isBlank()} " +
+                        "len=${url.length} prefix=${url.take(64)} keys=${snapshot.data?.keys}",
+                )
                 trySend(url)
             }
         awaitClose {
             Log.d(TAG, "UNLISTEN Intro video → $docPath")
             listener.remove()
         }
+    }
+
+    /**
+     * One-shot intro URL resolve used at cold start.
+     * Tries [Config/intro] first, then top-level [Hotels/{hotelId}.introVideoUrl]
+     * (admin mirrors both). Heavy logging for logcat filter `IntroVideo` / `FirestoreRepo`.
+     */
+    suspend fun fetchIntroVideoUrl(): String {
+        val id = hotelId
+        Log.i(TAG, "fetchIntroVideoUrl start hotelId=$id")
+
+        // 1) Hotels/{id}/Config/intro
+        try {
+            val snap = firestore
+                .collection(FirestorePaths.HOTELS)
+                .document(id)
+                .collection(FirestorePaths.CONFIG)
+                .document("intro")
+                .get()
+                .await()
+            Log.i(
+                TAG,
+                "fetchIntroVideoUrl Config/intro exists=${snap.exists()} " +
+                    "keys=${snap.data?.keys} fromCache=${snap.metadata.isFromCache}",
+            )
+            val fromConfig = parseIntroVideoUrl(snap.data)
+            if (fromConfig.isNotBlank()) {
+                Log.i(TAG, "fetchIntroVideoUrl HIT Config/intro len=${fromConfig.length}")
+                return fromConfig
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchIntroVideoUrl Config/intro GET failed hotelId=$id", e)
+        }
+
+        // 2) Hotels/{id} top-level mirror (admin persistIntroUrl)
+        try {
+            val snap = firestore
+                .collection(FirestorePaths.HOTELS)
+                .document(id)
+                .get()
+                .await()
+            Log.i(
+                TAG,
+                "fetchIntroVideoUrl Hotel root exists=${snap.exists()} " +
+                    "hasIntro=${snap.getString("introVideoUrl") != null} " +
+                    "keys=${snap.data?.keys}",
+            )
+            val fromHotel = parseIntroVideoUrl(snap.data)
+            if (fromHotel.isNotBlank()) {
+                Log.i(TAG, "fetchIntroVideoUrl HIT Hotel root len=${fromHotel.length}")
+                return fromHotel
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchIntroVideoUrl Hotel root GET failed hotelId=$id", e)
+        }
+
+        Log.w(TAG, "fetchIntroVideoUrl MISS hotelId=$id — no introVideoUrl")
+        return ""
+    }
+
+    private fun parseIntroVideoUrl(data: Map<String, Any?>?): String {
+        if (data.isNullOrEmpty()) return ""
+        @Suppress("UNCHECKED_CAST")
+        val nested = data["branding"] as? Map<String, Any?>
+        return firstNonBlank(
+            asTrimmedString(data["introVideoUrl"]),
+            asTrimmedString(data["intro_video_url"]),
+            asTrimmedString(nested?.get("introVideoUrl")),
+            asTrimmedString(nested?.get("intro_video_url")),
+        ).trim()
     }
 
     /**
