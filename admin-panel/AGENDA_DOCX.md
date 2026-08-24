@@ -22,16 +22,22 @@ Corporate TVs show **Today’s Agenda** from Firestore:
 2. **Import .docx** (L&T-style Word schedule) **or** add rows manually
 3. Import **replaces** the current collection; TVs update via `onSnapshot`
 
-### .docx line formats that parse well
+### .docx line formats that parse well (L&T LEAP)
 
 ```
-Monday, 24 Aug 2026
-09:00 AM - 10:30 AM | Leadership Kickoff | Conference Hall A
-10:45 AM - 12:00 PM Strategy Workshop @ Hall B
-Contact: Helpdesk Ext 2200
+June 27, 2026
+12.30 p.m. - 02.00 p.m. Lunch: Dining Hall B
+03.15 p.m.- 04.00 p.m. Inauguration: Full Auditorium (Learning Centre II)
+04.00 p.m. onwards Hi Tea: Near Auditorium
+08.30 a.m. onwards Commencement of Session
+Learning Centre II
+
+Important Contact Details
+• Emergency Number- 900
+• LDA Coordinator: Ms. Pooja Shetty (02114-302212)
 ```
 
-Browser uses [Mammoth](https://github.com/mwilliamson/mammoth.js) for text extract; parsing matches Android `AgendaScheduleParser`.
+Supports dots in times (`12.30`), `a.m.` / `p.m.`, tabs/multi-space between columns, and `Title: Venue`.
 
 ## Android
 
