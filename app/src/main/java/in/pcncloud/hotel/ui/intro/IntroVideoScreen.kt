@@ -97,6 +97,7 @@ fun IntroVideoScreen(
                         pressedContainerColor = GoldLuxury,
                         contentColor = TextPrimary,
                         focusedContentColor = NavyDeep,
+                        pressedContentColor = NavyDeep,
                     ),
                 ) {
                     Text(text = "Skip")
