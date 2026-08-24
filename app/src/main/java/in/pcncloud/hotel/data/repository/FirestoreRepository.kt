@@ -276,7 +276,7 @@ class FirestoreRepository(
      * Empty string = skip intro and go straight to Home.
      *
      * Note: do **not** emit "" on the first permission/network error — that made
-     * [IntroVideoViewModel] skip before the hotel-root fallback could run.
+     * [StartupGateViewModel] skip before the hotel-root fallback could run.
      */
     fun observeIntroVideoUrl(): Flow<String> = callbackFlow {
         val docPath = FirestorePaths.introConfigDocument(hotelId)
