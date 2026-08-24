@@ -54,6 +54,10 @@ object FirestorePaths {
     fun dailyAgendaCollection(hotelId: String): String =
         "$HOTELS/${normalizeHotelId(hotelId)}/$DAILY_AGENDA"
 
+    /** Hotels/{hotelId}/Config/intro — splash / intro video URL. */
+    fun introConfigDocument(hotelId: String): String =
+        "$HOTELS/${normalizeHotelId(hotelId)}/$CONFIG/intro"
+
     fun normalizeRoom(roomNumber: String): String =
         roomNumber.trim()
 }
