@@ -30,11 +30,12 @@ import `in`.pcncloud.hotel.ui.dining.DiningScreen
 import `in`.pcncloud.hotel.ui.entertainment.EntertainmentHubScreen
 import `in`.pcncloud.hotel.ui.home.HomeScreen
 import `in`.pcncloud.hotel.ui.hotelinfo.HotelInfoScreen
-import `in`.pcncloud.hotel.ui.intro.IntroVideoScreen
+import `in`.pcncloud.hotel.ui.intro.IntroVideoHost
 import `in`.pcncloud.hotel.ui.services.ServicesScreen
 import `in`.pcncloud.hotel.ui.theme.NavyDeep
 
 object Routes {
+    /** Guest L&T Welcome / dashboard — always the cold-start destination. */
     const val HOME = "home"
     const val DINING = "dining"
     const val HOTEL_INFO = "hotel_info"
@@ -64,9 +65,13 @@ fun HotelNavGraph(
     // null = Home visible; any other route = that sub-screen covers Home.
     val overlayRouteState = remember { mutableStateOf<String?>(null) }
     var overlayRoute by overlayRouteState
-    /** One-shot per MainActivity process: branded intro before guest Home. */
-    var introFinished by rememberSaveable { mutableStateOf(false) }
-    val onGuestHome = overlayRoute == null && introFinished
+    /**
+     * One-shot intro session for this process. Home is always composed first;
+     * intro only overlays after background prepare succeeds.
+     */
+    var introSessionDone by rememberSaveable { mutableStateOf(false) }
+    var introPlaying by remember { mutableStateOf(false) }
+    val onGuestHome = overlayRoute == null && !introPlaying
     /** Bumped on every Staff Settings open/close so PIN/auth ViewModel cannot leak. */
     var adminSessionEpoch by remember { mutableIntStateOf(0) }
 
@@ -141,16 +146,12 @@ fun HotelNavGraph(
 
     /**
      * Hotel flavor: Back never leaves the guest app — sub-menu → dashboard, Home → stay.
-     * Corporate + kiosk paths below are unchanged.
+     * Intro overlay owns its own BackHandler while playing (Skip).
      */
-    BackHandler(enabled = true) {
+    BackHandler(enabled = !introPlaying) {
         val kioskEnabled = KioskPolicy.isKioskModeEnabled(context)
         val isHotel = !BuildConfig.IS_CORPORATE
         when {
-            !introFinished -> {
-                Log.d(TAG, "Intro playing — Back skips to Home")
-                introFinished = true
-            }
             isHotel && onGuestHome -> {
                 Log.d(TAG, "Hotel flavor @ Home — Back consumed (no exit)")
             }
@@ -182,134 +183,139 @@ fun HotelNavGraph(
             .fillMaxSize()
             .background(NavyDeep),
     ) {
-        if (!introFinished) {
-            // Cold start: never compose Home underneath — that caused a Home flash
-            // before IntroVideoScreen painted. Opaque intro gate only.
-            IntroVideoScreen(
+        // Cold start = Home immediately (L&T Welcome). No blocking intro gate.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .focusProperties { canFocus = onGuestHome },
+        ) {
+            HomeScreen(
                 viewModelFactory = viewModelFactory,
-                onFinished = {
-                    Log.i(TAG, "Intro finished → guest Home")
-                    introFinished = true
-                },
+                isHomeVisible = onGuestHome,
+                onNavigateToDining = { showOverlay(Routes.DINING) },
+                onNavigateToAlerts = { showOverlay(Routes.ALERTS) },
+                onNavigateToServices = { showOverlay(Routes.SERVICES) },
+                onNavigateToAgenda = { showOverlay(Routes.AGENDA) },
+                onNavigateToEntertainment = { showOverlay(Routes.ENTERTAINMENT) },
+                onNavigateToAdmin = { openStaffSettings() },
             )
-        } else {
-            // Retained Home — composed only after intro gate; kept alive for overlays.
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .focusProperties { canFocus = onGuestHome },
-            ) {
-                HomeScreen(
+        }
+
+        // Sub-screens layered above Home — clearing overlayRoute reveals Home with 0ms inflate.
+        when (overlayRoute) {
+            Routes.DINING -> {
+                DiningScreen(
                     viewModelFactory = viewModelFactory,
-                    isHomeVisible = onGuestHome,
-                    onNavigateToDining = { showOverlay(Routes.DINING) },
-                    onNavigateToAlerts = { showOverlay(Routes.ALERTS) },
-                    onNavigateToServices = { showOverlay(Routes.SERVICES) },
-                    onNavigateToAgenda = { showOverlay(Routes.AGENDA) },
-                    onNavigateToEntertainment = { showOverlay(Routes.ENTERTAINMENT) },
-                    onNavigateToAdmin = { openStaffSettings() },
+                    onBack = { navigateToHomeView() },
+                    onOpenAdmin = { openStaffSettings() },
                 )
             }
-
-            // Sub-screens layered above Home — clearing overlayRoute reveals Home with 0ms inflate.
-            when (overlayRoute) {
-                Routes.DINING -> {
-                    DiningScreen(
+            Routes.HOTEL_INFO -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(NavyDeep),
+                ) {
+                    HotelInfoScreen(
                         viewModelFactory = viewModelFactory,
                         onBack = { navigateToHomeView() },
                         onOpenAdmin = { openStaffSettings() },
                     )
                 }
-                Routes.HOTEL_INFO -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(NavyDeep),
-                    ) {
-                        HotelInfoScreen(
-                            viewModelFactory = viewModelFactory,
-                            onBack = { navigateToHomeView() },
-                            onOpenAdmin = { openStaffSettings() },
-                        )
-                    }
-                }
-                Routes.ALERTS -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(NavyDeep),
-                    ) {
-                        AlertsScreen(
-                            viewModelFactory = viewModelFactory,
-                            onBack = { navigateToHomeView() },
-                            onOpenAdmin = { openStaffSettings() },
-                        )
-                    }
-                }
-                Routes.SERVICES,
-                Routes.SERVICES_HOUSEKEEPING,
-                Routes.SERVICES_CONCIERGE,
-                -> {
-                    val departmentFilter = when (overlayRoute) {
-                        Routes.SERVICES_HOUSEKEEPING -> "housekeeping"
-                        Routes.SERVICES_CONCIERGE -> "concierge"
-                        else -> null
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(NavyDeep),
-                    ) {
-                        ServicesScreen(
-                            viewModelFactory = viewModelFactory,
-                            onBack = { navigateToHomeView() },
-                            onOpenAdmin = { openStaffSettings() },
-                            departmentFilter = departmentFilter,
-                        )
-                    }
-                }
-                Routes.AGENDA -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(NavyDeep),
-                    ) {
-                        AgendaScreen(
-                            viewModelFactory = viewModelFactory,
-                            onBack = { navigateToHomeView() },
-                            onOpenAdmin = { openStaffSettings() },
-                        )
-                    }
-                }
-                Routes.ENTERTAINMENT -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(NavyDeep),
-                    ) {
-                        EntertainmentHubScreen(
-                            viewModelFactory = viewModelFactory,
-                            onBack = {
-                                KioskPolicy.clearOttLaunchState(context)
-                                navigateToHomeView()
-                            },
-                            onOpenAdmin = { openStaffSettings() },
-                        )
-                    }
-                }
-                Routes.ADMIN -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(NavyDeep),
-                    ) {
-                        AdminSettingsScreen(
-                            onExitToHome = { navigateToHomeView() },
-                            sessionEpoch = adminSessionEpoch,
-                        )
-                    }
+            }
+            Routes.ALERTS -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(NavyDeep),
+                ) {
+                    AlertsScreen(
+                        viewModelFactory = viewModelFactory,
+                        onBack = { navigateToHomeView() },
+                        onOpenAdmin = { openStaffSettings() },
+                    )
                 }
             }
+            Routes.SERVICES,
+            Routes.SERVICES_HOUSEKEEPING,
+            Routes.SERVICES_CONCIERGE,
+            -> {
+                val departmentFilter = when (overlayRoute) {
+                    Routes.SERVICES_HOUSEKEEPING -> "housekeeping"
+                    Routes.SERVICES_CONCIERGE -> "concierge"
+                    else -> null
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(NavyDeep),
+                ) {
+                    ServicesScreen(
+                        viewModelFactory = viewModelFactory,
+                        onBack = { navigateToHomeView() },
+                        onOpenAdmin = { openStaffSettings() },
+                        departmentFilter = departmentFilter,
+                    )
+                }
+            }
+            Routes.AGENDA -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(NavyDeep),
+                ) {
+                    AgendaScreen(
+                        viewModelFactory = viewModelFactory,
+                        onBack = { navigateToHomeView() },
+                        onOpenAdmin = { openStaffSettings() },
+                    )
+                }
+            }
+            Routes.ENTERTAINMENT -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(NavyDeep),
+                ) {
+                    EntertainmentHubScreen(
+                        viewModelFactory = viewModelFactory,
+                        onBack = {
+                            KioskPolicy.clearOttLaunchState(context)
+                            navigateToHomeView()
+                        },
+                        onOpenAdmin = { openStaffSettings() },
+                    )
+                }
+            }
+            Routes.ADMIN -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(NavyDeep),
+                ) {
+                    AdminSettingsScreen(
+                        onExitToHome = { navigateToHomeView() },
+                        sessionEpoch = adminSessionEpoch,
+                    )
+                }
+            }
+        }
+
+        // Background intro: prepare offscreen; overlay only when ExoPlayer is READY.
+        if (!introSessionDone) {
+            IntroVideoHost(
+                viewModelFactory = viewModelFactory,
+                allowShow = overlayRoute == null,
+                onPlayingChanged = { playing ->
+                    introPlaying = playing
+                    Log.i(TAG, "introPlaying=$playing")
+                },
+                onSessionComplete = {
+                    Log.i(TAG, "Intro session complete — Home remains")
+                    introPlaying = false
+                    introSessionDone = true
+                },
+            )
         }
     }
 }

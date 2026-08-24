@@ -4,10 +4,12 @@ import android.net.Uri
 import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -18,7 +20,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -45,117 +49,162 @@ import `in`.pcncloud.hotel.ui.theme.NavyDeep
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
 
 /**
- * Fullscreen branded intro after pairing splash → MainActivity.
- * Plays [IntroVideoUiState.videoUrl] with Media3 ExoPlayer (no controls).
- * Skip / real end / hard error / timeout → [onFinished].
+ * Home-first intro host: Firestore + ExoPlayer prepare run in the background while
+ * Home is already on screen. Overlay paints only after media is READY — never a
+ * blocking "Loading intro…" screen.
  *
- * Buffering / READY / transient states do **not** finish the intro.
+ * @param allowShow when false (guest opened a submenu), abandon prepare without overlay.
+ * @param onPlayingChanged notifies parent so kiosk / focus treat intro as covering Home.
+ * @param onSessionComplete called once when the intro session ends (shown or silent skip).
  */
 @OptIn(ExperimentalTvMaterial3Api::class, UnstableApi::class)
 @Composable
-fun IntroVideoScreen(
+fun IntroVideoHost(
     viewModelFactory: HotelViewModelFactory,
-    onFinished: () -> Unit,
+    allowShow: Boolean,
+    onPlayingChanged: (Boolean) -> Unit,
+    onSessionComplete: () -> Unit,
 ) {
     val viewModel: IntroVideoViewModel = viewModel(factory = viewModelFactory)
     val uiState by viewModel.uiState.collectAsState()
     val skipFocus = remember { FocusRequester() }
 
-    LaunchedEffect(uiState.shouldEnterHome) {
-        if (uiState.shouldEnterHome) onFinished()
+    LaunchedEffect(uiState.isSessionComplete) {
+        if (uiState.isSessionComplete) onSessionComplete()
+    }
+
+    LaunchedEffect(uiState.shouldShowOverlay) {
+        onPlayingChanged(uiState.shouldShowOverlay)
+    }
+
+    LaunchedEffect(allowShow, uiState.phase) {
+        if (!allowShow &&
+            (uiState.phase == IntroPhase.Checking || uiState.phase == IntroPhase.Preparing)
+        ) {
+            viewModel.abandonBecauseBusy("submenu_open")
+        }
+    }
+
+    BackHandler(enabled = uiState.shouldShowOverlay) {
+        viewModel.onSkip()
     }
 
     LaunchedEffect(uiState.phase) {
         if (uiState.phase == IntroPhase.Playing) {
-            // Focus Skip for D-pad, but do not auto-click it.
             runCatching { skipFocus.requestFocus() }
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(NavyDeep),
-    ) {
-        when (uiState.phase) {
-            IntroPhase.Resolving -> {
-                // Silent navy hold while Config/intro resolves — no "Loading intro…" flash
-                // over a prematurely composed HomeScreen.
-                Box(modifier = Modifier.fillMaxSize())
-            }
-            IntroPhase.Playing -> {
+    when (uiState.phase) {
+        IntroPhase.Checking, IntroPhase.Finished -> {
+            // Nothing — Home remains the only UI.
+        }
+        IntroPhase.Preparing, IntroPhase.Playing -> {
+            val showOverlay = uiState.phase == IntroPhase.Playing
+            Box(
+                modifier = if (showOverlay) {
+                    Modifier
+                        .fillMaxSize()
+                        .background(NavyDeep)
+                } else {
+                    // Keep ExoPlayer in the tree offscreen until READY — never steal Home focus.
+                    Modifier
+                        .size(1.dp)
+                        .alpha(0f)
+                        .focusProperties { canFocus = false }
+                },
+            ) {
                 IntroExoPlayer(
                     videoUrl = uiState.videoUrl,
-                    onPlaybackStarted = viewModel::onPlaybackStarted,
+                    playWhenReady = showOverlay,
+                    onMediaReady = {
+                        if (allowShow) {
+                            viewModel.onMediaReady()
+                        } else {
+                            viewModel.abandonBecauseBusy("ready_but_busy")
+                        }
+                    },
                     onEnded = viewModel::onPlaybackEnded,
                     onError = viewModel::onPlaybackError,
                     modifier = Modifier.fillMaxSize(),
                 )
-                if (uiState.playerError.isNotBlank()) {
-                    Text(
-                        text = uiState.playerError,
-                        color = Color(0xFFFFCDD2),
+                if (showOverlay) {
+                    Button(
+                        onClick = viewModel::onSkip,
                         modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 48.dp, start = 32.dp, end = 32.dp),
-                    )
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 36.dp, bottom = 36.dp)
+                            .focusRequester(skipFocus),
+                        colors = ButtonDefaults.colors(
+                            containerColor = Color.Black.copy(alpha = 0.45f),
+                            focusedContainerColor = GoldLuxury.copy(alpha = 0.9f),
+                            pressedContainerColor = GoldLuxury,
+                            contentColor = TextPrimary,
+                            focusedContentColor = NavyDeep,
+                            pressedContentColor = NavyDeep,
+                        ),
+                    ) {
+                        Text(text = "Skip")
+                    }
                 }
-                Button(
-                    onClick = viewModel::onSkip,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 36.dp, bottom = 36.dp)
-                        .focusRequester(skipFocus),
-                    colors = ButtonDefaults.colors(
-                        containerColor = Color.Black.copy(alpha = 0.45f),
-                        focusedContainerColor = GoldLuxury.copy(alpha = 0.9f),
-                        pressedContainerColor = GoldLuxury,
-                        contentColor = TextPrimary,
-                        focusedContentColor = NavyDeep,
-                        pressedContentColor = NavyDeep,
-                    ),
-                ) {
-                    Text(text = "Skip")
-                }
-            }
-            IntroPhase.Finished -> {
-                // Brief blank while parent swaps to Home.
             }
         }
     }
+}
+
+/**
+ * Legacy entry used only if a caller still expects [IntroVideoScreen].
+ * Prefer [IntroVideoHost] for Home-first boot.
+ */
+@Composable
+fun IntroVideoScreen(
+    viewModelFactory: HotelViewModelFactory,
+    onFinished: () -> Unit,
+) {
+    IntroVideoHost(
+        viewModelFactory = viewModelFactory,
+        allowShow = true,
+        onPlayingChanged = {},
+        onSessionComplete = onFinished,
+    )
 }
 
 @UnstableApi
 @Composable
 private fun IntroExoPlayer(
     videoUrl: String,
-    onPlaybackStarted: () -> Unit,
+    playWhenReady: Boolean,
+    onMediaReady: () -> Unit,
     onEnded: () -> Unit,
     onError: (String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     var playbackEverStarted by remember(videoUrl) { mutableStateOf(false) }
+    var reportedReady by remember(videoUrl) { mutableStateOf(false) }
 
     val exoPlayer = remember(videoUrl) {
-        Log.i(TAG, "ExoPlayer create+prepare url=$videoUrl")
+        Log.i(TAG, "ExoPlayer create+prepare (background) url=$videoUrl")
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(INTRO_HTTP_USER_AGENT)
             .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(20_000)
+            .setConnectTimeoutMs(12_000)
+            .setReadTimeoutMs(15_000)
 
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
             .build()
             .apply {
-                playWhenReady = true
+                this.playWhenReady = false
                 repeatMode = Player.REPEAT_MODE_OFF
                 volume = 1f
-                // Keep control of when we leave intro — ignore short auto-transitions.
                 setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl.trim())))
                 prepare()
             }
+    }
+
+    LaunchedEffect(exoPlayer, playWhenReady) {
+        exoPlayer.playWhenReady = playWhenReady
     }
 
     DisposableEffect(exoPlayer, videoUrl) {
@@ -170,32 +219,31 @@ private fun IntroExoPlayer(
                         "playWhenReady=${exoPlayer.playWhenReady} " +
                         "isPlaying=${exoPlayer.isPlaying} " +
                         "durationMs=$duration positionMs=$position " +
-                        "everStarted=$playbackEverStarted",
+                        "everStarted=$playbackEverStarted reportedReady=$reportedReady",
                 )
 
                 when (playbackState) {
                     Player.STATE_BUFFERING -> {
-                        // Buffering is normal — never finish intro here.
-                        Log.d(TAG, "ExoPlayer buffering — keep waiting")
+                        Log.d(TAG, "ExoPlayer buffering — keep preparing offscreen")
                     }
                     Player.STATE_READY -> {
+                        if (duration == 0L) {
+                            val msg =
+                                "Media duration is 0 ms — empty/bad source. url=$videoUrl"
+                            Log.e(TAG, msg)
+                            onError(msg)
+                            return
+                        }
+                        if (!reportedReady) {
+                            reportedReady = true
+                            Log.i(TAG, "ExoPlayer READY — promote overlay")
+                            onMediaReady()
+                        }
                         if (exoPlayer.playWhenReady) {
-                            // Duration known after READY; 0 / UNSET ⇒ empty or bad source.
-                            if (duration == 0L) {
-                                val msg =
-                                    "Media duration is 0 ms — URL likely returns an empty file " +
-                                        "(e.g. Catbox 0-byte). Re-upload a real .mp4 or paste a " +
-                                        "direct HTTPS link that downloads >0 bytes. url=$videoUrl"
-                                Log.e(TAG, msg)
-                                onError(msg)
-                                return
-                            }
                             playbackEverStarted = true
-                            onPlaybackStarted()
                         }
                     }
                     Player.STATE_ENDED -> {
-                        // Empty / failed sources often jump IDLE→ENDED with duration UNSET/0.
                         if (!playbackEverStarted ||
                             duration == C.TIME_UNSET ||
                             duration <= 0L ||
@@ -204,8 +252,7 @@ private fun IntroExoPlayer(
                             val msg =
                                 "STATE_ENDED before real playback " +
                                     "(everStarted=$playbackEverStarted durationMs=$duration " +
-                                    "positionMs=$position). Source may be empty or unreadable. " +
-                                    "url=$videoUrl"
+                                    "positionMs=$position). url=$videoUrl"
                             Log.e(TAG, msg)
                             onError(msg)
                         } else {
@@ -214,7 +261,7 @@ private fun IntroExoPlayer(
                         }
                     }
                     Player.STATE_IDLE -> {
-                        Log.d(TAG, "ExoPlayer IDLE — ignore (not a finish signal)")
+                        Log.d(TAG, "ExoPlayer IDLE — ignore")
                     }
                     else -> Unit
                 }
@@ -224,7 +271,6 @@ private fun IntroExoPlayer(
                 Log.i(TAG, "ExoPlayer onIsPlayingChanged isPlaying=$isPlaying")
                 if (isPlaying) {
                     playbackEverStarted = true
-                    onPlaybackStarted()
                 }
             }
 
@@ -247,19 +293,10 @@ private fun IntroExoPlayer(
                         "errorCode=${error.errorCode} " +
                         "errorCodeName=${error.errorCodeName} " +
                         "message=${error.message} " +
-                        "timestampMs=${error.timestampMs} " +
                         "url=$videoUrl " +
                         "causeChain=[$causeChain]",
                     error,
                 )
-                // Dump nested causes separately for logcat filters.
-                var nested: Throwable? = error.cause
-                var i = 1
-                while (nested != null && i <= 5) {
-                    Log.e(TAG, "ExoPlayer cause[$i]=${nested.javaClass.name}: ${nested.message}", nested)
-                    nested = nested.cause
-                    i++
-                }
                 onError("${error.errorCodeName} (${error.errorCode}): ${error.message} | $causeChain")
             }
         }
