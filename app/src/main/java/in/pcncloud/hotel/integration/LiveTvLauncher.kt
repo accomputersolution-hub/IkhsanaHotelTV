@@ -5,7 +5,7 @@ import `in`.pcncloud.hotel.BuildConfig
 
 /**
  * Routes Live TV card taps to the correct destination per product flavor:
- * - **Corporate** (L&T): HDMI 2 via CEC / Amlogic input switch
+ * - **Corporate** (L&T): inject KEYCODE_HOME (CEC HDMI switch, like the physical remote)
  * - **Hotel**: Onyx IPTV app
  */
 object LiveTvLauncher {
