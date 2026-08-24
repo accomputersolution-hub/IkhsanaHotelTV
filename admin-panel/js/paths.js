@@ -30,6 +30,8 @@ export const paths = {
   emergencyContactsCollection: () => `${hotelRoot()}/Emergency_Contacts`,
   dailyAgendaCollection: () => `${hotelRoot()}/Daily_Agenda`,
   menuSettingsDoc: () => `${hotelRoot()}/Config/menuSettings`,
+  /** Intro / splash video for TV cold start — Hotels/{id}/Config/intro */
+  introConfigDoc: () => `${hotelRoot()}/Config/intro`,
   liveOrdersCollection: () => 'Live_Orders',
   usersCollection: () => 'users',
   /** Helper matching TenantManager.pathFor */

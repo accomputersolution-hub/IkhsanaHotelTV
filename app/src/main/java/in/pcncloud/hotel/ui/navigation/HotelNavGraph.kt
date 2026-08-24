@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
@@ -29,6 +30,7 @@ import `in`.pcncloud.hotel.ui.dining.DiningScreen
 import `in`.pcncloud.hotel.ui.entertainment.EntertainmentHubScreen
 import `in`.pcncloud.hotel.ui.home.HomeScreen
 import `in`.pcncloud.hotel.ui.hotelinfo.HotelInfoScreen
+import `in`.pcncloud.hotel.ui.intro.IntroVideoScreen
 import `in`.pcncloud.hotel.ui.services.ServicesScreen
 import `in`.pcncloud.hotel.ui.theme.NavyDeep
 
@@ -62,7 +64,9 @@ fun HotelNavGraph(
     // null = Home visible; any other route = that sub-screen covers Home.
     val overlayRouteState = remember { mutableStateOf<String?>(null) }
     var overlayRoute by overlayRouteState
-    val onGuestHome = overlayRoute == null
+    /** One-shot per MainActivity process: branded intro before guest Home. */
+    var introFinished by rememberSaveable { mutableStateOf(false) }
+    val onGuestHome = overlayRoute == null && introFinished
     /** Bumped on every Staff Settings open/close so PIN/auth ViewModel cannot leak. */
     var adminSessionEpoch by remember { mutableIntStateOf(0) }
 
@@ -143,6 +147,10 @@ fun HotelNavGraph(
         val kioskEnabled = KioskPolicy.isKioskModeEnabled(context)
         val isHotel = !BuildConfig.IS_CORPORATE
         when {
+            !introFinished -> {
+                Log.d(TAG, "Intro playing — Back skips to Home")
+                introFinished = true
+            }
             isHotel && onGuestHome -> {
                 Log.d(TAG, "Hotel flavor @ Home — Back consumed (no exit)")
             }
@@ -290,6 +298,16 @@ fun HotelNavGraph(
                     )
                 }
             }
+        }
+
+        if (!introFinished) {
+            IntroVideoScreen(
+                viewModelFactory = viewModelFactory,
+                onFinished = {
+                    Log.i(TAG, "Intro finished → guest Home")
+                    introFinished = true
+                },
+            )
         }
     }
 }

@@ -272,6 +272,39 @@ class FirestoreRepository(
     }
 
     /**
+     * Hotels/{hotelId}/Config/intro — branded splash / intro video URL.
+     * Empty string = skip intro and go straight to Home.
+     */
+    fun observeIntroVideoUrl(): Flow<String> = callbackFlow {
+        val docPath = FirestorePaths.introConfigDocument(hotelId)
+        Log.d(TAG, "LISTEN Intro video → $docPath")
+
+        val listener = firestore
+            .collection(FirestorePaths.HOTELS)
+            .document(hotelId)
+            .collection(FirestorePaths.CONFIG)
+            .document("intro")
+            .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "FAIL Intro video listener at $docPath: ${error.message}", error)
+                    trySend("")
+                    return@addSnapshotListener
+                }
+                val data = snapshot?.data ?: emptyMap()
+                val url = firstNonBlank(
+                    data["introVideoUrl"] as? String,
+                    data["intro_video_url"] as? String,
+                ).trim()
+                Log.d(TAG, "OK Intro video → path=$docPath urlBlank=${url.isBlank()} len=${url.length}")
+                trySend(url)
+            }
+        awaitClose {
+            Log.d(TAG, "UNLISTEN Intro video → $docPath")
+            listener.remove()
+        }
+    }
+
+    /**
      * Hotels/{hotelId}/Emergency_Contacts — live helpdesk list.
      * Falls back to Hotels/{hotelId}.emergency_contacts[] only until the first
      * subcollection snapshot arrives (including an empty list after last delete).
