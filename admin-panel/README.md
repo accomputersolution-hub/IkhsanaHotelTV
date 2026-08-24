@@ -71,3 +71,5 @@ js/app.js               Shell switching by role/route
 - Enable Auth + deploy Firestore rules before production:
   `firebase deploy --only firestore:rules --project ikhsana-hotel-tv`
   (rules file: `admin-panel/firestore.rules`)
+  TV hotel pairing has **no Firebase Auth** — rules must allow unauthenticated
+  read of `public_hotels` / `Hotels/{id}` and write of `pairing_codes`.

@@ -1,7 +1,8 @@
 rules_version = '2';
 
-// Canonical rules live in firestore.rules (deployed via firebase.json).
-// This file is kept in sync so README / copy-paste into Console still works.
+// Canonical rules: admin-panel/firestore.rules (deploy via firebase.json).
+// TV kiosk has no Firebase Auth — Hotels / public_hotels / pairing_codes
+// must be readable (and pairing writable) without request.auth.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -10,30 +11,34 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    match /{document=**} {
-      allow read, write: if signedIn();
-    }
-
     match /users/{userId} {
       allow read, write: if signedIn();
     }
 
     match /public_hotels/{publicSlug} {
-      allow get, list: if true;
-      allow create, update, delete: if signedIn();
+      allow read: if true;
+      allow write: if signedIn();
     }
 
-    match /Hotels/{hotelId}/pairing_codes/{code} {
-      allow get: if true;
-      allow list: if signedIn();
+    match /Hotels/{hotelId} {
+      allow read: if true;
+      allow write: if signedIn();
 
-      allow create: if code.matches('^[0-9]{6}$')
-        && request.resource.data.hotelId == hotelId
-        && request.resource.data.status == 'pending'
-        && request.resource.data.deviceId is string
-        && request.resource.data.deviceId.size() >= 16;
+      match /pairing_codes/{code} {
+        allow read, write: if true;
+      }
 
-      allow update, delete: if signedIn();
+      match /{document=**} {
+        allow read, write: if true;
+      }
+    }
+
+    match /Live_Orders/{orderId} {
+      allow read, write: if true;
+    }
+
+    match /{document=**} {
+      allow read, write: if signedIn();
     }
   }
 }
