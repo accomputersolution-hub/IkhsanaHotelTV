@@ -33,6 +33,8 @@ data class IntroVideoUiState(
     val videoUrl: String = "",
     val statusMessage: String = "",
     val hotelId: String = "",
+    /** Last ExoPlayer failure (shown briefly before Home). */
+    val playerError: String = "",
 ) {
     val shouldEnterHome: Boolean
         get() = phase == IntroPhase.Finished
@@ -149,13 +151,24 @@ class IntroVideoViewModel(
     }
 
     fun onPlaybackEnded() {
-        Log.i(TAG, "ExoPlayer STATE_ENDED")
+        Log.i(TAG, "ExoPlayer STATE_ENDED (real playback)")
         finish("ended")
     }
 
+    /**
+     * Hard player failure. Logs and briefly surfaces the message, then goes Home.
+     * Does **not** run for buffering / READY — only explicit [Player.Listener.onPlayerError]
+     * or empty-media guards from the screen.
+     */
     fun onPlaybackError(message: String?) {
-        Log.e(TAG, "ExoPlayer error → Home: $message")
-        finish("error")
+        val detail = message?.trim().orEmpty().ifBlank { "unknown ExoPlayer error" }
+        Log.e(TAG, "ExoPlayer error (will leave intro shortly): $detail")
+        _uiState.update { it.copy(playerError = detail.take(220)) }
+        // Give logcat / on-screen message a moment before tearing down.
+        viewModelScope.launch {
+            delay(ERROR_HOLD_MS)
+            finish("error")
+        }
     }
 
     fun onSkip() {
@@ -179,7 +192,9 @@ class IntroVideoViewModel(
         /** Wait for Config/intro + hotel-root get before skipping. */
         const val RESOLVE_TIMEOUT_MS = 15_000L
         /** Max wait for first successful playback after URL is known. */
-        const val PLAYBACK_TIMEOUT_MS = 20_000L
+        const val PLAYBACK_TIMEOUT_MS = 25_000L
+        /** Keep error text visible briefly before Home. */
+        private const val ERROR_HOLD_MS = 2_500L
 
         private fun looksLikeHttpUrl(url: String): Boolean =
             url.startsWith("https://", ignoreCase = true) ||
