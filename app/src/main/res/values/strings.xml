@@ -35,9 +35,11 @@
     <string name="agenda_title">Today\'s Agenda</string>
     <string name="agenda_subtitle">Your schedule for today</string>
     <string name="agenda_subtitle_live">%1$d sessions today · live from admin</string>
+    <string name="agenda_subtitle_day">%1$s · %2$d sessions</string>
     <string name="agenda_loading_subtitle">Loading schedule…</string>
     <string name="agenda_loading">Loading today\'s agenda…</string>
     <string name="agenda_empty">No agenda scheduled for today.</string>
+    <string name="agenda_empty_day">No sessions on this day.</string>
     <string name="feature_entertainment">Entertainment &amp; Apps</string>
     <string name="feature_entertainment_subtitle">OTT &amp; streaming apps</string>
     <string name="entertainment_title">Entertainment &amp; Apps</string>

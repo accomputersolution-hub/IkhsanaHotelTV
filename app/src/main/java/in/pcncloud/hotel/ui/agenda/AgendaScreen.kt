@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -33,6 +34,11 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -55,7 +61,7 @@ import `in`.pcncloud.hotel.ui.theme.TextMuted
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
 
 /**
- * Corporate Today's Agenda — live from Hotels/{id}/Daily_Agenda (admin / .docx sync).
+ * Corporate multi-day Agenda — date chips + live sessions from Daily_Agenda.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -66,17 +72,22 @@ fun AgendaScreen(
 ) {
     val viewModel: AgendaViewModel = viewModel(factory = viewModelFactory)
     val uiState by viewModel.uiState.collectAsState()
+    val dateChipFocus = remember { FocusRequester() }
     val firstItemFocus = remember { FocusRequester() }
 
-    LaunchedEffect(uiState.isLoading, uiState.items.size) {
-        if (!uiState.isLoading && uiState.items.isNotEmpty()) {
-            runCatching { firstItemFocus.requestFocus() }
+    LaunchedEffect(uiState.isLoading, uiState.availableDates) {
+        if (!uiState.isLoading && uiState.availableDates.isNotEmpty()) {
+            runCatching { dateChipFocus.requestFocus() }
         }
     }
 
     val subtitle = when {
         uiState.isLoading -> stringResource(R.string.agenda_loading_subtitle)
-        uiState.items.isEmpty() -> stringResource(R.string.agenda_subtitle)
+        uiState.allItems.isEmpty() -> stringResource(R.string.agenda_subtitle)
+        uiState.selectedDate.isNotBlank() -> {
+            val label = AgendaViewModel.formatDateChipLabel(uiState.selectedDate)
+            stringResource(R.string.agenda_subtitle_day, label, uiState.items.size)
+        }
         else -> stringResource(R.string.agenda_subtitle_live, uiState.items.size)
     }
 
@@ -117,7 +128,7 @@ fun AgendaScreen(
                 }
             }
 
-            uiState.items.isEmpty() -> {
+            uiState.allItems.isEmpty() -> {
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -141,27 +152,58 @@ fun AgendaScreen(
                         .weight(1f)
                         .fillMaxWidth(),
                 ) {
-                    LazyColumn(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
-                        contentPadding = PaddingValues(top = 20.dp, bottom = 16.dp),
-                    ) {
-                        itemsIndexed(
-                            items = uiState.items,
-                            key = { _, item -> item.id.ifBlank { "${item.time}_${item.title}" } },
-                        ) { index, item ->
-                            TodayAgendaSessionCard(
-                                item = item,
-                                modifier = if (index == 0) {
-                                    Modifier.focusRequester(firstItemFocus)
-                                } else {
-                                    Modifier
-                                },
+                    if (uiState.availableDates.isNotEmpty()) {
+                        AgendaDateChipRow(
+                            dates = uiState.availableDates,
+                            selectedDate = uiState.selectedDate,
+                            onSelectDate = viewModel::selectDate,
+                            firstChipFocus = dateChipFocus,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp, bottom = 12.dp),
+                        )
+                    }
+
+                    if (uiState.items.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.agenda_empty_day),
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = FontFamily.SansSerif,
+                                color = TextMuted,
+                                textAlign = TextAlign.Center,
                             )
                         }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                            contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
+                        ) {
+                            itemsIndexed(
+                                items = uiState.items,
+                                key = { _, item -> item.id.ifBlank { "${item.time}_${item.title}" } },
+                            ) { index, item ->
+                                TodayAgendaSessionCard(
+                                    item = item,
+                                    modifier = if (index == 0) {
+                                        Modifier.focusRequester(firstItemFocus)
+                                    } else {
+                                        Modifier
+                                    },
+                                )
+                            }
+                        }
                     }
+
                     if (uiState.contactsFooter.isNotBlank()) {
                         Text(
                             text = uiState.contactsFooter,
@@ -179,6 +221,98 @@ fun AgendaScreen(
                 }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun AgendaDateChipRow(
+    dates: List<String>,
+    selectedDate: String,
+    onSelectDate: (String) -> Unit,
+    firstChipFocus: FocusRequester,
+    modifier: Modifier = Modifier,
+) {
+    LazyRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        itemsIndexed(dates, key = { _, d -> d.ifBlank { "_undated" } }) { index, dateKey ->
+            AgendaDateChip(
+                label = AgendaViewModel.formatDateChipLabel(dateKey),
+                selected = dateKey == selectedDate,
+                onClick = { onSelectDate(dateKey) },
+                modifier = if (index == 0) {
+                    Modifier.focusRequester(firstChipFocus)
+                } else {
+                    Modifier
+                },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun AgendaDateChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.06f else 1f,
+        animationSpec = tween(140),
+        label = "agendaDateChipScale",
+    )
+    val shape = RoundedCornerShape(28.dp)
+    val bg = when {
+        selected && focused -> CorpGoldBright.copy(alpha = 0.35f)
+        selected -> CorpGold.copy(alpha = 0.28f)
+        focused -> Color.White.copy(alpha = 0.08f)
+        else -> Color.Transparent
+    }
+
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .onFocusChanged { focused = it.isFocused }
+            .onKeyEvent { event ->
+                if (
+                    event.type == KeyEventType.KeyUp &&
+                    (event.key == Key.Enter || event.key == Key.DirectionCenter)
+                ) {
+                    onClick()
+                    true
+                } else {
+                    false
+                }
+            }
+            .focusable()
+            .luxuryGoldFocusChrome(focused = focused, shape = shape)
+            .background(bg, shape)
+            .padding(horizontal = 22.dp, vertical = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            fontSize = 18.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+            fontFamily = FontFamily.SansSerif,
+            color = when {
+                focused -> Color.White
+                selected -> CorpGoldBright
+                else -> TextMuted
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
