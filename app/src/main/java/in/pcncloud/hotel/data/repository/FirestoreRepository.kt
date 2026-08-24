@@ -12,6 +12,7 @@ import `in`.pcncloud.hotel.data.model.LiveOrder
 import `in`.pcncloud.hotel.data.model.MenuCategory
 import `in`.pcncloud.hotel.data.model.MenuItem
 import `in`.pcncloud.hotel.data.model.OrderLineItem
+import `in`.pcncloud.hotel.data.model.RoomFeatureFlags
 import `in`.pcncloud.hotel.data.model.RoomStatus
 import `in`.pcncloud.hotel.data.model.ServiceRequest
 import com.google.firebase.firestore.FirebaseFirestore
