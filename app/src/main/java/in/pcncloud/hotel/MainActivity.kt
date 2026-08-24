@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.ViewCompat
 import `in`.pcncloud.hotel.config.HotelConfig
+import `in`.pcncloud.hotel.config.IntroVideoCache
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.data.model.HotelBranding
 import `in`.pcncloud.hotel.data.repository.FirestoreRepository
@@ -558,7 +559,7 @@ class MainActivity : ComponentActivity() {
         // Verify / request default Home launcher when kiosk is active.
         verifyAndRequestDefaultHomeLauncher()
 
-        repository = FirestoreRepository(hotelConfig)
+        repository = FirestoreRepository(hotelConfig, IntroVideoCache(applicationContext))
         val viewModelFactory = HotelViewModelFactory(repository, hotelConfig)
 
         Log.d(TAG, "TV Firestore sync starting → hotelId=$hotelId room=${hotelConfig.roomNumber}")
@@ -569,25 +570,7 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "Path requests → ${FirestorePaths.requestsCollection(hotelId)}")
         Log.d(TAG, "Path alerts → ${FirestorePaths.alertsCollection(hotelId)}")
 
-        // Bind diagnostic SnapshotListeners to Hotels/{saved_hotel_id}/…
-        syncListeners += repository.attachSyncDiagnostics(
-            onBranding = { branding ->
-                Log.d(
-                    TAG,
-                    "MainActivity branding update → logo_url=${branding.logoUrl} " +
-                        "bg_wallpaper=${branding.bgWallpaperUrl} name=${branding.hotelName} " +
-                        "status=${branding.status}",
-                )
-            },
-            onRooms = { rooms ->
-                Log.d(
-                    TAG,
-                    "MainActivity Rooms update → count=${rooms.size} " +
-                        rooms.joinToString { "${it.roomNumber}:${it.status}:${it.guestName}" },
-                )
-            },
-        )
-
+        // Paint Compose ASAP — NavHost startDestination from IntroVideoCache (sync).
         setContent {
             val view = LocalView.current
             SideEffect {
@@ -625,6 +608,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         HotelNavGraph(
                             viewModelFactory = viewModelFactory,
+                            repository = repository,
                             navigateHomeSignal = navigateHomeSignal,
                         )
                         if (screensaverVisible) {
@@ -642,6 +626,25 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        // Diagnostic SnapshotListeners after first Compose frame (cache-first intro/home).
+        syncListeners += repository.attachSyncDiagnostics(
+            onBranding = { branding ->
+                Log.d(
+                    TAG,
+                    "MainActivity branding update → logo_url=${branding.logoUrl} " +
+                        "bg_wallpaper=${branding.bgWallpaperUrl} name=${branding.hotelName} " +
+                        "status=${branding.status}",
+                )
+            },
+            onRooms = { rooms ->
+                Log.d(
+                    TAG,
+                    "MainActivity Rooms update → count=${rooms.size} " +
+                        rooms.joinToString { "${it.roomNumber}:${it.status}:${it.guestName}" },
+                )
+            },
+        )
     }
 
     /**

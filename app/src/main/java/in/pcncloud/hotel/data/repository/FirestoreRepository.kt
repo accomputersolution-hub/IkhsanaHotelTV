@@ -2,6 +2,7 @@ package `in`.pcncloud.hotel.data.repository
 
 import android.util.Log
 import `in`.pcncloud.hotel.config.HotelConfig
+import `in`.pcncloud.hotel.config.IntroVideoCache
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.data.model.GuestProfile
 import `in`.pcncloud.hotel.data.model.EmergencyContact
@@ -31,6 +32,7 @@ import kotlinx.coroutines.tasks.await
  */
 class FirestoreRepository(
     private val config: HotelConfig,
+    private val introCache: IntroVideoCache,
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
 ) {
 
@@ -273,10 +275,9 @@ class FirestoreRepository(
 
     /**
      * Hotels/{hotelId}/Config/intro — branded splash / intro video URL.
-     * Empty string = skip intro and go straight to Home.
+     * Empty string = no intro configured (also clears [IntroVideoCache]).
      *
-     * Note: do **not** emit "" on the first permission/network error — that made
-     * [IntroVideoViewModel] skip before the hotel-root fallback could run.
+     * Every successful snapshot updates local cache for the next cold boot.
      */
     fun observeIntroVideoUrl(): Flow<String> = callbackFlow {
         val docPath = FirestorePaths.introConfigDocument(hotelId)
@@ -290,15 +291,16 @@ class FirestoreRepository(
             .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
                 if (error != null) {
                     Log.e(TAG, "FAIL Intro video listener at $docPath: ${error.message}", error)
-                    // Do not trySend("") here — keep waiting / let one-shot fetch handle fallback.
                     return@addSnapshotListener
                 }
                 if (snapshot == null || !snapshot.exists()) {
                     Log.i(TAG, "EMPTY Intro Config/intro missing at $docPath")
+                    introCache.setUrl("")
                     trySend("")
                     return@addSnapshotListener
                 }
                 val url = parseIntroVideoUrl(snapshot.data)
+                introCache.setUrl(url)
                 Log.i(
                     TAG,
                     "OK Intro Config/intro → path=$docPath blank=${url.isBlank()} " +
@@ -313,9 +315,24 @@ class FirestoreRepository(
     }
 
     /**
-     * One-shot intro URL resolve used at cold start.
+     * Background sync only — updates [IntroVideoCache] for the *next* cold boot.
+     * Must not be used to decide the current session start destination.
+     */
+    suspend fun syncIntroVideoUrlToCache(): String {
+        val url = fetchIntroVideoUrl()
+        introCache.setUrl(url)
+        Log.i(
+            TAG,
+            "syncIntroVideoUrlToCache blank=${url.isBlank()} len=${url.length} " +
+                "prefix=${url.take(72)}",
+        )
+        return url
+    }
+
+    /**
+     * One-shot intro URL resolve (network). Prefer [IntroVideoCache] for cold boot.
      * Tries [Config/intro] first, then top-level [Hotels/{hotelId}.introVideoUrl]
-     * (admin mirrors both). Heavy logging for logcat filter `IntroVideo` / `FirestoreRepo`.
+     * (admin mirrors both). Persists hits/misses into [introCache].
      */
     suspend fun fetchIntroVideoUrl(): String {
         val id = hotelId
@@ -338,6 +355,7 @@ class FirestoreRepository(
             val fromConfig = parseIntroVideoUrl(snap.data)
             if (fromConfig.isNotBlank()) {
                 Log.i(TAG, "fetchIntroVideoUrl HIT Config/intro len=${fromConfig.length}")
+                introCache.setUrl(fromConfig)
                 return fromConfig
             }
         } catch (e: Exception) {
@@ -360,6 +378,7 @@ class FirestoreRepository(
             val fromHotel = parseIntroVideoUrl(snap.data)
             if (fromHotel.isNotBlank()) {
                 Log.i(TAG, "fetchIntroVideoUrl HIT Hotel root len=${fromHotel.length}")
+                introCache.setUrl(fromHotel)
                 return fromHotel
             }
         } catch (e: Exception) {
@@ -367,6 +386,7 @@ class FirestoreRepository(
         }
 
         Log.w(TAG, "fetchIntroVideoUrl MISS hotelId=$id — no introVideoUrl")
+        introCache.setUrl("")
         return ""
     }
 
@@ -374,12 +394,13 @@ class FirestoreRepository(
         if (data.isNullOrEmpty()) return ""
         @Suppress("UNCHECKED_CAST")
         val nested = data["branding"] as? Map<String, Any?>
-        return firstNonBlank(
+        val raw = firstNonBlank(
             asTrimmedString(data["introVideoUrl"]),
             asTrimmedString(data["intro_video_url"]),
             asTrimmedString(nested?.get("introVideoUrl")),
             asTrimmedString(nested?.get("intro_video_url")),
         ).trim()
+        return IntroVideoCache.normalizeHttpUrl(raw).orEmpty()
     }
 
     /**

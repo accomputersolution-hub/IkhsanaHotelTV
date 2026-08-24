@@ -15,6 +15,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.isVisible
 import `in`.pcncloud.hotel.config.HotelConfig
+import `in`.pcncloud.hotel.config.IntroVideoCache
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.ui.home.BrandAssets
@@ -29,7 +30,8 @@ import com.google.firebase.firestore.MetadataChanges
  * Dedicated cold-start splash:
  * - Default local flavor logo first, then hotel Firestore logo when available
  * - Welcome tagline + circular progress
- * - Waits for Hotels/{id} + Rooms/{room} snapshots (or timeout) before [MainActivity]
+ * - Prefetches introVideoUrl into [IntroVideoCache] so MainActivity cold boot is cache-first
+ * - Waits for Hotels/{id} + Rooms/{room} + intro cache (or timeout) before [MainActivity]
  */
 class SplashActivity : AppCompatActivity() {
 
@@ -45,6 +47,7 @@ class SplashActivity : AppCompatActivity() {
     private var hasNavigated = false
     private var brandingReady = false
     private var roomReady = false
+    private var introCacheReady = false
     private var mainTransitionScheduled = false
     private var unpairedFlow = false
 
@@ -59,11 +62,13 @@ class SplashActivity : AppCompatActivity() {
     private val forceProceedMain = Runnable {
         Log.w(
             TAG,
-            "Splash timeout — brandingReady=$brandingReady roomReady=$roomReady → MainActivity",
+            "Splash timeout — brandingReady=$brandingReady roomReady=$roomReady " +
+                "introCacheReady=$introCacheReady → MainActivity",
         )
         splashStatus.text = getString(R.string.splash_status_ready)
         brandingReady = true
         roomReady = true
+        introCacheReady = true
         scheduleMain(minRemainingMs = 0L)
     }
 
@@ -230,6 +235,9 @@ class SplashActivity : AppCompatActivity() {
         if (roomListener == null) {
             bindRoomConfig(hotelId, roomNumber)
         }
+        if (!introCacheReady) {
+            prefetchIntroVideoCache(hotelId)
+        }
         if (KioskPolicy.canActivityNavigate(lifecycle)) {
             resumePendingNavigation()
         }
@@ -265,6 +273,50 @@ class SplashActivity : AppCompatActivity() {
     }
 
     private fun splashRoot() = findViewById<android.view.View>(R.id.splash_root)
+
+    /**
+     * Writes Firestore intro URL into [IntroVideoCache] before MainActivity starts.
+     * MainActivity cold-boot decision is sync prefs-only; this seeds that cache.
+     * On network failure, keeps the previous cached URL (offline / Android 9 TV friendly).
+     */
+    private fun prefetchIntroVideoCache(hotelId: String) {
+        val cache = IntroVideoCache(applicationContext)
+        FirebaseFirestore.getInstance()
+            .collection(FirestorePaths.HOTELS)
+            .document(hotelId)
+            .collection(FirestorePaths.CONFIG)
+            .document("intro")
+            .get()
+            .addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    val snap = task.result
+                    val raw = if (snap != null && snap.exists()) {
+                        firstNonBlank(
+                            asTrimmedString(snap.getString("introVideoUrl")),
+                            asTrimmedString(snap.getString("intro_video_url")),
+                        )
+                    } else {
+                        ""
+                    }
+                    val normalized = IntroVideoCache.normalizeHttpUrl(raw).orEmpty()
+                    cache.setUrl(normalized)
+                    Log.i(
+                        TAG,
+                        "Intro cache prefetch OK blank=${normalized.isBlank()} " +
+                            "len=${normalized.length} prefix=${normalized.take(64)}",
+                    )
+                } else {
+                    Log.w(
+                        TAG,
+                        "Intro cache prefetch failed — keep existing cache " +
+                            "prefix=${cache.getUrl().take(64)}",
+                        task.exception,
+                    )
+                }
+                introCacheReady = true
+                tryScheduleMainWhenReady()
+            }
+    }
 
     private fun bindHotelBranding(hotelId: String) {
         hotelListener?.remove()
@@ -304,6 +356,17 @@ class SplashActivity : AppCompatActivity() {
                     asTrimmedString(data["logoUrl"]),
                     asTrimmedString(data["logo"]),
                 )
+
+                // Admin mirrors introVideoUrl on the hotel root — seed local cache early.
+                val mirroredIntro = IntroVideoCache.normalizeHttpUrl(
+                    firstNonBlank(
+                        asTrimmedString(data["introVideoUrl"]),
+                        asTrimmedString(data["intro_video_url"]),
+                    ),
+                )
+                if (!mirroredIntro.isNullOrBlank()) {
+                    IntroVideoCache(applicationContext).setUrl(mirroredIntro)
+                }
 
                 // Keep corporate welcome tagline stable; hotel may refine with name.
                 if (hotelName.isNotBlank() && !BuildConfig.IS_CORPORATE) {
@@ -355,14 +418,14 @@ class SplashActivity : AppCompatActivity() {
     }
 
     private fun tryScheduleMainWhenReady() {
-        if (!brandingReady || !roomReady) return
+        if (!brandingReady || !roomReady || !introCacheReady) return
         splashStatus.text = getString(R.string.splash_status_ready)
         scheduleMain()
     }
 
     private fun scheduleMain(minRemainingMs: Long = MIN_DISPLAY_MS) {
         if (hasNavigated || mainTransitionScheduled || !overlayGatePassed) return
-        if (!brandingReady || !roomReady) return
+        if (!brandingReady || !roomReady || !introCacheReady) return
         if (!KioskPolicy.canActivityNavigate(lifecycle)) {
             Log.d(TAG, "scheduleMain skipped — lifecycle=${lifecycle.currentState}")
             return
