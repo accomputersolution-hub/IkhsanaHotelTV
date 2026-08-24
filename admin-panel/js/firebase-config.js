@@ -38,8 +38,10 @@ export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 /** Realtime Database — TV kiosk Lock Task flags (`hotels/{hotelId}/config/…`) */
 export const rtdb = getDatabase(app);
-/** Firebase Storage — intro splash videos, etc. */
-export const storage = getStorage(app);
+/** Firebase Storage — intro splash videos, etc.
+ * Explicit gs:// bucket avoids ambiguous default resolution on some hosts.
+ */
+export const storage = getStorage(app, `gs://${firebaseConfig.storageBucket}`);
 
 /**
  * Primary Auth instance — Email/Password must be enabled in Firebase Console.
