@@ -20,9 +20,10 @@ class IntroVideoViewModel : ViewModel() {
     private val _playerGeneration = MutableStateFlow(0)
     val playerGeneration: StateFlow<Int> = _playerGeneration.asStateFlow()
 
-    private val retriesLeft = AtomicInteger(if (isLegacyApi) LEGACY_RETRIES else MODERN_RETRIES)
-
+    /** Must be initialized before any property that reads it (e.g. [retriesLeft]). */
     val isLegacyApi: Boolean = Build.VERSION.SDK_INT < 30
+
+    private val retriesLeft = AtomicInteger(if (isLegacyApi) LEGACY_RETRIES else MODERN_RETRIES)
 
     val connectTimeoutMs: Int = if (isLegacyApi) 45_000 else 15_000
     val readTimeoutMs: Int = if (isLegacyApi) 60_000 else 20_000
