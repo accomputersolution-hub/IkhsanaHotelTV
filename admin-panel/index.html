@@ -733,6 +733,10 @@
           <span class="nav-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M3 10.5 12 3l9 7.5V21H3V10.5z" stroke="currentColor" stroke-width="1.7"/><path d="M9 21v-7h6v7" stroke="currentColor" stroke-width="1.7"/></svg></span>
           <span class="nav-label">Room Status</span>
         </button>
+        <button class="nav-item" data-module="room-features" id="nav-room-features">
+          <span class="nav-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h10M4 17h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="18" cy="12" r="2.5" stroke="currentColor" stroke-width="1.7"/><circle cx="15" cy="17" r="2.5" stroke="currentColor" stroke-width="1.7"/></svg></span>
+          <span class="nav-label">Feature Toggles</span>
+        </button>
         <button class="nav-item" data-module="kds" id="nav-kds">
           <span class="nav-icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none"><path d="M4 11h16v9H4v-9z" stroke="currentColor" stroke-width="1.7"/><path d="M8 11V7a4 4 0 018 0v4" stroke="currentColor" stroke-width="1.7"/><path d="M8 15h.01M12 15h.01M16 15h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span>
           <span class="nav-label" id="nav-kds-label">Food Orders</span>
@@ -1170,6 +1174,37 @@
           </div>
         </div>
 
+        <!-- Room-wise home card visibility -->
+        <div data-module-view="room-features" class="module-view hidden">
+          <div class="module-card">
+            <div class="module-card-header">
+              <div>
+                <h2 class="text-base font-bold">Room Feature Toggles</h2>
+                <p class="text-xs mt-1" style="color:var(--text-dim)">
+                  Hide or show home cards per room. Paired TVs update instantly via Firestore.
+                </p>
+              </div>
+            </div>
+            <div class="module-card-body flex flex-col gap-5 min-h-0">
+              <div class="room-features-toolbar">
+                <div class="room-features-select-wrap">
+                  <label for="room-features-select" class="block text-sm font-medium mb-1">Room number</label>
+                  <select id="room-features-select" class="sa-field w-full outline-none" disabled>
+                    <option value="">Loading rooms…</option>
+                  </select>
+                </div>
+                <p id="room-features-status" class="text-xs room-features-status" style="color:var(--text-dim)"></p>
+              </div>
+              <p id="room-features-empty" class="empty-state hidden">
+                No rooms found. Add rooms under Room Status first.
+              </p>
+              <div id="room-features-toggles" class="room-features-toggles">
+                <p class="empty-state">Select a room to control which home cards appear on that TV.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Corporate: Daily Agenda -->
         <div data-module-view="agenda" class="module-view hidden">
           <div class="module-card">
@@ -1481,6 +1516,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260824agenda2"></script>
+  <script type="module" src="js/app.js?v=20260824roomfeatures1"></script>
 </body>
 </html>

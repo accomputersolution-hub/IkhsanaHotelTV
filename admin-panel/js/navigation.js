@@ -15,6 +15,7 @@ import {
 
 const MODULES = {
   pms: { label: 'Room Status', title: 'Room & Guest PMS' },
+  'room-features': { label: 'Feature Toggles', title: 'Room Feature Toggles' },
   kds: { label: 'Food Orders', title: 'Kitchen Display System' },
   menu: { label: 'Menu Management', title: 'Digital Menu Configuration' },
   messaging: { label: 'TV Mass Messaging', title: 'TV Mass Messaging' },

@@ -849,6 +849,39 @@ class FirestoreRepository(
             occupied = occupied,
             checkInDate = data["checkInDate"] as? String ?: "",
             checkOutDate = data["checkOutDate"] as? String ?: "",
+            features = parseRoomFeatureFlags(data),
+        )
+    }
+
+    /**
+     * Room card visibility flags. Absent fields default to **true** (backward compatible).
+     * Accepts top-level `showEntertainment` or nested `features.showEntertainment`.
+     */
+    private fun parseRoomFeatureFlags(data: Map<String, Any?>): RoomFeatureFlags {
+        @Suppress("UNCHECKED_CAST")
+        val nested = data["features"] as? Map<String, Any?> ?: emptyMap()
+        fun flag(vararg keys: String): Boolean {
+            for (key in keys) {
+                val v = data[key] ?: nested[key] ?: continue
+                when (v) {
+                    is Boolean -> return v
+                    is String -> {
+                        val s = v.trim().lowercase()
+                        if (s == "true" || s == "1" || s == "yes") return true
+                        if (s == "false" || s == "0" || s == "no") return false
+                    }
+                    is Number -> return v.toInt() != 0
+                }
+            }
+            return true
+        }
+        return RoomFeatureFlags(
+            showLiveTv = flag("showLiveTv", "show_live_tv"),
+            showEntertainment = flag("showEntertainment", "show_entertainment"),
+            showDining = flag("showDining", "show_dining", "showMenu", "show_menu"),
+            showAgenda = flag("showAgenda", "show_agenda"),
+            showServices = flag("showServices", "show_services", "showEmergency", "show_emergency"),
+            showAlerts = flag("showAlerts", "show_alerts"),
         )
     }
 

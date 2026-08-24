@@ -69,6 +69,7 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
+import `in`.pcncloud.hotel.data.model.RoomFeatureFlags
 import `in`.pcncloud.hotel.integration.OnyxIptvLauncher
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.BaseScreen
@@ -90,6 +91,37 @@ private enum class HomeNavCard {
     Agenda,
     Services,
     Alerts,
+}
+
+/** Whether this home card is allowed for the current flavor + room feature flags. */
+private fun HomeNavCard.isVisible(flags: RoomFeatureFlags, isCorporate: Boolean): Boolean = when (this) {
+    HomeNavCard.LiveTv -> flags.showLiveTv
+    HomeNavCard.Entertainment -> flags.showEntertainment
+    HomeNavCard.Dining -> flags.showDining
+    HomeNavCard.Agenda -> isCorporate && flags.showAgenda
+    HomeNavCard.Services -> flags.showServices
+    HomeNavCard.Alerts -> !isCorporate && flags.showAlerts
+}
+
+private fun firstVisibleHomeCard(flags: RoomFeatureFlags, isCorporate: Boolean): HomeNavCard {
+    val order = if (isCorporate) {
+        listOf(
+            HomeNavCard.LiveTv,
+            HomeNavCard.Entertainment,
+            HomeNavCard.Dining,
+            HomeNavCard.Agenda,
+            HomeNavCard.Services,
+        )
+    } else {
+        listOf(
+            HomeNavCard.LiveTv,
+            HomeNavCard.Entertainment,
+            HomeNavCard.Dining,
+            HomeNavCard.Services,
+            HomeNavCard.Alerts,
+        )
+    }
+    return order.firstOrNull { it.isVisible(flags, isCorporate) } ?: HomeNavCard.LiveTv
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -125,6 +157,7 @@ fun HomeScreen(
     val activeAlert = uiState.activePopupAlert
     val unreadAlerts = uiState.alerts.count { !it.read && !it.revoked }
     val contentReady = uiState.isContentReady
+    val featureFlags = uiState.featureFlags
     val focusManager = LocalFocusManager.current
 
     fun requesterFor(card: HomeNavCard): FocusRequester = when (card) {
@@ -134,6 +167,13 @@ fun HomeScreen(
         HomeNavCard.Agenda -> if (isCorporate) agendaFocus else liveTvFocus
         HomeNavCard.Services -> servicesFocus
         HomeNavCard.Alerts -> if (isCorporate) liveTvFocus else alertsFocus
+    }
+
+    // If admin hides the last-focused card, move focus to the first still-visible card.
+    LaunchedEffect(featureFlags, isCorporate) {
+        if (!lastFocusedCard.isVisible(featureFlags, isCorporate)) {
+            lastFocusedCard = firstVisibleHomeCard(featureFlags, isCorporate)
+        }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -147,7 +187,7 @@ fun HomeScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(contentReady, isHomeVisible, activeAlert?.id, resumeEpoch) {
+    LaunchedEffect(contentReady, isHomeVisible, activeAlert?.id, resumeEpoch, featureFlags, lastFocusedCard) {
         if (!contentReady) return@LaunchedEffect
         if (activeAlert != null) {
             // Drop home-card focus immediately so Dismiss can own the first OK press.
@@ -155,10 +195,15 @@ fun HomeScreen(
             return@LaunchedEffect
         }
         if (!isHomeVisible) return@LaunchedEffect
+        val targetCard = if (lastFocusedCard.isVisible(featureFlags, isCorporate)) {
+            lastFocusedCard
+        } else {
+            firstVisibleHomeCard(featureFlags, isCorporate)
+        }
         // Wait for overlay canFocus + layout so requestFocus lands on the saved card.
         var attempts = 0
         while (attempts < 16) {
-            val focused = runCatching { requesterFor(lastFocusedCard).requestFocus() }.getOrDefault(false)
+            val focused = runCatching { requesterFor(targetCard).requestFocus() }.getOrDefault(false)
             if (focused) break
             withFrameNanos { }
             attempts++
@@ -207,7 +252,13 @@ fun HomeScreen(
                     showAlertBell = BuildConfig.IS_CORPORATE,
                     alertBellFocus = alertBellFocus,
                     roomBadgeFocus = roomBadgeFocus,
-                    headerDownFocus = requesterFor(lastFocusedCard),
+                    headerDownFocus = requesterFor(
+                        if (lastFocusedCard.isVisible(featureFlags, isCorporate)) {
+                            lastFocusedCard
+                        } else {
+                            firstVisibleHomeCard(featureFlags, isCorporate)
+                        },
+                    ),
                     modifier = Modifier.focusProperties { canFocus = activeAlert == null },
                 ) {
                     Spacer(
@@ -228,6 +279,7 @@ fun HomeScreen(
                             .focusProperties { canFocus = false },
                     )
                     NavigationCardsRow(
+                        featureFlags = featureFlags,
                         liveTvFocus = liveTvFocus,
                         entertainmentFocus = entertainmentFocus,
                         diningFocus = diningFocus,
@@ -434,6 +486,7 @@ private fun WelcomeBanner(
 
 @Composable
 private fun NavigationCardsRow(
+    featureFlags: RoomFeatureFlags,
     liveTvFocus: FocusRequester,
     entertainmentFocus: FocusRequester,
     diningFocus: FocusRequester,
@@ -487,76 +540,90 @@ private fun NavigationCardsRow(
                 .onFocusChanged { if (it.isFocused) onCardFocused(card) }
         }
 
-        LuxuryNavCard(
-            title = stringResource(R.string.feature_live_tv),
-            subtitle = stringResource(R.string.feature_live_tv_subtitle),
-            iconRes = NavCardIcons.liveTv,
-            focusGlowColor = GoldLuxury,
-            modifier = cardMod(liveTvFocus, HomeNavCard.LiveTv),
-            onClick = onLiveTv,
-        )
-        LuxuryNavCard(
-            title = stringResource(R.string.feature_entertainment),
-            subtitle = stringResource(R.string.feature_entertainment_subtitle),
-            iconRes = NavCardIcons.entertainment,
-            focusGlowColor = GoldLuxury,
-            modifier = cardMod(entertainmentFocus, HomeNavCard.Entertainment),
-            onClick = onEntertainment,
-        )
-        LuxuryNavCard(
-            title = if (isCorporate) {
-                stringResource(R.string.feature_menu)
-            } else {
-                stringResource(R.string.feature_dining)
-            },
-            subtitle = if (isCorporate) {
-                stringResource(R.string.feature_menu_subtitle_corporate)
-            } else {
-                stringResource(R.string.feature_dining_subtitle)
-            },
-            iconRes = NavCardIcons.menu,
-            focusGlowColor = GoldLuxury,
-            modifier = cardMod(diningFocus, HomeNavCard.Dining),
-            onClick = onDining,
-        )
-        if (isCorporate) {
+        if (featureFlags.showLiveTv) {
             LuxuryNavCard(
-                title = stringResource(R.string.feature_agenda),
-                subtitle = stringResource(R.string.feature_agenda_subtitle),
-                iconRes = NavCardIcons.agenda,
+                title = stringResource(R.string.feature_live_tv),
+                subtitle = stringResource(R.string.feature_live_tv_subtitle),
+                iconRes = NavCardIcons.liveTv,
                 focusGlowColor = GoldLuxury,
-                modifier = cardMod(agendaFocus, HomeNavCard.Agenda),
-                onClick = onAgenda,
+                modifier = cardMod(liveTvFocus, HomeNavCard.LiveTv),
+                onClick = onLiveTv,
             )
+        }
+        if (featureFlags.showEntertainment) {
             LuxuryNavCard(
-                title = stringResource(R.string.feature_emergency),
-                subtitle = stringResource(R.string.feature_emergency_subtitle),
-                iconRes = NavCardIcons.emergency,
+                title = stringResource(R.string.feature_entertainment),
+                subtitle = stringResource(R.string.feature_entertainment_subtitle),
+                iconRes = NavCardIcons.entertainment,
                 focusGlowColor = GoldLuxury,
-                modifier = cardMod(servicesFocus, HomeNavCard.Services),
-                onClick = onServices,
+                modifier = cardMod(entertainmentFocus, HomeNavCard.Entertainment),
+                onClick = onEntertainment,
             )
-        } else {
+        }
+        if (featureFlags.showDining) {
             LuxuryNavCard(
-                title = stringResource(R.string.feature_services),
-                subtitle = stringResource(R.string.feature_services_subtitle),
-                iconRes = NavCardIcons.emergency,
-                focusGlowColor = GoldLuxury,
-                modifier = cardMod(servicesFocus, HomeNavCard.Services),
-                onClick = onServices,
-            )
-            LuxuryNavCard(
-                title = stringResource(R.string.feature_alerts),
-                subtitle = if (unreadAlerts > 0) {
-                    "$unreadAlerts new alert(s)"
+                title = if (isCorporate) {
+                    stringResource(R.string.feature_menu)
                 } else {
-                    stringResource(R.string.feature_alerts_subtitle)
+                    stringResource(R.string.feature_dining)
                 },
-                iconRes = NavCardIcons.alerts,
+                subtitle = if (isCorporate) {
+                    stringResource(R.string.feature_menu_subtitle_corporate)
+                } else {
+                    stringResource(R.string.feature_dining_subtitle)
+                },
+                iconRes = NavCardIcons.menu,
                 focusGlowColor = GoldLuxury,
-                modifier = cardMod(alertsFocus, HomeNavCard.Alerts),
-                onClick = onAlerts,
+                modifier = cardMod(diningFocus, HomeNavCard.Dining),
+                onClick = onDining,
             )
+        }
+        if (isCorporate) {
+            if (featureFlags.showAgenda) {
+                LuxuryNavCard(
+                    title = stringResource(R.string.feature_agenda),
+                    subtitle = stringResource(R.string.feature_agenda_subtitle),
+                    iconRes = NavCardIcons.agenda,
+                    focusGlowColor = GoldLuxury,
+                    modifier = cardMod(agendaFocus, HomeNavCard.Agenda),
+                    onClick = onAgenda,
+                )
+            }
+            if (featureFlags.showServices) {
+                LuxuryNavCard(
+                    title = stringResource(R.string.feature_emergency),
+                    subtitle = stringResource(R.string.feature_emergency_subtitle),
+                    iconRes = NavCardIcons.emergency,
+                    focusGlowColor = GoldLuxury,
+                    modifier = cardMod(servicesFocus, HomeNavCard.Services),
+                    onClick = onServices,
+                )
+            }
+        } else {
+            if (featureFlags.showServices) {
+                LuxuryNavCard(
+                    title = stringResource(R.string.feature_services),
+                    subtitle = stringResource(R.string.feature_services_subtitle),
+                    iconRes = NavCardIcons.emergency,
+                    focusGlowColor = GoldLuxury,
+                    modifier = cardMod(servicesFocus, HomeNavCard.Services),
+                    onClick = onServices,
+                )
+            }
+            if (featureFlags.showAlerts) {
+                LuxuryNavCard(
+                    title = stringResource(R.string.feature_alerts),
+                    subtitle = if (unreadAlerts > 0) {
+                        "$unreadAlerts new alert(s)"
+                    } else {
+                        stringResource(R.string.feature_alerts_subtitle)
+                    },
+                    iconRes = NavCardIcons.alerts,
+                    focusGlowColor = GoldLuxury,
+                    modifier = cardMod(alertsFocus, HomeNavCard.Alerts),
+                    onClick = onAlerts,
+                )
+            }
         }
     }
 }

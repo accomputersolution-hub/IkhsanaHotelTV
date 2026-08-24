@@ -7,6 +7,7 @@ import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.model.GuestProfile
 import `in`.pcncloud.hotel.data.model.HotelAlert
 import `in`.pcncloud.hotel.data.model.HotelBranding
+import `in`.pcncloud.hotel.data.model.RoomFeatureFlags
 import `in`.pcncloud.hotel.data.model.RoomStatus
 import `in`.pcncloud.hotel.data.repository.FirestoreRepository
 import `in`.pcncloud.hotel.rtdb.GlobalAnnouncementRtdb
@@ -31,6 +32,8 @@ data class HomeUiState(
     val serviceToastType: ServiceToastType = ServiceToastType.STATUS,
     /** Live RTDB `hotel_settings/{hotelId}/global_announcement`. */
     val rtdbAnnouncement: String = "",
+    /** This TV room's card visibility (Hotels/.../Rooms/{room}). Defaults all visible. */
+    val featureFlags: RoomFeatureFlags = RoomFeatureFlags(),
 ) {
     /** True when Hotels/{hotelId}.status is explicitly "inactive". */
     val isHotelInactive: Boolean
@@ -92,6 +95,18 @@ class HomeViewModel(
                         )
                     }
                 }
+            }
+        }
+        viewModelScope.launch {
+            repository.observeThisRoomStatus().collect { room ->
+                Log.d(
+                    TAG,
+                    "Room feature flags → room=${room.roomNumber} " +
+                        "liveTv=${room.features.showLiveTv} " +
+                        "entertainment=${room.features.showEntertainment} " +
+                        "agenda=${room.features.showAgenda}",
+                )
+                _uiState.update { it.copy(featureFlags = room.features) }
             }
         }
         viewModelScope.launch {
