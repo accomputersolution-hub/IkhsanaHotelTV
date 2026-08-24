@@ -990,6 +990,13 @@
                       </p>
                       <p id="intro-video-path" class="announcement-admin-path">Hotels/{hotelId}/Config/intro</p>
                       <p id="intro-video-status" class="announcement-admin-hint"></p>
+                      <div id="intro-video-setup-warning" class="intro-video-setup-warning">
+                        <strong>Upload .mp4 needs Firebase Storage.</strong>
+                        Project <code>ikhsana-hotel-tv</code> must have Storage enabled (Blaze billing)
+                        → <a href="https://console.firebase.google.com/project/ikhsana-hotel-tv/storage" target="_blank" rel="noopener">Console → Storage → Get Started</a>,
+                        then publish rules from <code>storage.rules.example</code>.
+                        Until then, host the .mp4 elsewhere and <strong>paste the HTTPS URL</strong> below — that still works.
+                      </div>
                     </div>
                   </div>
                   <input id="intro-video-input" type="file" accept="video/mp4,.mp4" class="hidden" />
@@ -1556,6 +1563,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=20260824intro2"></script>
+  <script type="module" src="js/app.js?v=20260824intro3"></script>
 </body>
 </html>
