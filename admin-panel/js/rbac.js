@@ -35,6 +35,7 @@ export { STAFF_ROLES, normalizeStaffRole, roleLabel };
 export const ROLE_MODULES = Object.freeze({
   admin: [
     'pms',
+    'room-features',
     'kds',
     'menu',
     'messaging',
@@ -46,7 +47,7 @@ export const ROLE_MODULES = Object.freeze({
     'staff',
   ],
   kitchen: ['kds', 'menu'],
-  reception: ['pms', 'billing', 'messaging', 'concierge'],
+  reception: ['pms', 'room-features', 'billing', 'messaging', 'concierge'],
   housekeeping: ['housekeeping', 'pms'],
 });
 

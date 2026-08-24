@@ -65,6 +65,21 @@ data class RoomStatus(
     val occupied: Boolean = false,
     val checkInDate: String = "",
     val checkOutDate: String = "",
+    /** Per-room home card visibility (admin Feature Toggles). Missing → shown. */
+    val features: RoomFeatureFlags = RoomFeatureFlags(),
+)
+
+/**
+ * Hotels/{hotelId}/Rooms/{roomId} feature toggle flags.
+ * Defaults **true** so existing rooms keep all cards until admin hides them.
+ */
+data class RoomFeatureFlags(
+    val showLiveTv: Boolean = true,
+    val showEntertainment: Boolean = true,
+    val showDining: Boolean = true,
+    val showAgenda: Boolean = true,
+    val showServices: Boolean = true,
+    val showAlerts: Boolean = true,
 )
 
 data class MenuItem(

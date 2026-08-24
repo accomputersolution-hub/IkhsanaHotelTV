@@ -1233,6 +1233,44 @@ body {
   border-radius: 10px;
 }
 
+/* Room feature toggles module */
+.room-features-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 28rem;
+}
+
+.room-features-toggles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.room-feature-toggle .stock-toggle-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+.room-feature-toggle .stock-toggle-label strong {
+  font-size: 0.8125rem;
+  font-weight: 650;
+  color: var(--text-primary, #f5f5f5);
+}
+
+.room-feature-hint {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-dim, #94a3b8);
+}
+
+.room-features-status {
+  word-break: break-all;
+}
+
 .modal-panel-wide {
   max-width: 32rem;
 }

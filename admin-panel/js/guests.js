@@ -397,6 +397,12 @@ function setupAddRoomModal() {
         guestPhone: '',
         checkOutDate: '',
         hotelName: 'Ikhsana Hotel',
+        showLiveTv: true,
+        showEntertainment: true,
+        showDining: true,
+        showAgenda: true,
+        showServices: true,
+        showAlerts: true,
       });
       toast(`Room ${roomNumber} added`);
       closeModal('add-room-modal');
