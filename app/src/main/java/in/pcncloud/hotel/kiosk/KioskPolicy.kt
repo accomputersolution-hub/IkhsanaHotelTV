@@ -73,6 +73,14 @@ object KioskPolicy {
     @Volatile
     private var isReclaimPending: Boolean = false
 
+    /**
+     * True while [IntroVideoScreen] is the active NavHost destination.
+     * Process-local — Watchdog / onNewIntent must not force Root Home nav
+     * (that released ExoPlayer on API 28 before playback could finish).
+     */
+    @Volatile
+    private var introPlaybackActive: Boolean = false
+
     /** True while MainActivity is inside onNewIntent / onResume reclaim handling. */
     @Volatile
     private var reclaimLifecycleBusy: Boolean = false
@@ -749,6 +757,19 @@ object KioskPolicy {
     }
 
     /**
+     * Call from [HotelNavGraph] when Intro is shown / dismissed.
+     * While true, reclaim may still bring MainActivity forward but must not
+     * call navigateToHomeView / finishReturnFromExternalApp.
+     */
+    fun setIntroPlaybackActive(active: Boolean) {
+        if (introPlaybackActive == active) return
+        introPlaybackActive = active
+        Log.i(TAG, "introPlaybackActive=$active")
+    }
+
+    fun isIntroPlaybackActive(): Boolean = introPlaybackActive
+
+    /**
      * Reset when guest returns to hotel UI (HOME / BACK / onResume return path).
      * Resumes standard Watchdog reclaim behaviour.
      */
@@ -1215,6 +1236,12 @@ object KioskPolicy {
         // Never reclaim UI while guest is in YouTube / OTT under kiosk.
         if (isExternalAppActive(context)) {
             Log.d(TAG, "shouldBringAppToFront=false (isExternalAppActive=true)")
+            return false
+        }
+
+        // Intro playing + already foreground — do not re-fire NAVIGATE_TO_HOME intents.
+        if (isIntroPlaybackActive() && isMainActivityForeground(context)) {
+            Log.d(TAG, "shouldBringAppToFront=false (intro playing + already foreground)")
             return false
         }
 

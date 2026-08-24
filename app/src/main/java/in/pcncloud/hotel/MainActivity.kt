@@ -139,6 +139,10 @@ class MainActivity : ComponentActivity() {
      * Does not call [onBackPressed] / Activity back-stack finish.
      */
     fun navigateToHomeView() {
+        if (KioskPolicy.isIntroPlaybackActive()) {
+            Log.i(TAG, "navigateToHomeView suppressed — intro still playing")
+            return
+        }
         markUserActive(dismissScreensaver = true)
         screensaverVisible = false
         ottTransitionCover = false
@@ -1770,8 +1774,13 @@ class MainActivity : ComponentActivity() {
                 KioskPolicy.clearExternalAppActive(this)
                 KioskPolicy.clearOttLaunchState(this)
                 snapKioskSurfaceImmediate("onNewIntent")
-                // Hide guest overlays / pop to Root Home (same as in-app Home).
-                finishReturnFromExternalApp()
+                if (KioskPolicy.isIntroPlaybackActive()) {
+                    // Bring-to-front only — do not tear down IntroVideoScreen / ExoPlayer.
+                    Log.i(TAG, "onNewIntent reclaim — intro playing, skip Root Home nav")
+                } else {
+                    // Hide guest overlays / pop to Root Home (same as in-app Home).
+                    finishReturnFromExternalApp()
+                }
                 // Re-assert pin after nav (safe if already RESUMED; onResume also snaps).
                 startLockTaskSafely("onNewIntent_post_nav")
             }
@@ -1806,6 +1815,12 @@ class MainActivity : ComponentActivity() {
      * Prefer [navigateToHomeView] when the Compose overlay navigator is registered.
      */
     fun navigateToRootHomeScreen(showCover: Boolean = true) {
+        if (KioskPolicy.isIntroPlaybackActive()) {
+            Log.i(TAG, "navigateToRootHomeScreen suppressed — intro still playing")
+            intent?.removeExtra(EXTRA_NAVIGATE_TO_HOME)
+            intent?.removeExtra(EXTRA_SOFT_HOME_RESET)
+            return
+        }
         pendingReturnToHome = false
         KioskPolicy.clearOttLaunchState(this)
         KioskPolicy.clearUserMinimized(this)
@@ -1866,6 +1881,11 @@ class MainActivity : ComponentActivity() {
         intent?.removeExtra(EXTRA_SOFT_HOME_RESET)
         ottTransitionCover = false
 
+        if (KioskPolicy.isIntroPlaybackActive()) {
+            Log.i(TAG, "finishReturnFromExternalApp — intro playing, skip nav reset")
+            return
+        }
+
         // Always reset to root Home — dismiss overlays if any; no-op when already Home.
         Log.i(TAG, "finishReturnFromExternalApp — reset navigation to root Home")
         navigateToHomeView()
@@ -1874,6 +1894,19 @@ class MainActivity : ComponentActivity() {
     private fun handleNavigateToHomeExtra(intent: Intent?): Boolean {
         if (intent?.getBooleanExtra(EXTRA_NAVIGATE_TO_HOME, false) != true) {
             return false
+        }
+        // Cold start with a cached intro: do not fire Root Home before Compose mounts
+        // IntroVideoScreen (kiosk reclaim extras are common on API 28 launchers).
+        val cachedIntro = IntroVideoCache(applicationContext).getValidHttpUrl()
+        if (cachedIntro != null) {
+            Log.i(
+                TAG,
+                "cold NAVIGATE_TO_HOME deferred — intro cache hit, play first",
+            )
+            KioskPolicy.setIntroPlaybackActive(true)
+            intent.removeExtra(EXTRA_NAVIGATE_TO_HOME)
+            intent.removeExtra(EXTRA_SOFT_HOME_RESET)
+            return true
         }
         pendingReturnToHome = true
         navigateToRootHomeScreen(showCover = true)

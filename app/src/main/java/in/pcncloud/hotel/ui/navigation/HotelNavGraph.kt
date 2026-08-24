@@ -94,6 +94,15 @@ fun HotelNavGraph(
     val onGuestHome = onHomeRoute && overlayRoute == null && !onIntroRoute
     var adminSessionEpoch by remember { mutableIntStateOf(0) }
 
+    // Gate kiosk Root-Home reclaim while intro plays (API 28 ExoPlayer teardown).
+    LaunchedEffect(onIntroRoute) {
+        KioskPolicy.setIntroPlaybackActive(onIntroRoute)
+        Log.i(TAG, "introPlaybackActive=$onIntroRoute route=$currentRoute")
+    }
+    DisposableEffect(Unit) {
+        onDispose { KioskPolicy.setIntroPlaybackActive(false) }
+    }
+
     fun clearStaffAdminSession(reason: String) {
         AdminSession.clear()
         adminSessionEpoch += 1
@@ -102,6 +111,7 @@ fun HotelNavGraph(
 
     fun goHomeReplacingIntro(reason: String) {
         Log.i(TAG, "navigate HOME replacing INTRO ($reason)")
+        KioskPolicy.setIntroPlaybackActive(false)
         navController.navigate(Routes.HOME) {
             popUpTo(Routes.INTRO) { inclusive = true }
             launchSingleTop = true
@@ -135,8 +145,9 @@ fun HotelNavGraph(
     }
 
     fun navigateToHomeView() {
-        if (onIntroRoute) {
-            goHomeReplacingIntro("navigateToHomeView")
+        // Kiosk reclaim / onNewIntent must NOT skip intro — only Skip / end / error do.
+        if (onIntroRoute || KioskPolicy.isIntroPlaybackActive()) {
+            Log.i(TAG, "navigateToHomeView ignored — intro still playing")
             return
         }
         if (overlayRouteState.value == Routes.ADMIN) {
@@ -155,8 +166,10 @@ fun HotelNavGraph(
 
     DisposableEffect(mainActivity) {
         mainActivity?.registerHomeViewNavigator {
-            if (navController.currentDestination?.route == Routes.INTRO) {
-                goHomeReplacingIntro("activity_home_navigator")
+            if (navController.currentDestination?.route == Routes.INTRO ||
+                KioskPolicy.isIntroPlaybackActive()
+            ) {
+                Log.i(TAG, "home navigator ignored — intro still playing")
                 return@registerHomeViewNavigator
             }
             if (overlayRouteState.value == Routes.ADMIN) {
@@ -173,6 +186,7 @@ fun HotelNavGraph(
         onDispose {
             mainActivity?.registerHomeViewNavigator(null)
             mainActivity?.setSubMenuVisible(false)
+            KioskPolicy.setIntroPlaybackActive(false)
         }
     }
 
@@ -182,6 +196,13 @@ fun HotelNavGraph(
 
     LaunchedEffect(navigateHomeSignal) {
         if (navigateHomeSignal <= 0L) return@LaunchedEffect
+        if (onIntroRoute || KioskPolicy.isIntroPlaybackActive()) {
+            Log.i(
+                TAG,
+                "navigateHomeSignal=$navigateHomeSignal ignored — intro still playing",
+            )
+            return@LaunchedEffect
+        }
         Log.i(TAG, "navigateHomeSignal=$navigateHomeSignal — navigateToHomeView")
         navigateToHomeView()
     }
