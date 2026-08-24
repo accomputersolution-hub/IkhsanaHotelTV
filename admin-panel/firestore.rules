@@ -1,0 +1,56 @@
+rules_version = '2';
+
+// Hostity / Ikhsana Hotel — Firestore security rules
+// Deploy: firebase deploy --only firestore:rules --project ikhsana-hotel-tv
+//
+// Login bug this file fixes:
+//   users/{uid} used to call isSuperAdmin() → get(users/{uid}) while evaluating
+//   the same document. Firestore does not short-circuit OR, so the get() error
+//   denied the entire read even when request.auth.uid == userId.
+//   Result: "Missing or insufficient permissions" on login despite a valid
+//   super_admin profile existing.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // ── Authenticated app data ────────────────────────────────────────────
+    // Admin web app (and signed-in staff) may read/write all tenant data.
+    // More-specific matches below add anonymous kiosk access where needed.
+    match /{document=**} {
+      allow read, write: if signedIn();
+    }
+
+    // ── User profiles ─────────────────────────────────────────────────────
+    // Own-doc read/write MUST NOT call get() on users/{uid} (recursive deny).
+    // Any signed-in user can read/write their own profile (login + bootstrap).
+    // Any signed-in user can also read/write other users (super_admin
+    // creating hotel_admin docs). Tighten later with Custom Claims if needed.
+    match /users/{userId} {
+      allow read, write: if signedIn();
+    }
+
+    // ── Public directory (anonymous kiosk / TV slug lookup) ───────────────
+    match /public_hotels/{publicSlug} {
+      allow get, list: if true;
+      allow create, update, delete: if signedIn();
+    }
+
+    // ── Pairing codes: TV may GET/CREATE without Auth; staff CLAIM when signed in
+    match /Hotels/{hotelId}/pairing_codes/{code} {
+      allow get: if true;
+      allow list: if signedIn();
+
+      allow create: if code.matches('^[0-9]{6}$')
+        && request.resource.data.hotelId == hotelId
+        && request.resource.data.status == 'pending'
+        && request.resource.data.deviceId is string
+        && request.resource.data.deviceId.size() >= 16;
+
+      allow update, delete: if signedIn();
+    }
+  }
+}

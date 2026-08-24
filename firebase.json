@@ -1,0 +1,6 @@
+{
+  "firestore": {
+    "rules": "admin-panel/firestore.rules",
+    "indexes": "admin-panel/firestore.indexes.json"
+  }
+}
