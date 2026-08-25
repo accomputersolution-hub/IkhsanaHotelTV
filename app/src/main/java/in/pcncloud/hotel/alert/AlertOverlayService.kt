@@ -39,9 +39,10 @@ import kotlinx.coroutines.launch
  * [WindowManager] + [Settings.canDrawOverlays] so messages appear over
  * YouTube / Live TV on Android TV (API 28+).
  *
- * Window uses [TYPE_APPLICATION_OVERLAY] + [FLAG_NOT_TOUCH_MODAL] so touches/keys
- * outside the card pass through. The Close button is focusable for Android TV
- * remotes (pure [FLAG_NOT_FOCUSABLE] would make Close unreachable without touch).
+ * Window is focusable so the Close button can take D-pad / remote focus.
+ * [FLAG_NOT_TOUCH_MODAL] still lets touches outside the card pass through.
+ * Do **not** use [FLAG_NOT_FOCUSABLE] here — that blocks all key events, so
+ * the remote can never highlight or press Close.
  */
 class AlertOverlayService : Service() {
 
@@ -69,7 +70,7 @@ class AlertOverlayService : Service() {
                 val alertId = intent.getStringExtra(EXTRA_ALERT_ID).orEmpty()
                 val title = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { "Message" }
                 val message = intent.getStringExtra(EXTRA_MESSAGE).orEmpty()
-                val durationMs = intent.getLongExtra(EXTRA_DURATION_MS, DEFAULT_DURATION_MS)
+                val durationMs = intent.getLongExtra(EXTRA_DURATION_MS, 0L)
                 mainHandler.post {
                     showOverlay(
                         alertId = alertId,
@@ -124,8 +125,27 @@ class AlertOverlayService : Service() {
             .inflate(R.layout.overlay_alert_popup, null)
         view.findViewById<TextView>(R.id.alert_overlay_title).text = title
         view.findViewById<TextView>(R.id.alert_overlay_message).text = message
-        view.findViewById<Button>(R.id.alert_overlay_close).setOnClickListener {
+
+        val closeButton = view.findViewById<Button>(R.id.alert_overlay_close)
+        closeButton.isFocusable = true
+        closeButton.isFocusableInTouchMode = true
+        closeButton.setOnClickListener {
             dismissOverlay(markRead = true)
+        }
+        // OK / Center / Enter / Back on the focused Close button.
+        closeButton.setOnKeyListener { _, keyCode, event ->
+            if (event.action != android.view.KeyEvent.ACTION_UP) return@setOnKeyListener false
+            when (keyCode) {
+                android.view.KeyEvent.KEYCODE_DPAD_CENTER,
+                android.view.KeyEvent.KEYCODE_ENTER,
+                android.view.KeyEvent.KEYCODE_NUMPAD_ENTER,
+                android.view.KeyEvent.KEYCODE_BACK,
+                -> {
+                    dismissOverlay(markRead = true)
+                    true
+                }
+                else -> false
+            }
         }
 
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -139,27 +159,31 @@ class AlertOverlayService : Service() {
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            // Focusable window (no FLAG_NOT_FOCUSABLE) so D-pad can land on Close.
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.CENTER
-            // Keep soft dim away from locking the guest out of YouTube keys.
             format = PixelFormat.TRANSLUCENT
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_UNCHANGED
         }
 
         try {
             windowManager?.addView(view, params)
             popupView = view
             showingAlertId = alertId
-            Log.i(TAG, "Overlay attached alertId=$alertId title=$title")
-
-            val dismissAfter = when {
-                durationMs > 0L -> durationMs
-                else -> DEFAULT_DURATION_MS
+            // Defer focus until the view is attached / laid out.
+            closeButton.post {
+                runCatching { closeButton.requestFocus() }
+                    .onFailure { Log.w(TAG, "Close requestFocus failed", it) }
             }
-            mainHandler.postDelayed(autoDismissRunnable, dismissAfter)
+            Log.i(TAG, "Overlay attached alertId=$alertId title=$title (D-pad focus on Close)")
+
+            // Optional admin-configured timeout only — Close is the primary dismiss path.
+            if (durationMs > 0L) {
+                mainHandler.postDelayed(autoDismissRunnable, durationMs)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "windowManager.addView failed", e)
             popupView = null
@@ -260,7 +284,6 @@ class AlertOverlayService : Service() {
         private const val TAG = "AlertOverlayService"
         private const val CHANNEL_ID = "hotel_tv_alert_overlay"
         private const val NOTIFICATION_ID = 1002
-        private const val DEFAULT_DURATION_MS = 20_000L
 
         const val ACTION_SHOW = "in.pcncloud.hotel.alert.SHOW"
         const val ACTION_DISMISS = "in.pcncloud.hotel.alert.DISMISS"
