@@ -47,6 +47,7 @@ import androidx.compose.ui.zIndex
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
+import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.data.model.HotelBranding
 import `in`.pcncloud.hotel.ui.home.BrandAssets
@@ -59,14 +60,18 @@ import `in`.pcncloud.hotel.ui.theme.SansBody
 import `in`.pcncloud.hotel.ui.theme.SerifDisplay
 import `in`.pcncloud.hotel.ui.theme.TextMuted
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
+import android.util.Log
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.delay
 
 /**
- * Full-screen hotel screen saver. Nav / session underneath stay intact;
+ * Full-screen screen saver. Nav / session underneath stay intact;
  * any remote key is handled by [MainActivity] to dismiss this overlay.
+ *
+ * Corporate flavor always shows the baked-in company mark ([BrandAssets.logoRes]).
+ * Hotel flavor prefers Firestore [HotelBranding.logoUrl], with [BrandAssets] fallback.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -143,6 +148,7 @@ fun ScreensaverOverlay(
         ) {
             ScreensaverLogo(
                 logoUrl = branding.logoUrl,
+                hotelName = branding.hotelName,
                 glow = glow,
             )
 
@@ -350,18 +356,39 @@ private fun isLegacyUnsafeScreensaverUrl(url: String): Boolean {
 @Composable
 private fun ScreensaverLogo(
     logoUrl: String,
+    hotelName: String,
     glow: Float,
 ) {
     val localLogo = painterResource(BrandAssets.logoRes)
-    val remoteUrl = logoUrl.trim().trim('"', '\'').trim().takeIf { it.isNotBlank() }
+    // Match header / splash: corporate always uses the flavor company logo (lt_logo).
+    // Hotel prefers Admin-uploaded logoUrl, falling back to BrandAssets.
+    val remoteUrl = if (BuildConfig.IS_CORPORATE) {
+        null
+    } else {
+        logoUrl.trim().trim('"', '\'').trim().takeIf { it.isNotBlank() && !isLegacyUnsafeScreensaverUrl(it) }
+    }
+
+    LaunchedEffect(remoteUrl, hotelName) {
+        Log.i(
+            "ScreensaverLogo",
+            when {
+                BuildConfig.IS_CORPORATE ->
+                    "Corporate screensaver — BrandAssets.logoRes (company mark) name=$hotelName"
+                remoteUrl != null ->
+                    "Hotel screensaver — remote logo ${remoteUrl.take(96)}"
+                else ->
+                    "Hotel screensaver — BrandAssets.logoRes fallback name=$hotelName"
+            },
+        )
+    }
 
     Box(
         modifier = Modifier
-            .size(176.dp)
+            .size(if (BuildConfig.IS_CORPORATE) 200.dp else 176.dp)
             .graphicsLayer {
                 scaleX = glow
                 scaleY = glow
-                alpha = 0.95f
+                alpha = 0.98f
             },
         contentAlignment = Alignment.Center,
     ) {
@@ -376,6 +403,7 @@ private fun ScreensaverLogo(
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,
                 error = localLogo,
+                placeholder = localLogo,
             )
         } else {
             Image(
