@@ -9,13 +9,17 @@ import { getHotelId } from './tenant-context.js';
 import { toast, escapeHtml, openModal, closeModal, setupModalClose } from './utils.js';
 import { canAccessModule } from './rbac.js';
 import { STAFF_ROLES, normalizeStaffRole, roleLabel } from './rbac-roles.js';
-import { createHotelAdminAccount, sendStaffPasswordReset } from './auth.js';
+import { createHotelAdminAccount } from './auth.js';
+import { overrideStaffPassword } from './api-client.js';
 
 let staffUnsub = null;
 let staffRows = [];
+/** @type {{ uid: string, email?: string, displayName?: string } | null} */
+let pendingPasswordResetStaff = null;
 
 export function initStaffManagement() {
   setupModalClose('staff-user-modal', 'staff-user-close');
+  setupModalClose('staff-override-password-modal', 'staff-override-password-close');
 
   document.getElementById('add-staff-user-btn')?.addEventListener('click', () => {
     if (!canAccessModule('staff')) {
@@ -26,6 +30,9 @@ export function initStaffManagement() {
   });
 
   document.getElementById('staff-user-form')?.addEventListener('submit', onSaveStaffUser);
+  document
+    .getElementById('staff-override-password-form')
+    ?.addEventListener('submit', onOverrideStaffPassword);
 
   startStaffListener();
 }
@@ -80,7 +87,7 @@ function renderStaffTable() {
       <td><code class="hotel-id-code">${escapeHtml(row.uid.slice(0, 8))}…</code></td>
       <td class="text-right staff-actions-cell">
         <button type="button" class="quick-btn quick-btn-edit" data-edit-staff="${escapeHtml(row.uid)}">Edit role</button>
-        <button type="button" class="quick-btn" data-reset-staff-password="${escapeHtml(row.uid)}" ${row.email ? '' : 'disabled'}>Reset password</button>
+        <button type="button" class="quick-btn" data-reset-staff-password="${escapeHtml(row.uid)}">Reset password</button>
         <button type="button" class="quick-btn" data-remove-staff="${escapeHtml(row.uid)}">Remove</button>
       </td>
     </tr>`,
@@ -94,12 +101,75 @@ function renderStaffTable() {
     btn.addEventListener('click', () => {
       const uid = btn.getAttribute('data-reset-staff-password');
       const row = staffRows.find((r) => r.uid === uid);
-      if (row) void resetStaffPassword(row, btn);
+      if (row) openOverridePasswordModal(row);
     });
   });
   tbody.querySelectorAll('[data-remove-staff]').forEach((btn) => {
     btn.addEventListener('click', () => removeStaffUser(btn.getAttribute('data-remove-staff')));
   });
+}
+
+function openOverridePasswordModal(row) {
+  if (!canAccessModule('staff')) {
+    toast('Admin access required', 'error');
+    return;
+  }
+  pendingPasswordResetStaff = row;
+  const form = document.getElementById('staff-override-password-form');
+  form?.reset();
+  const label = document.getElementById('staff-override-password-target');
+  if (label) {
+    label.textContent = row.displayName || row.email || row.uid;
+  }
+  const err = document.getElementById('staff-override-password-error');
+  if (err) {
+    err.textContent = '';
+    err.classList.add('hidden');
+  }
+  openModal('staff-override-password-modal');
+}
+
+async function onOverrideStaffPassword(e) {
+  e.preventDefault();
+  if (!canAccessModule('staff') || !pendingPasswordResetStaff?.uid) {
+    toast('Admin access required', 'error');
+    return;
+  }
+  const newPassword = document.getElementById('staff-override-password-new')?.value || '';
+  const errEl = document.getElementById('staff-override-password-error');
+  const btn = e.target.querySelector('button[type="submit"]');
+  const showErr = (msg) => {
+    if (!errEl) return;
+    errEl.textContent = msg || '';
+    errEl.classList.toggle('hidden', !msg);
+  };
+
+  showErr('');
+  if (newPassword.length < 6) {
+    showErr('Password must be at least 6 characters.');
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+  }
+  try {
+    await overrideStaffPassword(pendingPasswordResetStaff.uid, newPassword);
+    toast('Staff password updated');
+    closeModal('staff-override-password-modal');
+    e.target.reset();
+    pendingPasswordResetStaff = null;
+  } catch (err) {
+    console.error('[staff] override password failed', err);
+    showErr(err.message || 'Failed to update password');
+    toast(err.message || 'Failed to update password', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Set Password';
+    }
+  }
 }
 
 function openStaffModal(uid = null) {
@@ -191,40 +261,5 @@ async function removeStaffUser(uid) {
     toast('Staff RBAC record removed');
   } catch (err) {
     toast(err.message || 'Remove failed', 'error');
-  }
-}
-
-/**
- * Client SDK cannot set another user's password without Admin SDK.
- * Send Firebase password-reset email instead.
- */
-async function resetStaffPassword(row, btn) {
-  if (!canAccessModule('staff')) {
-    toast('Admin access required', 'error');
-    return;
-  }
-  const email = String(row?.email || '').trim();
-  if (!email) {
-    toast('Staff email missing — cannot send reset', 'error');
-    return;
-  }
-  if (!confirm(`Send a password reset email to ${email}?`)) return;
-
-  const prev = btn?.textContent;
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = 'Sending…';
-  }
-  try {
-    await sendStaffPasswordReset(email);
-    toast(`Password reset email sent to ${email}`);
-  } catch (err) {
-    console.error('[staff] reset password failed', err);
-    toast(err.message || 'Failed to send reset email', 'error');
-  } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = prev || 'Reset password';
-    }
   }
 }

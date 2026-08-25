@@ -4,6 +4,12 @@
   "buildCommand": "",
   "outputDirectory": ".",
   "cleanUrls": true,
+  "functions": {
+    "api/**/*.js": {
+      "memory": 256,
+      "maxDuration": 30
+    }
+  },
   "headers": [
     {
       "source": "/js/(.*)",

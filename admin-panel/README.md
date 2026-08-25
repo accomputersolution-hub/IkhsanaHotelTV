@@ -33,6 +33,14 @@ Open **http://localhost:3000** → `#/login`.
 
 Invalid credentials always show **Invalid email or password** and never grant access.
 
+### Password management
+
+1. **Change Password** (signed-in admin) — reauth with current password, then `updatePassword`.
+2. **Staff → Reset password** — modal with new password only; calls `/api/staff/override-password` (Firebase Admin SDK, no email).
+3. **Forgot password?** on login — account email + **Send link to**; calls `/api/auth/custom-reset` which uses `generatePasswordResetLink` + SMTP/Resend (not Firebase’s default mailer).
+
+See [`API_ENV.md`](./API_ENV.md) for Vercel env vars (`FIREBASE_*`, `SMTP_*` / `RESEND_*`).
+
 ### Onboard a hotel
 
 From Super Admin → **Add New Hotel** (name, slug, admin email/password, branding).  

@@ -32,6 +32,7 @@ import {
   isAuthLoading,
   forceAuthReady,
 } from './auth.js';
+import { requestCustomPasswordReset } from './api-client.js';
 import {
   getHotelId,
   hasHotelContext,
@@ -388,6 +389,9 @@ function updateImpersonationBanner() {
 function setupLoginForm() {
   const form = document.getElementById('login-form');
   const errorEl = document.getElementById('login-error');
+  const forgotForm = document.getElementById('forgot-password-form');
+  const showForgotBtn = document.getElementById('show-forgot-password');
+  const backToLoginBtn = document.getElementById('back-to-login');
 
   function setLoginError(message) {
     if (!errorEl) return;
@@ -399,6 +403,37 @@ function setupLoginForm() {
       errorEl.classList.add('hidden');
     }
   }
+
+  function showLoginPanel() {
+    form?.classList.remove('hidden');
+    showForgotBtn?.classList.remove('hidden');
+    forgotForm?.classList.add('hidden');
+  }
+
+  function showForgotPanel() {
+    form?.classList.add('hidden');
+    showForgotBtn?.classList.add('hidden');
+    forgotForm?.classList.remove('hidden');
+    const account = document.getElementById('forgot-account-email');
+    const loginEmail = document.getElementById('login-email')?.value?.trim();
+    if (account && loginEmail && !account.value) account.value = loginEmail;
+  }
+
+  showForgotBtn?.addEventListener('click', () => {
+    setLoginError('');
+    const err = document.getElementById('forgot-password-error');
+    const ok = document.getElementById('forgot-password-success');
+    if (err) {
+      err.textContent = '';
+      err.classList.add('hidden');
+    }
+    if (ok) {
+      ok.textContent = '';
+      ok.classList.add('hidden');
+    }
+    showForgotPanel();
+  });
+  backToLoginBtn?.addEventListener('click', () => showLoginPanel());
 
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -441,6 +476,54 @@ function setupLoginForm() {
       if (btn) {
         btn.disabled = false;
         btn.textContent = 'Sign In';
+      }
+    }
+  });
+
+  forgotForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const accountEmail = document.getElementById('forgot-account-email')?.value?.trim() || '';
+    const sendToEmail = document.getElementById('forgot-send-to-email')?.value?.trim() || '';
+    const errEl = document.getElementById('forgot-password-error');
+    const okEl = document.getElementById('forgot-password-success');
+    const btn = forgotForm.querySelector('button[type="submit"]');
+
+    const showErr = (msg) => {
+      if (okEl) {
+        okEl.textContent = '';
+        okEl.classList.add('hidden');
+      }
+      if (!errEl) return;
+      errEl.textContent = msg || '';
+      errEl.classList.toggle('hidden', !msg);
+    };
+    const showOk = (msg) => {
+      if (errEl) {
+        errEl.textContent = '';
+        errEl.classList.add('hidden');
+      }
+      if (!okEl) return;
+      okEl.textContent = msg || '';
+      okEl.classList.toggle('hidden', !msg);
+    };
+
+    showErr('');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Sending…';
+    }
+    try {
+      const result = await requestCustomPasswordReset(accountEmail, sendToEmail);
+      showOk(result.message || `Reset link sent to ${sendToEmail}`);
+      toast('Reset link sent');
+    } catch (err) {
+      console.error('[auth] custom reset failed', err);
+      showErr(err.message || 'Failed to send reset link');
+      toast(err.message || 'Failed to send reset link', 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Send Reset Link';
       }
     }
   });

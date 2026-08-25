@@ -6,7 +6,6 @@ import {
   updatePassword,
   EmailAuthProvider,
   reauthenticateWithCredential,
-  sendPasswordResetEmail,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js';
 import {
   doc,
@@ -477,7 +476,7 @@ export async function createHotelAdminAccount({
 
 /**
  * Change the signed-in user's password (Firebase Client SDK).
- * Re-authenticates with [currentPassword] first.
+ * Re-authenticates with [currentPassword] first via EmailAuthProvider.
  */
 export async function changeOwnPassword(currentPassword, newPassword) {
   const user = auth.currentUser;
@@ -497,30 +496,6 @@ export async function changeOwnPassword(currentPassword, newPassword) {
   } catch (err) {
     const wrapped = new Error(formatAuthError(err));
     wrapped.code = err?.code || 'auth/invalid-credential';
-    throw wrapped;
-  }
-}
-
-/**
- * Send a Firebase password-reset email for another staff account.
- * Client SDK cannot set other users' passwords without Admin SDK.
- */
-export async function sendStaffPasswordReset(email) {
-  const target = String(email || '').trim();
-  if (!target) throw new Error('Staff email is required');
-  if (!hasAuthorizedProfile(currentProfile)) {
-    throw new Error('Not authorized');
-  }
-  try {
-    await sendPasswordResetEmail(auth, target);
-  } catch (err) {
-    console.error('[auth] sendPasswordResetEmail failed', err?.code || err);
-    const wrapped = new Error(
-      err?.code === 'auth/invalid-email'
-        ? 'Invalid email address'
-        : 'Could not send reset email. Try again or check the address.',
-    );
-    wrapped.code = err?.code || 'auth/reset-failed';
     throw wrapped;
   }
 }

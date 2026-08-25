@@ -126,6 +126,25 @@
         <button type="submit" class="w-full py-3 font-semibold rounded-xl btn-gold">Sign In</button>
         <p id="login-error" class="login-error hidden" role="alert"></p>
       </form>
+      <button id="show-forgot-password" type="button" class="login-link-btn">Forgot password?</button>
+
+      <form id="forgot-password-form" class="space-y-4 hidden mt-4">
+        <p class="login-hint" style="margin:0">
+          Generate a Firebase reset link and deliver it to a verified inbox (SMTP/Resend) — not via Firebase’s default mailer.
+        </p>
+        <div>
+          <label for="forgot-account-email" class="block text-sm font-medium mb-1">Account email</label>
+          <input id="forgot-account-email" type="email" required autocomplete="username" class="w-full px-4 py-2.5 rounded-xl outline-none" placeholder="admin@hotel.com" />
+        </div>
+        <div>
+          <label for="forgot-send-to-email" class="block text-sm font-medium mb-1">Send link to</label>
+          <input id="forgot-send-to-email" type="email" required autocomplete="email" class="w-full px-4 py-2.5 rounded-xl outline-none" placeholder="it-admin@company.com" />
+        </div>
+        <button type="submit" class="w-full py-3 font-semibold rounded-xl btn-gold">Send Reset Link</button>
+        <p id="forgot-password-error" class="login-error hidden" role="alert"></p>
+        <p id="forgot-password-success" class="login-success hidden" role="status"></p>
+        <button id="back-to-login" type="button" class="login-link-btn">← Back to sign in</button>
+      </form>
       <p class="login-hint">Sign in with your Firebase Auth email and password.</p>
     </div>
   </div>
@@ -1643,6 +1662,29 @@
         </div>
         <p id="change-password-error" class="login-error hidden" role="alert"></p>
         <button type="submit" class="w-full py-3 font-semibold rounded-xl btn-gold">Update Password</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Super Admin / Hotel Admin: instantly set staff password -->
+  <div id="staff-override-password-modal" class="modal-overlay hidden">
+    <div class="modal-panel">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-lg font-bold">Set Staff Password</h3>
+        <button id="staff-override-password-close" type="button" class="modal-close-btn">&times;</button>
+      </div>
+      <p class="text-sm mb-4" style="color:var(--text-muted)">
+        Instantly overwrite the Auth password for
+        <strong id="staff-override-password-target">—</strong>.
+        No email is sent.
+      </p>
+      <form id="staff-override-password-form" class="flex flex-col gap-4">
+        <div>
+          <label for="staff-override-password-new" class="block text-sm font-medium mb-1">New password</label>
+          <input id="staff-override-password-new" type="password" required minlength="6" autocomplete="new-password" class="w-full px-4 py-2.5 rounded-xl outline-none" placeholder="Min 6 characters" />
+        </div>
+        <p id="staff-override-password-error" class="login-error hidden" role="alert"></p>
+        <button type="submit" class="w-full py-3 font-semibold rounded-xl btn-gold">Set Password</button>
       </form>
     </div>
   </div>

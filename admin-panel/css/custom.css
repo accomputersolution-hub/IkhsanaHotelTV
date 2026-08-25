@@ -3129,6 +3129,31 @@ body.modal-open { overflow: hidden; }
   line-height: 1.4;
 }
 
+.login-success {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  background: rgba(6, 78, 59, 0.35);
+  color: #a7f3d0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.login-link-btn {
+  display: block;
+  width: 100%;
+  margin-top: 0.85rem;
+  padding: 0.35rem;
+  background: transparent;
+  border: none;
+  color: var(--gold-light);
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
+  text-align: center;
+}
+
 .staff-actions-cell {
   display: flex;
   flex-wrap: wrap;
