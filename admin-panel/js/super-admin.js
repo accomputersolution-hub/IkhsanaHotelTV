@@ -129,8 +129,11 @@ function brandingOf(hotel) {
     bgWallpaperDark:
       b.bgWallpaperDark ||
       b.bg_wallpaper_dark ||
+      b.bgWallpaperNight ||
+      b.bg_wallpaper_night ||
       hotel?.bgWallpaperDark ||
       hotel?.bg_wallpaper_dark ||
+      hotel?.bgWallpaperNight ||
       '',
     themeColor: b.themeColor || b.theme_color || hotel?.themeColor || '#C9A962',
     tagline: b.tagline || hotel?.tagline || '',

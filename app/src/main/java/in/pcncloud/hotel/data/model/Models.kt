@@ -28,7 +28,7 @@ data class HotelBranding(
     val logoUrl: String = "",
     val bgWallpaperUrl: String = "",
     /**
-     * Optional night / dark wallpaper URL (`bgWallpaperDark` / `bg_wallpaper_dark`).
+     * Optional night wallpaper (`bgWallpaperDark` / `bgWallpaperNight` / `bg_wallpaper_dark`).
      * When blank at night, TV dims [bgWallpaperUrl] instead.
      */
     val bgWallpaperDarkUrl: String = "",

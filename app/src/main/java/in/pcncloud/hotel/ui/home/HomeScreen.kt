@@ -77,6 +77,7 @@ import `in`.pcncloud.hotel.ui.components.BroadcastAlertOverlay
 import `in`.pcncloud.hotel.ui.components.LuxuryNavCard
 import `in`.pcncloud.hotel.ui.components.ServiceToast
 import `in`.pcncloud.hotel.ui.theme.GoldLuxury
+import `in`.pcncloud.hotel.ui.theme.LocalIsNightMode
 import `in`.pcncloud.hotel.ui.theme.NavyDeep
 import `in`.pcncloud.hotel.ui.theme.SerifDisplay
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
@@ -420,9 +421,21 @@ private fun WelcomeBanner(
     salutation: String,
     welcomeMessage: String,
 ) {
+    val isCorporate = BuildConfig.IS_CORPORATE
+    val isNightMode = LocalIsNightMode.current
     val subtitle = welcomeMessage.trim()
+    // Corporate day mode: darker type on bright wallpapers; night + hotel keep luminous white.
+    val bannerTextColor = when {
+        !isCorporate -> Color.White
+        isNightMode -> Color.White
+        else -> Color(0xFF111827)
+    }
     val welcomeShadow = Shadow(
-        color = Color.Black.copy(alpha = 0.7f),
+        color = if (isCorporate && !isNightMode) {
+            Color.White.copy(alpha = 0.35f)
+        } else {
+            Color.Black.copy(alpha = 0.7f)
+        },
         offset = Offset(0f, 2f),
         blurRadius = 10f,
     )
@@ -438,7 +451,7 @@ private fun WelcomeBanner(
             fontSize = 16.sp,
             fontWeight = FontWeight.Normal,
             fontFamily = SerifDisplay,
-            color = Color.White,
+            color = bannerTextColor,
             letterSpacing = 8.sp,
             style = TextStyle(shadow = welcomeShadow),
         )
@@ -458,7 +471,7 @@ private fun WelcomeBanner(
                 fontSize = 38.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = SerifDisplay,
-                color = Color.White,
+                color = bannerTextColor,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -474,7 +487,7 @@ private fun WelcomeBanner(
                 fontSize = 15.sp,
                 fontStyle = FontStyle.Italic,
                 fontFamily = SerifDisplay,
-                color = Color.White,
+                color = bannerTextColor,
                 textAlign = TextAlign.Center,
                 lineHeight = 24.sp,
                 style = TextStyle(shadow = welcomeShadow),

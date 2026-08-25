@@ -349,6 +349,12 @@ fun AppChromeHeader(
     val displayName = hotelName.trim()
     val displayTagline = tagline.trim()
     val isCorporate = BuildConfig.IS_CORPORATE
+    val isNightMode = LocalIsNightMode.current
+    val chromeTitleColor = when {
+        !isCorporate -> TextPrimary
+        isNightMode -> TextPrimary
+        else -> Color(0xFF111827)
+    }
     val bellFocus = alertBellFocus ?: remember { FocusRequester() }
 
     Row(
@@ -374,7 +380,7 @@ fun AppChromeHeader(
                         fontSize = 26.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = SerifDisplay,
-                        color = TextPrimary,
+                        color = chromeTitleColor,
                         letterSpacing = 2.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
