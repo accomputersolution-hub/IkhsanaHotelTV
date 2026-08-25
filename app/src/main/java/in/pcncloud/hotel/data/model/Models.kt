@@ -42,6 +42,11 @@ data class HotelBranding(
     val emergencyContacts: List<EmergencyContact> = emptyList(),
     /** Corporate daily schedule from Hotels/{id}/Daily_Agenda (legacy: .daily_agenda). */
     val dailyAgenda: List<AgendaItem> = emptyList(),
+    /**
+     * When true, guest alerts may use SYSTEM_ALERT_WINDOW over YouTube / Live TV.
+     * Hotels/{hotelId}.allowOverlayPopups (default true).
+     */
+    val allowOverlayPopups: Boolean = true,
 )
 
 /** One entry from Hotels/{hotelId}/Emergency_Contacts (admin Helpdesk Config). */

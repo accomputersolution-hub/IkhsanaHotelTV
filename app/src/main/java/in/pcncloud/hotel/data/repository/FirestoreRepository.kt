@@ -1121,7 +1121,21 @@ class FirestoreRepository(
             status = data["status"] as? String ?: "active",
             emergencyContacts = parseEmergencyContacts(data["emergency_contacts"]),
             dailyAgenda = parseDailyAgenda(data["daily_agenda"]),
+            allowOverlayPopups = parseAllowOverlayPopups(data),
         )
+    }
+
+    private fun parseAllowOverlayPopups(data: Map<String, Any?>): Boolean {
+        val raw = data["allowOverlayPopups"]
+            ?: data["allow_overlay_popups"]
+            ?: (data["branding"] as? Map<*, *>)?.get("allowOverlayPopups")
+            ?: (data["branding"] as? Map<*, *>)?.get("allow_overlay_popups")
+        return when (raw) {
+            is Boolean -> raw
+            is Number -> raw.toInt() != 0
+            is String -> raw.equals("true", ignoreCase = true) || raw == "1"
+            else -> true
+        }
     }
 
     private fun parseEmergencyContacts(raw: Any?): List<EmergencyContact> {

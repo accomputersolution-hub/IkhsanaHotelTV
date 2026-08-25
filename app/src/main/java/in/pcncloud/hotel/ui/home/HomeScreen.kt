@@ -167,10 +167,14 @@ fun HomeScreen(
     val contentReady = uiState.isContentReady
     val featureFlags = uiState.featureFlags
     val focusManager = LocalFocusManager.current
-    val useSystemAlertOverlay = remember(context) {
-        Settings.canDrawOverlays(context.applicationContext)
+    val useSystemAlertOverlay = remember(
+        context,
+        uiState.branding.allowOverlayPopups,
+    ) {
+        uiState.branding.allowOverlayPopups &&
+            Settings.canDrawOverlays(context.applicationContext)
     }
-    // Compose in-app popup only when SYSTEM_ALERT_WINDOW is unavailable.
+    // In-app Compose popup when global overlay is off or permission is missing.
     val showInAppAlertOverlay = activeAlert != null && !useSystemAlertOverlay
 
     fun requesterFor(card: HomeNavCard): FocusRequester = when (card) {

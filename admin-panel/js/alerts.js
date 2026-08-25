@@ -1,9 +1,10 @@
-import { db } from './firebase-config.js';
+import { db, rtdb } from './firebase-config.js';
 import {
   collection,
   doc,
   addDoc,
   getDocs,
+  getDoc,
   updateDoc,
   onSnapshot,
   query,
@@ -12,9 +13,11 @@ import {
   writeBatch,
   serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
+import { ref as rtdbRef, set as rtdbSet } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js';
 import { escapeHtml, formatTime, toast, showConnectionError, hideConnectionError } from './utils.js';
 import { normalizeRoom, paths, logFirestoreWrite, logFirestoreListen } from './paths.js';
 import { getHotelId, onHotelChange } from './tenant-context.js';
+import { normalizeHotelId } from './firebase-config.js';
 
 const ALERT_PRESETS = {
   emergency: {
@@ -102,9 +105,104 @@ export function initAlerts() {
   setupPresetButtons();
   setupClearActiveButton();
   setupTvPreview();
+  setupOverlayPopupsToggle();
   onHotelChange(() => {
     listenBroadcastHistory();
+    loadOverlayPopupsToggle();
   });
+}
+
+function syncOverlayToggleLabel(enabled) {
+  const label = document.getElementById('allow-overlay-popups-label');
+  if (!label) return;
+  label.textContent = enabled ? 'Enabled' : 'Disabled';
+  label.classList.toggle('is-inactive', !enabled);
+}
+
+function mirrorOverlayPopupsToRtdb(hotelId, allowOverlayPopups) {
+  const id = normalizeHotelId(hotelId);
+  Promise.resolve()
+    .then(async () => {
+      const base = `hotels/${id}/config`;
+      await Promise.all([
+        rtdbSet(rtdbRef(rtdb, `${base}/allowOverlayPopups`), allowOverlayPopups),
+        rtdbSet(rtdbRef(rtdb, `${base}/allow_overlay_popups`), allowOverlayPopups),
+      ]);
+      console.log('[alerts] RTDB overlay mirror OK →', base, allowOverlayPopups);
+    })
+    .catch((err) => {
+      console.warn('[alerts] RTDB overlay mirror skipped', err);
+    });
+}
+
+async function loadOverlayPopupsToggle() {
+  const toggle = document.getElementById('allow-overlay-popups-toggle');
+  if (!toggle) return;
+  const hotelId = getHotelId();
+  if (!hotelId) {
+    toggle.checked = true;
+    syncOverlayToggleLabel(true);
+    return;
+  }
+  try {
+    const snap = await getDoc(doc(db, 'Hotels', hotelId));
+    const data = snap.exists() ? snap.data() || {} : {};
+    const enabled =
+      typeof data.allowOverlayPopups === 'boolean'
+        ? data.allowOverlayPopups
+        : typeof data.allow_overlay_popups === 'boolean'
+          ? data.allow_overlay_popups
+          : true;
+    toggle.checked = enabled;
+    syncOverlayToggleLabel(enabled);
+  } catch (err) {
+    console.warn('[alerts] loadOverlayPopupsToggle failed', err);
+    toggle.checked = true;
+    syncOverlayToggleLabel(true);
+  }
+}
+
+function setupOverlayPopupsToggle() {
+  const toggle = document.getElementById('allow-overlay-popups-toggle');
+  if (!toggle) return;
+
+  toggle.addEventListener('change', async () => {
+    const hotelId = getHotelId();
+    if (!hotelId) {
+      toast('Select a hotel first', 'error');
+      toggle.checked = !toggle.checked;
+      syncOverlayToggleLabel(toggle.checked);
+      return;
+    }
+    const enabled = Boolean(toggle.checked);
+    syncOverlayToggleLabel(enabled);
+    toggle.disabled = true;
+    try {
+      await updateDoc(doc(db, 'Hotels', hotelId), {
+        allowOverlayPopups: enabled,
+        allow_overlay_popups: enabled,
+        updatedAt: serverTimestamp(),
+      });
+      logFirestoreWrite('Overlay Popups Toggle', `Hotels/${hotelId}`, {
+        allowOverlayPopups: enabled,
+      });
+      mirrorOverlayPopupsToRtdb(hotelId, enabled);
+      toast(
+        enabled
+          ? 'Global overlay popups enabled on TVs'
+          : 'Global overlay popups disabled — in-app only',
+      );
+    } catch (err) {
+      console.error('[alerts] allowOverlayPopups update failed', err);
+      toggle.checked = !enabled;
+      syncOverlayToggleLabel(!enabled);
+      toast(err.message || 'Failed to update overlay setting', 'error');
+    } finally {
+      toggle.disabled = false;
+    }
+  });
+
+  loadOverlayPopupsToggle();
 }
 
 function setupTvPreview() {

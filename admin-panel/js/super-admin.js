@@ -433,6 +433,8 @@ function setupAddHotelModal() {
         status: 'active',
         activeTvScreens: 0,
         isKioskModeEnabled: true,
+        allowOverlayPopups: true,
+        allow_overlay_popups: true,
         allowedPackages: [
           'com.google.android.youtube.tv',
           'com.amazon.amazonvideo.livingroom',
@@ -760,16 +762,20 @@ function resetKioskSaveButton() {
  * Fire-and-forget RTDB mirror — must NEVER block the Save button finally{} path.
  * A hanging RTDB write was the root cause of infinite "Saving...".
  */
-function mirrorKioskConfigToRtdb(hotelId, isKioskModeEnabled, allowedPackages) {
+function mirrorKioskConfigToRtdb(hotelId, isKioskModeEnabled, allowedPackages, allowOverlayPopups) {
   Promise.resolve()
     .then(async () => {
       const base = `hotels/${hotelId}/config`;
+      const overlay =
+        typeof allowOverlayPopups === 'boolean' ? allowOverlayPopups : true;
       await Promise.all([
         rtdbSet(rtdbRef(rtdb, `${base}/isKioskModeEnabled`), isKioskModeEnabled),
         rtdbSet(rtdbRef(rtdb, `${base}/allowedPackages`), allowedPackages),
+        rtdbSet(rtdbRef(rtdb, `${base}/allowOverlayPopups`), overlay),
         // Legacy snake_case keys (older TV builds).
         rtdbSet(rtdbRef(rtdb, `${base}/is_kiosk_mode_enabled`), isKioskModeEnabled),
         rtdbSet(rtdbRef(rtdb, `${base}/allowed_packages`), allowedPackages),
+        rtdbSet(rtdbRef(rtdb, `${base}/allow_overlay_popups`), overlay),
       ]);
       console.log('[super-admin] RTDB kiosk mirror OK →', base);
     })
@@ -842,7 +848,14 @@ function setupKioskSettingsModal() {
         console.log('Successfully saved Kiosk settings!');
 
         // Do not await RTDB — prevents infinite "Saving..." if RTDB hangs.
-        mirrorKioskConfigToRtdb(hotelId, isKioskModeEnabled, allowedPackages);
+        const existing = hotelsCache.find((h) => h.id === hotelId);
+        const allowOverlay =
+          typeof existing?.allowOverlayPopups === 'boolean'
+            ? existing.allowOverlayPopups
+            : typeof existing?.allow_overlay_popups === 'boolean'
+              ? existing.allow_overlay_popups
+              : true;
+        mirrorKioskConfigToRtdb(hotelId, isKioskModeEnabled, allowedPackages, allowOverlay);
 
         const cached = hotelsCache.find((h) => h.id === hotelId);
         if (cached) {

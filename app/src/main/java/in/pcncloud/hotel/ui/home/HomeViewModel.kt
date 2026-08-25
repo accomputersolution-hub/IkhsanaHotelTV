@@ -90,6 +90,7 @@ class HomeViewModel(
                     trackedSessionKey = profile.sessionKey
                     // First snapshot from all three listeners = content ready.
                     // Keep isLoading true until then so Home never paints placeholders.
+                    val previousAllow = _uiState.value.branding.allowOverlayPopups
                     _uiState.update {
                         it.copy(
                             guestProfile = profile,
@@ -97,6 +98,10 @@ class HomeViewModel(
                             rooms = rooms,
                             isLoading = false,
                         )
+                    }
+                    // Admin disabled global overlays while one may be on screen.
+                    if (previousAllow && !branding.allowOverlayPopups) {
+                        AlertOverlayService.dismiss(appContext)
                     }
                 }
             }
@@ -217,6 +222,10 @@ class HomeViewModel(
     }
 
     private fun maybeShowSystemOverlay(alert: HotelAlert) {
+        if (!_uiState.value.branding.allowOverlayPopups) {
+            Log.i(TAG, "allowOverlayPopups=false — skip SYSTEM_ALERT_WINDOW (in-app only)")
+            return
+        }
         if (!Settings.canDrawOverlays(appContext)) {
             Log.w(TAG, "SYSTEM_ALERT_WINDOW missing — in-app Compose overlay only")
             return
