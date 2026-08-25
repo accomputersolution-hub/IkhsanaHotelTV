@@ -17,6 +17,7 @@ import {
   normalizeStaffRole,
   roleLabel,
 } from './rbac-roles.js';
+import { isCorporateProperty } from './tenant-context.js';
 
 export { STAFF_ROLES, normalizeStaffRole, roleLabel };
 
@@ -50,6 +51,9 @@ export const ROLE_MODULES = Object.freeze({
   reception: ['pms', 'room-features', 'billing', 'messaging', 'concierge'],
   housekeeping: ['housekeeping', 'pms'],
 });
+
+/** Hotel-only modules — never shown for corporate properties (even if role allows). */
+const HOTEL_ONLY_MODULES = new Set(['billing', 'concierge', 'analytics']);
 
 /** Default landing module after login, per staff role. */
 export const ROLE_DEFAULT_MODULE = Object.freeze({
@@ -122,6 +126,7 @@ export function getAccessibleModules(profile = getCurrentProfile()) {
 }
 
 export function canAccessModule(moduleId, profile = getCurrentProfile()) {
+  if (isCorporateProperty() && HOTEL_ONLY_MODULES.has(moduleId)) return false;
   if (isSuperAdmin() && profile?.role === 'super_admin') return true;
   return hasAccess(getOperationalRole(profile), moduleId);
 }
@@ -136,15 +141,17 @@ export function getDefaultModuleForRole(profile = getCurrentProfile()) {
 
 /**
  * Show/hide sidebar nav items from the current operational role.
- * Compose with corporate chrome (call after applyCorporateNavChrome).
+ * Call BEFORE applyCorporateNavChrome — corporate chrome re-hides hotel-only items.
  */
 export function applyRbacNavChrome() {
   const allowed = new Set(getAccessibleModules());
+  const corporate = isCorporateProperty();
   document.querySelectorAll('[data-module]').forEach((btn) => {
     const id = btn.dataset.module;
     if (!id) return;
     const blockedByRole = !allowed.has(id);
-    if (blockedByRole) {
+    const blockedByProperty = corporate && HOTEL_ONLY_MODULES.has(id);
+    if (blockedByRole || blockedByProperty) {
       btn.classList.add('hidden');
       btn.setAttribute('aria-hidden', 'true');
       btn.disabled = true;

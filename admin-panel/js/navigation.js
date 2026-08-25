@@ -27,6 +27,13 @@ const MODULES = {
   staff: { label: 'Staff Management', title: 'Staff Management' },
 };
 
+/** Hotel-flavor-only sidebar modules — hidden when property_type === corporate. */
+export const HOTEL_ONLY_MODULES = Object.freeze(['billing', 'concierge', 'analytics']);
+
+function isHotelOnlyModule(id) {
+  return HOTEL_ONLY_MODULES.includes(id);
+}
+
 function moduleTitle(id) {
   if (id === 'kds' && isCorporateProperty()) return 'Pantry Requests';
   if (id === 'housekeeping' && isCorporateProperty()) return 'Helpdesk Config';
@@ -55,14 +62,15 @@ export function initNavigation() {
   } catch (err) {
     console.error('[nav] agenda chrome failed', err);
   }
-  applyCorporateNavChrome();
+  // RBAC first (may unhide by role), then corporate chrome re-hides hotel-only items.
   applyRbacNavChrome();
+  applyCorporateNavChrome();
 
   try {
     if (activeModule === 'agenda' && !isCorporateProperty()) {
       activeModule = getDefaultModuleForRole();
     }
-    if (isCorporateProperty() && (activeModule === 'concierge' || activeModule === 'analytics')) {
+    if (isCorporateProperty() && isHotelOnlyModule(activeModule)) {
       activeModule = getDefaultModuleForRole();
     }
     activeModule = resolveAllowedModule(activeModule);
@@ -88,15 +96,15 @@ export function initNavigation() {
     } catch (err) {
       console.error('[nav] agenda chrome failed', err);
     }
-    applyCorporateNavChrome();
     applyRbacNavChrome();
+    applyCorporateNavChrome();
     try {
       if (activeModule === 'agenda' && !isCorporateProperty()) {
         showModule(getDefaultModuleForRole());
         navigateTo(`/pms/${getDefaultModuleForRole()}`);
         return;
       }
-      if (isCorporateProperty() && (activeModule === 'concierge' || activeModule === 'analytics')) {
+      if (isCorporateProperty() && isHotelOnlyModule(activeModule)) {
         showModule(getDefaultModuleForRole());
         navigateTo(`/pms/${getDefaultModuleForRole()}`);
         return;
@@ -131,18 +139,29 @@ function setupSidebarNav() {
   });
 }
 
-/** Corporate flavor: hide hotel-only sidebar items (Concierge + Analytics). */
+/**
+ * Corporate flavor: hide hotel-only sidebar items
+ * (Billing, Travel & Concierge, Executive Analytics).
+ * Must run AFTER applyRbacNavChrome so role unhide does not win.
+ */
 export function applyCorporateNavChrome() {
   const corporate = isCorporateProperty();
-  document.getElementById('nav-concierge')?.classList.toggle('hidden', corporate);
-  document.getElementById('nav-analytics')?.classList.toggle('hidden', corporate);
+  for (const id of HOTEL_ONLY_MODULES) {
+    const btn =
+      document.getElementById(`nav-${id}`) ||
+      document.querySelector(`[data-module="${id}"]`);
+    if (!btn) continue;
+    btn.classList.toggle('hidden', corporate);
+    if (corporate) btn.setAttribute('aria-hidden', 'true');
+    else btn.removeAttribute('aria-hidden');
+  }
 }
 
 export function showModule(id) {
   if (id === 'agenda' && !isCorporateProperty()) {
     id = getDefaultModuleForRole();
   }
-  if (isCorporateProperty() && (id === 'concierge' || id === 'analytics')) {
+  if (isCorporateProperty() && isHotelOnlyModule(id)) {
     id = getDefaultModuleForRole();
   }
   id = resolveAllowedModule(id);
