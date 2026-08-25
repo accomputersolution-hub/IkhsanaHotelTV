@@ -37,8 +37,19 @@ val CorporateGlass = Color(0xCC1A1A1A) // ~80% dark grey/black
 val CorpGold = Color(0xFFD4AF37)
 val CorpGoldBright = Color(0xFFFFD700)
 val CorpGoldBorderIdle = Color(0x66D4AF37)
+/** Legacy solid card fill — prefer [CorpGlassNight] / [CorpGlassDay] for home tiles. */
 val CorpCardBg = Color(0xFA111111)
 val CorpSubtitle = Color(0xFFCCCCCC)
+
+/** Corporate glassmorphism card fills (wallpaper shows through). */
+val CorpGlassNight = Color(0x66000000) // black @ 40%
+val CorpGlassDay = Color(0x4DFFFFFF) // white @ 30%
+
+/** Corporate card content colors for day / night. */
+val CorpCardTextNight = Color(0xFFF8FAFC)
+val CorpCardTextDay = Color(0xFF1A1A1A)
+val CorpCardSubtitleNight = Color(0xFFCCCCCC)
+val CorpCardSubtitleDay = Color(0xFF475569)
 
 val TextPrimary = Color(0xFFF1F5F9)
 val TextMuted = Color(0xFF94A3B8)

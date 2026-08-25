@@ -4,7 +4,6 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -311,18 +310,6 @@ private fun ScreensaverBackground(
                         ),
                     ),
                 ),
-        )
-
-        // Dim day wallpaper at night only when no dedicated dark image is set.
-        val nightDimAlpha by animateFloatAsState(
-            targetValue = if (isNightMode && !useDarkImage) 0.50f else 0.0f,
-            animationSpec = tween(durationMillis = 900),
-            label = "screensaverNightDim",
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = nightDimAlpha)),
         )
 
         Box(

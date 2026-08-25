@@ -23,7 +23,7 @@ val LocalIsNightMode = staticCompositionLocalOf { true }
 
 /**
  * Tracks day/night and refreshes every minute so the UI can crossfade
- * wallpaper dimming and theme without a process restart.
+ * wallpapers and theme without a process restart.
  */
 @Composable
 fun rememberIsNightMode(): Boolean {

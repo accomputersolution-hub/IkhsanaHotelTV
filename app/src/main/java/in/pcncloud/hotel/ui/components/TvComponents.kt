@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -55,16 +56,21 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.ui.services.ServiceToastType
-import `in`.pcncloud.hotel.ui.theme.CorpCardBg
+import `in`.pcncloud.hotel.ui.theme.CorpCardSubtitleDay
+import `in`.pcncloud.hotel.ui.theme.CorpCardSubtitleNight
+import `in`.pcncloud.hotel.ui.theme.CorpCardTextDay
+import `in`.pcncloud.hotel.ui.theme.CorpCardTextNight
+import `in`.pcncloud.hotel.ui.theme.CorpGlassDay
+import `in`.pcncloud.hotel.ui.theme.CorpGlassNight
 import `in`.pcncloud.hotel.ui.theme.CorpGold
 import `in`.pcncloud.hotel.ui.theme.CorpGoldBorderIdle
 import `in`.pcncloud.hotel.ui.theme.CorpGoldBright
-import `in`.pcncloud.hotel.ui.theme.CorpSubtitle
 import `in`.pcncloud.hotel.ui.theme.GoldGlassBorder
 import `in`.pcncloud.hotel.ui.theme.GoldGlassFill
 import `in`.pcncloud.hotel.ui.theme.GoldLight
 import `in`.pcncloud.hotel.ui.theme.GoldLuxury
 import `in`.pcncloud.hotel.ui.theme.GoldPrimary
+import `in`.pcncloud.hotel.ui.theme.LocalIsNightMode
 import `in`.pcncloud.hotel.ui.theme.NavyDeep
 import `in`.pcncloud.hotel.ui.theme.SansBody
 import `in`.pcncloud.hotel.ui.theme.TextMuted
@@ -138,7 +144,7 @@ fun LuxuryNavCard(
     @DrawableRes iconRes: Int,
     focusGlowColor: Color = GoldLuxury,
     modifier: Modifier = Modifier,
-    /** When false, draw the asset's original colors (for full-color PNGs). Corporate only. */
+    /** When false, draw the asset's original colors (for full-color PNGs). Hotel only. */
     tintIcon: Boolean = !BuildConfig.IS_CORPORATE,
     iconSize: Dp = if (BuildConfig.IS_CORPORATE) 56.dp else 52.dp,
     onClick: () -> Unit,
@@ -164,7 +170,7 @@ fun LuxuryNavCard(
     }
 }
 
-/** Premium Black & Gold corporate tile — portrait TV card with D-pad focus pop. */
+/** Premium glassmorphism corporate tile — day/night adaptive with gold focus ring. */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun CorporateLuxuryNavCard(
@@ -176,6 +182,7 @@ private fun CorporateLuxuryNavCard(
     onClick: () -> Unit,
 ) {
     var isFocused by remember { mutableStateOf(false) }
+    val isNightMode = LocalIsNightMode.current
     val cardShape = RoundedCornerShape(16.dp)
     val scale by animateFloatAsState(
         targetValue = if (isFocused) 1.05f else 1f,
@@ -185,6 +192,19 @@ private fun CorporateLuxuryNavCard(
         ),
         label = "corpNavCardScale",
     )
+    val glassBg by animateColorAsState(
+        targetValue = if (isNightMode) CorpGlassNight else CorpGlassDay,
+        animationSpec = tween(durationMillis = 900),
+        label = "corpNavCardGlass",
+    )
+    // Icons + body copy follow day/night; title keeps gold at night for L&T brand.
+    val textColor = if (isNightMode) CorpCardTextNight else CorpCardTextDay
+    val titleColor = when {
+        isFocused -> CorpGoldBright
+        isNightMode -> CorpGold
+        else -> CorpCardTextDay
+    }
+    val subtitleColor = if (isNightMode) CorpCardSubtitleNight else CorpCardSubtitleDay
     val borderColor = if (isFocused) CorpGoldBright else CorpGoldBorderIdle
     val borderWidth = if (isFocused) 3.dp else 1.dp
     val glowElevation = if (isFocused) 24.dp else 4.dp
@@ -197,12 +217,12 @@ private fun CorporateLuxuryNavCard(
                 ambientColor = if (isFocused) {
                     CorpGoldBright.copy(alpha = 0.7f)
                 } else {
-                    Color.Black.copy(alpha = 0.5f)
+                    Color.Black.copy(alpha = 0.35f)
                 },
                 spotColor = if (isFocused) {
                     CorpGoldBright.copy(alpha = 0.9f)
                 } else {
-                    Color.Black.copy(alpha = 0.4f)
+                    Color.Black.copy(alpha = 0.25f)
                 },
                 clip = false,
             )
@@ -213,7 +233,7 @@ private fun CorporateLuxuryNavCard(
                 shape = cardShape
             }
             .background(
-                color = CorpCardBg,
+                color = glassBg,
                 shape = cardShape,
             )
             .border(width = borderWidth, color = borderColor, shape = cardShape)
@@ -237,12 +257,15 @@ private fun CorporateLuxuryNavCard(
             verticalArrangement = Arrangement.Center,
             modifier = Modifier.fillMaxSize(),
         ) {
-            // Full-color 3D PNG — never tint.
             Image(
                 painter = painterResource(iconRes),
                 contentDescription = title,
                 modifier = Modifier.size(iconSize),
                 contentScale = ContentScale.Fit,
+                colorFilter = ColorFilter.tint(
+                    if (isFocused) CorpGoldBright else textColor,
+                    BlendMode.SrcIn,
+                ),
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
@@ -250,7 +273,7 @@ private fun CorporateLuxuryNavCard(
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.SansSerif,
-                color = CorpGold,
+                color = titleColor,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -265,7 +288,7 @@ private fun CorporateLuxuryNavCard(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Normal,
                 fontFamily = FontFamily.SansSerif,
-                color = CorpSubtitle,
+                color = subtitleColor,
                 textAlign = TextAlign.Center,
                 lineHeight = 14.sp,
                 maxLines = 2,

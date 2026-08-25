@@ -14,7 +14,7 @@ data class GuestProfile(
     val activeOrdersCount: Int = 0,
     val activeMessagesCount: Int = 0,
     val bgWallpaperUrl: String = "",
-    /** Optional night wallpaper; blank → dim day wallpaper after 18:00. */
+    /** Optional night wallpaper; blank → keep day image after 18:00. */
     val bgWallpaperDarkUrl: String = "",
     val themeColor: String = "",
     val tagline: String = "",
@@ -28,8 +28,8 @@ data class HotelBranding(
     val logoUrl: String = "",
     val bgWallpaperUrl: String = "",
     /**
-     * Optional night / dark wallpaper URL (`bgWallpaperDark` / `bg_wallpaper_dark`).
-     * When blank at night, TV dims [bgWallpaperUrl] instead.
+     * Optional night wallpaper (`bgWallpaperDark` / `bgWallpaperNight` / `bg_wallpaper_dark`).
+     * When blank at night, TV keeps showing [bgWallpaperUrl].
      */
     val bgWallpaperDarkUrl: String = "",
     val themeColor: String = "",
