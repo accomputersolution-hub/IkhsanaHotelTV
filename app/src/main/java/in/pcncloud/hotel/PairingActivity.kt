@@ -16,6 +16,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.FirestorePaths
+import `in`.pcncloud.hotel.data.RoomIds
 import `in`.pcncloud.hotel.kiosk.HotelSessionManager
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
@@ -348,7 +349,9 @@ class PairingActivity : AppCompatActivity() {
 
             val data = snapshot.data ?: return@addSnapshotListener
             val status = data["status"] as? String ?: "pending"
-            val roomNumber = (data["roomNumber"] as? String)?.trim().orEmpty()
+            val roomNumber = RoomIds.coerceFromFirestore(
+                data["roomNumber"] ?: data["room_number"],
+            )
             val boundDevice = data["deviceId"] as? String
             val docExpires = (data["expiresAt"] as? Number)?.toLong() ?: expiresAt
 
@@ -398,7 +401,7 @@ class PairingActivity : AppCompatActivity() {
         }
         Toast.makeText(
             this,
-            getString(R.string.pairing_claimed, roomNumber),
+            getString(R.string.pairing_claimed, RoomIds.formatDisplay(roomNumber)),
             Toast.LENGTH_LONG,
         ).show()
         Log.i(TAG, "Paired hotel=$resolvedHotelId room=$roomNumber via code=$activeCode")

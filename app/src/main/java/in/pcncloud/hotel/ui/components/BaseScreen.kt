@@ -70,6 +70,7 @@ import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
+import `in`.pcncloud.hotel.data.RoomIds
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.home.BrandAssets
 import `in`.pcncloud.hotel.ui.home.HomeViewModel
@@ -593,7 +594,7 @@ private fun RoomBadge(
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Text(
-            text = stringResource(R.string.room_number, roomNumber),
+            text = RoomIds.formatDisplay(roomNumber),
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = SansBody,

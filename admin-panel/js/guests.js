@@ -16,7 +16,7 @@ import {
   closeModal,
   setupModalClose,
 } from './utils.js';
-import { normalizeRoom, paths, logFirestoreWrite, logFirestoreListen } from './paths.js';
+import { normalizeRoom, formatRoomLabel, paths, logFirestoreWrite, logFirestoreListen } from './paths.js';
 import { flushRoomSession, newSessionKey } from './session-reset.js';
 import { getHotelId, onHotelChange } from './tenant-context.js';
 
@@ -239,7 +239,7 @@ function renderRoomGrid(rooms) {
       <div class="room-card-item room-card-${status}" data-searchable data-search-text="room ${escapeHtml(roomNum)} ${escapeHtml(room.guestName || '')} ${escapeHtml(roomType)} ${meta.label}">
         <div class="room-card-top">
           <div>
-            <span class="room-num">Room ${escapeHtml(roomNum)}</span>
+            <span class="room-num">${escapeHtml(formatRoomLabel(roomNum))}</span>
             <span class="room-type-tag">${escapeHtml(roomType)}</span>
           </div>
           <span class="room-status-badge ${meta.badge}">${meta.label}</span>
@@ -343,7 +343,7 @@ function setupCheckInModal() {
       });
 
       const greeting = salutation ? `${salutation} ${guestName}` : guestName;
-      toast(`Room ${roomNumber} checked in — Welcome, ${greeting}!`);
+      toast(`${formatRoomLabel(roomNumber)} checked in — Welcome, ${greeting}!`);
       closeModal('check-in-modal');
       e.target.reset();
     } catch (err) {
@@ -382,7 +382,7 @@ function setupAddRoomModal() {
     }
 
     if (roomsCache.some((r) => String(r.id) === roomNumber)) {
-      toast(`Room ${roomNumber} already exists`, 'error');
+      toast(`${formatRoomLabel(roomNumber)} already exists`, 'error');
       btn.disabled = false;
       btn.textContent = 'Add Room';
       return;
@@ -404,7 +404,7 @@ function setupAddRoomModal() {
         showServices: true,
         showAlerts: true,
       });
-      toast(`Room ${roomNumber} added`);
+      toast(`${formatRoomLabel(roomNumber)} added`);
       closeModal('add-room-modal');
       e.target.reset();
     } catch (err) {
@@ -441,7 +441,7 @@ function openCheckInModal(roomNumber, isEdit = false) {
   if (checkoutEl) checkoutEl.value = room?.checkOutDate || room?.expected_checkout || '';
 
   const title = document.getElementById('check-in-modal-title');
-  if (title) title.textContent = isEdit ? `Edit Guest — Room ${roomNumber}` : `Check-In — Room ${roomNumber}`;
+  if (title) title.textContent = isEdit ? `Edit Guest — ${formatRoomLabel(roomNumber)}` : `Check-In — ${formatRoomLabel(roomNumber)}`;
 
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -457,7 +457,7 @@ function openCheckInModal(roomNumber, isEdit = false) {
 }
 
 async function handleCheckOut(roomNumber, btn) {
-  if (!confirm(`Check out guest from Room ${roomNumber}? Room will move to Housekeeping.`)) return;
+  if (!confirm(`Check out guest from ${formatRoomLabel(roomNumber)}? Space will move to Housekeeping.`)) return;
 
   btn.disabled = true;
   const prev = btn.textContent;
@@ -489,7 +489,7 @@ async function handleCheckOut(roomNumber, btn) {
       checkedOutAt: serverTimestamp(),
       roomNumber,
     });
-    toast(`Room ${roomNumber} checked out — sent to housekeeping`);
+    toast(`${formatRoomLabel(roomNumber)} checked out — sent to housekeeping`);
   } catch (err) {
     toast('Check-out failed', 'error');
     console.error('[Firestore ERROR] Check-out failed:', err);
@@ -508,7 +508,7 @@ async function handleUnpairTv(roomNumber, btn) {
   }
   if (
     !confirm(
-      `Unpair TV for Room ${room}?\n\nThe TV will clear its session and show the Hotel ID / Room pairing screen.`,
+      `Unpair TV for ${formatRoomLabel(room)}?\n\nThe TV will clear its session and show the Hotel ID / Room pairing screen.`,
     )
   ) {
     return;
@@ -527,7 +527,7 @@ async function handleUnpairTv(roomNumber, btn) {
       unpairedBy: 'admin_panel',
     });
     console.log('[RTDB] Remote TV logout →', path);
-    toast(`Room ${room} TV unpaired — device will return to pairing`);
+    toast(`${formatRoomLabel(room)} TV unpaired — device will return to pairing`);
   } catch (err) {
     console.error('[RTDB ERROR] Unpair TV failed:', err);
     toast('Failed to unpair TV', 'error');
@@ -544,7 +544,7 @@ async function handleMarkReady(roomNumber, btn) {
 
   try {
     await markRoomCleanAndReady(roomNumber);
-    toast(`Room ${roomNumber} is vacant and ready for guest`);
+    toast(`${formatRoomLabel(roomNumber)} is vacant and ready for guest`);
   } catch (err) {
     toast('Update failed', 'error');
     console.error('[Firestore ERROR] Mark ready failed:', err);
@@ -561,7 +561,7 @@ async function handleMarkMaintenance(roomNumber, btn) {
 
   try {
     await writeRoom(roomNumber, { status: 'maintenance', roomNumber });
-    toast(`Room ${roomNumber} marked for maintenance`);
+    toast(`${formatRoomLabel(roomNumber)} marked for maintenance`);
   } catch (err) {
     toast('Update failed', 'error');
     console.error('[Firestore ERROR] Maintenance failed:', err);
@@ -572,8 +572,14 @@ async function handleMarkMaintenance(roomNumber, btn) {
 }
 
 async function writeRoom(roomNumber, data) {
-  const docPath = paths.roomDoc(roomNumber);
-  const payload = { ...data, updatedAt: serverTimestamp() };
-  await setDoc(doc(db, 'Hotels', getHotelId(), 'Rooms', roomNumber), payload, { merge: true });
+  const id = normalizeRoom(roomNumber);
+  const docPath = paths.roomDoc(id);
+  // Always persist roomNumber as a String (never Firestore Number).
+  const payload = {
+    ...data,
+    roomNumber: id,
+    updatedAt: serverTimestamp(),
+  };
+  await setDoc(doc(db, 'Hotels', getHotelId(), 'Rooms', id), payload, { merge: true });
   logFirestoreWrite('Room PMS', docPath, payload);
 }

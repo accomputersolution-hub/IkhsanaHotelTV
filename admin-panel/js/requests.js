@@ -15,7 +15,7 @@ import {
   hideConnectionError,
   showConnectionError,
 } from './utils.js';
-import { normalizeRoom, paths, logFirestoreWrite, logFirestoreListen } from './paths.js';
+import { normalizeRoom, formatRoomLabel, paths, logFirestoreWrite, logFirestoreListen } from './paths.js';
 import { writeRoomAlert } from './alerts.js';
 import { markRoomCleanAndReady } from './guests.js';
 import { getHotelId, onHotelChange } from './tenant-context.js';

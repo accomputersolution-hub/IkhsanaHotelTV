@@ -4,6 +4,7 @@ data class GuestProfile(
     val guestName: String = "Guest",
     /** Optional honorific from PMS, e.g. "Mr.", "Ms.", "Mrs.", "Dr." — empty = no prefix. */
     val salutation: String = "",
+    /** Always a String — numeric ("101") or named ("Middle East"). Never Int. */
     val roomNumber: String = "",
     val hotelName: String = "",
     val hotelLogoUrl: String = "",
@@ -70,6 +71,7 @@ data class AgendaItem(
 
 /** Live room / guest status from Hotels/{hotelId}/Rooms/{roomNumber}. */
 data class RoomStatus(
+    /** Document id / room key as String — "101" or "Middle East". */
     val roomNumber: String = "",
     val guestName: String = "",
     val status: String = "",

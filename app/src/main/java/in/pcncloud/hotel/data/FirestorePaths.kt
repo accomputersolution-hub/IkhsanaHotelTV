@@ -58,6 +58,11 @@ object FirestorePaths {
     fun introConfigDocument(hotelId: String): String =
         "$HOTELS/${normalizeHotelId(hotelId)}/$CONFIG/intro"
 
+    /**
+     * Room document id — always a [String].
+     * Supports numeric ids ("101") and named spaces ("Middle East").
+     * Trims whitespace only; does not strip letters or spaces.
+     */
     fun normalizeRoom(roomNumber: String): String =
         roomNumber.trim()
 }

@@ -21,7 +21,7 @@ import {
   serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 import { escapeHtml, toast } from './utils.js';
-import { logFirestoreWrite, logFirestoreListen, normalizeRoom, paths } from './paths.js';
+import { logFirestoreWrite, logFirestoreListen, normalizeRoom, formatRoomLabel, paths } from './paths.js';
 import { getHotelId, onHotelChange, isCorporateProperty, onHotelMetaChange } from './tenant-context.js';
 
 /** @typedef {{ id: string, roomNumber?: string, [key: string]: any }} RoomDoc */
@@ -195,8 +195,8 @@ function renderRoomSelect() {
       const guest = String(room.guestName || '').trim();
       const label =
         guest && guest !== 'Guest'
-          ? `Room ${escapeHtml(id)} — ${escapeHtml(guest)}`
-          : `Room ${escapeHtml(id)}`;
+          ? `${escapeHtml(formatRoomLabel(id))} — ${escapeHtml(guest)}`
+          : escapeHtml(formatRoomLabel(id));
       const selected = id === selectedRoomId ? ' selected' : '';
       return `<option value="${escapeHtml(id)}"${selected}>${label}</option>`;
     })
@@ -312,7 +312,7 @@ async function writeFlag(roomId, key, enabled, input) {
     logFirestoreWrite('Room Feature Toggle', docPath, payload);
     const room = rooms.find((r) => String(r.id) === roomId);
     if (room) room[key] = enabled;
-    toast(`Room ${roomId}: ${key} → ${enabled ? 'shown' : 'hidden'}`);
+    toast(`${formatRoomLabel(roomId)}: ${key} → ${enabled ? 'shown' : 'hidden'}`);
   } catch (err) {
     console.error('[Firestore ERROR] Room feature toggle failed:', err);
     input.checked = !enabled;
@@ -395,13 +395,13 @@ async function copySelectedFlagsToAllRooms() {
     .map(([k, v]) => `${k}=${v ? 'ON' : 'OFF'}`)
     .join(', ');
   const ok = confirm(
-    `Copy Room ${selectedRoomId} feature toggles to all ${rooms.length} rooms?\n\n${summary}`,
+    `Copy ${formatRoomLabel(selectedRoomId)} feature toggles to all ${rooms.length} rooms?\n\n${summary}`,
   );
   if (!ok) return;
 
   await writeFlagToRooms(
     rooms.map((r) => String(r.id)),
     flags,
-    `Copied toggles from Room ${selectedRoomId} to all ${rooms.length} rooms`,
+    `Copied toggles from ${formatRoomLabel(selectedRoomId)} to all ${rooms.length} rooms`,
   );
 }

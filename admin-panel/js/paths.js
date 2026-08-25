@@ -11,6 +11,27 @@ export function normalizeRoom(roomNumber) {
   return String(roomNumber ?? '').trim();
 }
 
+/**
+ * True when the room id is non-empty and entirely digits (e.g. "101").
+ * Named rooms like "Middle East" return false.
+ */
+export function isNumericRoomId(roomNumber) {
+  const s = normalizeRoom(roomNumber);
+  return s.length > 0 && /^\d+$/.test(s);
+}
+
+/**
+ * Guest/admin-facing label:
+ * - digits only → "Room 101" (or "Conf Room 101" when corporate=true)
+ * - any letters → exact name, no prefix
+ */
+export function formatRoomLabel(roomNumber, { corporate = false } = {}) {
+  const s = normalizeRoom(roomNumber);
+  if (!s) return '—';
+  if (!isNumericRoomId(s)) return s;
+  return corporate ? `Conf Room ${s}` : `Room ${s}`;
+}
+
 function hotelRoot() {
   const id = normalizeHotelId(getHotelId());
   if (!id) throw new Error('No active hotel context — sign in or select a hotel');

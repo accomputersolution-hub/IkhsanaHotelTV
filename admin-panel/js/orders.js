@@ -19,7 +19,7 @@ import {
   hideConnectionError,
   showConnectionError,
 } from './utils.js';
-import { normalizeRoom, logFirestoreWrite } from './paths.js';
+import { normalizeRoom, formatRoomLabel, logFirestoreWrite } from './paths.js';
 import { writeRoomAlert } from './alerts.js';
 import {
   getHotelId,
@@ -97,11 +97,9 @@ function labelForStatus(status) {
 }
 
 function roomLabel(roomNumber) {
-  const room = escapeHtml(String(roomNumber || '—'));
-  if (isCorporateProperty()) {
-    return `Conf Room ${room}`;
-  }
-  return `Room ${room}`;
+  return escapeHtml(
+    formatRoomLabel(roomNumber, { corporate: isCorporateProperty() }),
+  );
 }
 
 /** Update KDS page title, filters, and top module title for property type. */

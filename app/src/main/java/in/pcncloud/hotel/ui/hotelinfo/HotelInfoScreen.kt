@@ -23,6 +23,7 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
+import `in`.pcncloud.hotel.data.RoomIds
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.BaseScreen
 import `in`.pcncloud.hotel.ui.components.LuxuryGlassPanel
@@ -61,7 +62,10 @@ fun HotelInfoScreen(
         ) {
             InfoCard(title = "Hotel", value = profile.hotelName.ifBlank { "Hotel" })
             InfoCard(title = "Guest", value = profile.guestName)
-            InfoCard(title = "Room", value = profile.roomNumber)
+            InfoCard(
+                title = if (RoomIds.isNumericId(profile.roomNumber)) "Room" else "Location",
+                value = profile.roomNumber,
+            )
 
             if (profile.checkInDate.isNotBlank()) {
                 InfoCard(title = "Check-In", value = profile.checkInDate)

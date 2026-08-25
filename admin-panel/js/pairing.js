@@ -13,6 +13,7 @@ import {
 import { db } from './firebase-config.js';
 import { getHotelId } from './tenant-context.js';
 import { toast, openModal, closeModal, setupModalClose } from './utils.js';
+import { normalizeRoom, formatRoomLabel } from './paths.js';
 import { canAccessModule } from './rbac.js';
 
 export function initPairingClaim() {
@@ -36,7 +37,7 @@ async function onClaimSubmit(e) {
   const code = String(document.getElementById('pairing-code-input')?.value || '')
     .trim()
     .replace(/\D/g, '');
-  const roomNumber = String(document.getElementById('pairing-room-input')?.value || '').trim();
+  const roomNumber = normalizeRoom(document.getElementById('pairing-room-input')?.value);
   const btn = e.target.querySelector('button[type="submit"]');
 
   if (!/^\d{6}$/.test(code)) {
@@ -44,7 +45,7 @@ async function onClaimSubmit(e) {
     return;
   }
   if (!roomNumber) {
-    toast('Room number is required', 'error');
+    toast('Room / location name is required', 'error');
     return;
   }
 
@@ -68,12 +69,13 @@ async function onClaimSubmit(e) {
 
     await updateDoc(ref, {
       status: 'claimed',
-      roomNumber,
+      roomNumber, // String id — numeric ("101") or named ("Middle East")
+      room_number: roomNumber,
       claimedAt: serverTimestamp(),
       claimedBy: 'staff_admin',
     });
 
-    toast(`Device paired to Room ${roomNumber}`);
+    toast(`Device paired to ${formatRoomLabel(roomNumber)}`);
     closeModal('pairing-claim-modal');
   } catch (err) {
     console.error('[pairing] claim failed', err);

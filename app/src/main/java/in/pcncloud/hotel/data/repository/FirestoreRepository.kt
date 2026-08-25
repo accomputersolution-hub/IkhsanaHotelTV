@@ -4,6 +4,7 @@ import android.util.Log
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.config.IntroVideoCache
 import `in`.pcncloud.hotel.data.FirestorePaths
+import `in`.pcncloud.hotel.data.RoomIds
 import `in`.pcncloud.hotel.data.model.GuestProfile
 import `in`.pcncloud.hotel.data.model.EmergencyContact
 import `in`.pcncloud.hotel.data.model.AgendaItem
@@ -661,7 +662,9 @@ class FirestoreRepository(
                         id = doc.id,
                         title = data["title"] as? String ?: "Message",
                         message = data["message"] as? String ?: "",
-                        roomNumber = data["roomNumber"] as? String ?: "",
+                        roomNumber = RoomIds.coerceFromFirestore(
+                            data["roomNumber"] ?: data["room_number"],
+                        ),
                         timestamp = (data["timestamp"] as? Number)?.toLong() ?: 0L,
                         read = data["read"] as? Boolean ?: false,
                         priority = data["priority"] as? String ?: "normal",
@@ -706,7 +709,9 @@ class FirestoreRepository(
                     LiveOrder(
                         id = doc.id,
                         hotelId = data["hotelId"] as? String ?: "",
-                        roomNumber = data["roomNumber"] as? String ?: "",
+                        roomNumber = RoomIds.coerceFromFirestore(
+                            data["roomNumber"] ?: data["room_number"],
+                        ),
                         guestName = data["guestName"] as? String ?: "",
                         items = itemsRaw.map { item ->
                             OrderLineItem(
@@ -923,11 +928,9 @@ class FirestoreRepository(
         values.mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }.firstOrNull().orEmpty()
 
     /** Coerce Firestore field values (String / unexpected types) to a trimmed string. */
-    private fun asTrimmedString(value: Any?): String? = when (value) {
-        null -> null
-        is String -> value.trim().takeIf { it.isNotEmpty() }
-        is Number, is Boolean -> value.toString()
-        else -> value.toString().trim().takeIf { it.isNotEmpty() }
+    private fun asTrimmedString(value: Any?): String? {
+        val coerced = RoomIds.coerceFromFirestore(value)
+        return coerced.takeIf { it.isNotEmpty() }
     }
 
     /**
