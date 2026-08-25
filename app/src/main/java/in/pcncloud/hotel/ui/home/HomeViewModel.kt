@@ -3,6 +3,7 @@ package `in`.pcncloud.hotel.ui.home
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import `in`.pcncloud.hotel.alert.AlertOverlayService
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.model.GuestProfile
 import `in`.pcncloud.hotel.data.model.HotelAlert
@@ -12,6 +13,7 @@ import `in`.pcncloud.hotel.data.model.RoomStatus
 import `in`.pcncloud.hotel.data.repository.FirestoreRepository
 import `in`.pcncloud.hotel.rtdb.GlobalAnnouncementRtdb
 import `in`.pcncloud.hotel.ui.services.ServiceToastType
+import android.provider.Settings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,6 +53,7 @@ data class HomeUiState(
 class HomeViewModel(
     private val repository: FirestoreRepository,
     private val config: HotelConfig,
+    private val appContext: android.content.Context,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -140,6 +143,11 @@ class HomeViewModel(
                 _uiState.update { state ->
                     state.copy(alerts = alerts, activePopupAlert = nextPopup)
                 }
+
+                // System overlay so alerts appear over YouTube / Live TV (API 28+).
+                if (nextPopup != null && newlyArrived.any { it.id == nextPopup.id }) {
+                    maybeShowSystemOverlay(nextPopup)
+                }
             }
         }
         viewModelScope.launch {
@@ -188,7 +196,38 @@ class HomeViewModel(
                 .filter { !it.read && !it.revoked && it.id != alert.id }
                 .maxByOrNull { it.timestamp }
             _uiState.update { it.copy(activePopupAlert = next) }
+            if (next != null) {
+                maybeShowSystemOverlay(next)
+            }
         }
+    }
+
+    /** Clear in-app popup state when [AlertOverlayService] closes the system window. */
+    fun onSystemOverlayDismissed(alertId: String?) {
+        val current = _uiState.value.activePopupAlert ?: return
+        if (alertId.isNullOrBlank() || current.id == alertId) {
+            val next = _uiState.value.alerts
+                .filter { !it.read && !it.revoked && it.id != current.id }
+                .maxByOrNull { it.timestamp }
+            _uiState.update { it.copy(activePopupAlert = next) }
+            if (next != null) {
+                maybeShowSystemOverlay(next)
+            }
+        }
+    }
+
+    private fun maybeShowSystemOverlay(alert: HotelAlert) {
+        if (!Settings.canDrawOverlays(appContext)) {
+            Log.w(TAG, "SYSTEM_ALERT_WINDOW missing — in-app Compose overlay only")
+            return
+        }
+        AlertOverlayService.show(
+            context = appContext,
+            alertId = alert.id,
+            title = alert.title,
+            message = alert.message,
+            durationMs = alert.durationMs,
+        )
     }
 
     private fun resetForNewSession(

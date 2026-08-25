@@ -176,6 +176,21 @@
         </service>
 
         <!--
+          Guest alert popup over YouTube / Live TV via SYSTEM_ALERT_WINDOW.
+          Started from HomeViewModel when a new Firestore alert arrives.
+        -->
+        <service
+            android:name=".alert.AlertOverlayService"
+            android:enabled="true"
+            android:exported="false"
+            android:directBootAware="true"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Hotel TV guest message overlay over third-party apps" />
+        </service>
+
+        <!--
           Ultra-lightweight Home key eater (Accessibility).
           Swallows KEYCODE_HOME / OEM 228 only — no reclaim logic.
           Screen Pinning + PendingIntent remain the safety net if this is disabled.

@@ -13,12 +13,13 @@ import `in`.pcncloud.hotel.ui.services.ServicesViewModel
 class HotelViewModelFactory(
     private val repository: FirestoreRepository,
     private val config: HotelConfig,
+    private val appContext: android.content.Context,
 ) : ViewModelProvider.Factory {
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T = when {
         modelClass.isAssignableFrom(HomeViewModel::class.java) ->
-            HomeViewModel(repository, config) as T
+            HomeViewModel(repository, config, appContext.applicationContext) as T
         modelClass.isAssignableFrom(DiningViewModel::class.java) ->
             DiningViewModel(repository, config) as T
         modelClass.isAssignableFrom(ServicesViewModel::class.java) ->

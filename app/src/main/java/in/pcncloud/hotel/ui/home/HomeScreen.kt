@@ -67,6 +67,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
+import `in`.pcncloud.hotel.alert.AlertOverlayService
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.data.model.RoomFeatureFlags
@@ -81,8 +82,14 @@ import `in`.pcncloud.hotel.ui.theme.LocalIsNightMode
 import `in`.pcncloud.hotel.ui.theme.NavyDeep
 import `in`.pcncloud.hotel.ui.theme.SerifDisplay
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.provider.Settings
 import kotlinx.coroutines.delay
 import java.util.Locale
+import androidx.core.content.ContextCompat
 
 /** Main dashboard cards — used to restore D-pad focus after submenu / resume. */
 private enum class HomeNavCard {
@@ -160,6 +167,11 @@ fun HomeScreen(
     val contentReady = uiState.isContentReady
     val featureFlags = uiState.featureFlags
     val focusManager = LocalFocusManager.current
+    val useSystemAlertOverlay = remember(context) {
+        Settings.canDrawOverlays(context.applicationContext)
+    }
+    // Compose in-app popup only when SYSTEM_ALERT_WINDOW is unavailable.
+    val showInAppAlertOverlay = activeAlert != null && !useSystemAlertOverlay
 
     fun requesterFor(card: HomeNavCard): FocusRequester = when (card) {
         HomeNavCard.LiveTv -> liveTvFocus
@@ -188,9 +200,31 @@ fun HomeScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(contentReady, isHomeVisible, activeAlert?.id, resumeEpoch, featureFlags, lastFocusedCard) {
+    DisposableEffect(viewModel) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                if (intent?.action != AlertOverlayService.ACTION_ALERT_OVERLAY_DISMISSED) return
+                val alertId = intent.getStringExtra(AlertOverlayService.EXTRA_ALERT_ID)
+                viewModel.onSystemOverlayDismissed(alertId)
+            }
+        }
+        val filter = IntentFilter(AlertOverlayService.ACTION_ALERT_OVERLAY_DISMISSED)
+        ContextCompat.registerReceiver(
+            context.applicationContext,
+            receiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        onDispose {
+            runCatching {
+                context.applicationContext.unregisterReceiver(receiver)
+            }
+        }
+    }
+
+    LaunchedEffect(contentReady, isHomeVisible, showInAppAlertOverlay, resumeEpoch, featureFlags, lastFocusedCard) {
         if (!contentReady) return@LaunchedEffect
-        if (activeAlert != null) {
+        if (showInAppAlertOverlay) {
             // Drop home-card focus immediately so Dismiss can own the first OK press.
             focusManager.clearFocus(force = true)
             return@LaunchedEffect
@@ -217,7 +251,7 @@ fun HomeScreen(
             .clip(RectangleShape)
             .background(NavyDeep)
             .onPreviewKeyEvent { event ->
-                if (activeAlert == null || event.type != KeyEventType.KeyDown) {
+                if (!showInAppAlertOverlay || event.type != KeyEventType.KeyDown) {
                     return@onPreviewKeyEvent false
                 }
                 when (event.key) {
@@ -260,7 +294,7 @@ fun HomeScreen(
                             firstVisibleHomeCard(featureFlags, isCorporate)
                         },
                     ),
-                    modifier = Modifier.focusProperties { canFocus = activeAlert == null },
+                    modifier = Modifier.focusProperties { canFocus = !showInAppAlertOverlay },
                 ) {
                     Spacer(
                         modifier = Modifier
@@ -351,6 +385,8 @@ fun HomeScreen(
             }
 
             activeAlert?.let { alert ->
+                if (!showInAppAlertOverlay) return@let
+
                 LaunchedEffect(alert.id, alert.durationMs) {
                     if (alert.durationMs > 0L) {
                         delay(alert.durationMs)

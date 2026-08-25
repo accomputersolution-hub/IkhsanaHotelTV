@@ -167,6 +167,12 @@
     <string name="kiosk_notification_channel_desc">Optional kiosk foreground service — does not reopen the app on minimize</string>
     <string name="kiosk_notification_title">Hotel TV</string>
     <string name="kiosk_notification_text">Running in the background</string>
+    <string name="alert_overlay_channel">Guest message overlay</string>
+    <string name="alert_overlay_channel_desc">Shows hotel messages over YouTube and Live TV</string>
+    <string name="alert_overlay_notification_title">Hotel message</string>
+    <string name="alert_overlay_notification_text">Displaying guest alert overlay</string>
+    <string name="alert_overlay_eyebrow">Hotel Message</string>
+    <string name="alert_overlay_close">Close</string>
     <string name="screensaver_press_any_key">Press any button to continue</string>
     <string name="screensaver_logo_cd">Hotel logo</string>
     <string name="admin_title">Staff Settings</string>

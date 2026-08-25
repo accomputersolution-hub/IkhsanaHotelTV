@@ -567,7 +567,7 @@ class MainActivity : ComponentActivity() {
         verifyAndRequestDefaultHomeLauncher()
 
         repository = FirestoreRepository(hotelConfig, IntroVideoCache(applicationContext))
-        val viewModelFactory = HotelViewModelFactory(repository, hotelConfig)
+        val viewModelFactory = HotelViewModelFactory(repository, hotelConfig, applicationContext)
 
         Log.d(TAG, "TV Firestore sync starting → hotelId=$hotelId room=${hotelConfig.roomNumber}")
         Log.d(TAG, "Path Hotels/{hotelId} → ${FirestorePaths.hotelDocument(hotelId)}")
