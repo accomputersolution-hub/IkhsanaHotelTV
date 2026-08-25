@@ -371,11 +371,11 @@ function setupAddHotelModal() {
       return;
     }
     if (!/^[a-z0-9][a-z0-9_]{1,62}$/.test(hotelId)) {
-      toast('Internal Hotel ID must be lowercase letters, numbers, underscores (e.g. ikhsana_001)', 'error');
+      toast('Internal Hotel ID must be lowercase letters, numbers, underscores (e.g. hotel_001)', 'error');
       return;
     }
     if (!/^[a-z0-9][a-z0-9_]{1,47}$/.test(publicSlug)) {
-      toast('Public slug must be lowercase (e.g. ikhsana) — used as subdomain', 'error');
+      toast('Public slug must be lowercase (e.g. grand_hotel) — used as subdomain', 'error');
       return;
     }
     if (!assertDirectImageUrl(logoUrl, 'Logo') || !assertDirectImageUrl(bgWallpaper, 'Wallpaper')) {

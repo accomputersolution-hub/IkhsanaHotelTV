@@ -101,7 +101,7 @@ async function seedDefaultRooms() {
           guestName: 'Guest',
           guestPhone: '',
           checkOutDate: '',
-          hotelName: 'Ikhsana Hotel',
+          hotelName: '',
           updatedAt: serverTimestamp(),
         };
         return setDoc(doc(db, 'Hotels', getHotelId(), 'Rooms', roomNumber), payload, { merge: true });
@@ -330,7 +330,7 @@ function setupCheckInModal() {
         activeOrdersCount: 0,
         activeMessagesCount: 0,
         roomNumber,
-        hotelName: 'Ikhsana Hotel',
+        hotelName: '',
         cleaned: false,
         // Explicit aliases requested for payload / reporting
         guest_name: guestName,
@@ -396,7 +396,7 @@ function setupAddRoomModal() {
         guestName: 'Guest',
         guestPhone: '',
         checkOutDate: '',
-        hotelName: 'Ikhsana Hotel',
+        hotelName: '',
         showLiveTv: true,
         showEntertainment: true,
         showDining: true,

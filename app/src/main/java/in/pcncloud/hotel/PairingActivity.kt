@@ -25,7 +25,7 @@ import kotlin.random.Random
 
 /**
  * First-run / unpaired TV setup (secure pairing):
- * 1. Staff enters **public slug** (e.g. ikhsana) → resolve `public_hotels/{slug}`
+ * 1. Staff enters **public slug** → resolve `public_hotels/{slug}`
  * 2. TV creates `Hotels/{hotelId}/pairing_codes/{6digit}` and shows the code
  * 3. Reception claims the code in Admin (Pair Device Code) and assigns a room
  * 4. TV listens, saves hotelId + roomNumber, opens [SplashActivity]

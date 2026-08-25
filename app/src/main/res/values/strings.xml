@@ -131,11 +131,11 @@
     <string name="status_preparing">Preparing</string>
     <string name="status_delivered">Delivered</string>
     <string name="pairing_title">Pair this TV</string>
-    <string name="pairing_subtitle">Enter the public hotel slug (e.g. ikhsana). This TV will show a 6-digit code — reception claims it in Admin and assigns the room. Do not type a room number here.</string>
+    <string name="pairing_subtitle">Enter the public hotel slug. This TV will show a 6-digit code — reception claims it in Admin and assigns the room. Do not type a room number here.</string>
     <string name="pairing_hotel_id_label">Hotel ID / Slug</string>
     <string name="pairing_hotel_id_hint">hotel_001</string>
     <string name="pairing_public_slug_label">Public hotel slug</string>
-    <string name="pairing_public_slug_hint">ikhsana</string>
+    <string name="pairing_public_slug_hint">hotel_slug</string>
     <string name="pairing_room_label">Room number</string>
     <string name="pairing_room_hint">101</string>
     <string name="pairing_submit">Pair &amp; Continue</string>
