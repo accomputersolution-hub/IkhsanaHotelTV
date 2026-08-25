@@ -49,10 +49,16 @@ class IntroVideoFileStore(context: Context) {
     }
 
     /**
-     * Prefer local file when ready — works offline.
+     * Prefer local file when ready — works offline for a configured URL.
      * Falls back to remote http(s) Uri only when no local bytes yet.
+     * Blank / whitespace [remoteUrl] never returns a Uri (no orphan-file playback).
      */
     fun resolvePlaybackUri(remoteUrl: String?): Uri? {
+        val http = IntroVideoCache.normalizeHttpUrl(remoteUrl?.trim().orEmpty())
+        if (http.isNullOrBlank()) {
+            Log.i(TAG, "playback SKIP — empty remote URL (no ExoPlayer Uri)")
+            return null
+        }
         val local = getLocalPlaybackUri()
         if (local != null) {
             Log.i(
@@ -62,22 +68,20 @@ class IntroVideoFileStore(context: Context) {
             )
             return local
         }
-        val http = remoteUrl?.let { IntroVideoCache.normalizeHttpUrl(it) }
-        if (!http.isNullOrBlank()) {
-            Log.i(TAG, "playback REMOTE (no local file yet) prefix=${http.take(64)}")
-            return IntroVideoCache.parseMediaUri(http)
-        }
-        return null
+        Log.i(TAG, "playback REMOTE (no local file yet) prefix=${http.take(64)}")
+        return IntroVideoCache.parseMediaUri(http)
     }
 
     /**
-     * True when cold boot should open Intro: local file ready and/or a valid remote URL.
+     * True when cold boot should open Intro: a valid non-blank remote URL is required.
+     * Local file alone is not enough (admin may have disabled intro).
      */
     fun canPlayIntro(remoteUrl: String?): Boolean =
-        hasReadyFile() || !IntroVideoCache.normalizeHttpUrl(remoteUrl.orEmpty()).isNullOrBlank()
+        !IntroVideoCache.normalizeHttpUrl(remoteUrl.orEmpty()).isNullOrBlank()
 
     /**
      * Ensures [remoteUrl] is on disk. No-op when already cached for the same URL.
+     * Blank URL deletes [intro_cached.mp4] so offline cannot replay a disabled intro.
      * On URL change: replaces the local file after a successful download.
      *
      * @return true if a playable local file exists after this call.
@@ -86,8 +90,13 @@ class IntroVideoFileStore(context: Context) {
         downloadMutex.withLock {
             val url = IntroVideoCache.normalizeHttpUrl(remoteUrl?.trim().orEmpty())
             if (url.isNullOrBlank()) {
-                Log.i(TAG, "ensureCached — blank URL, keep existing file=${hasReadyFile()}")
-                return@withLock hasReadyFile()
+                if (hasReadyFile() || partialFile.exists()) {
+                    Log.i(TAG, "ensureCached — blank URL, deleting local intro file")
+                    clear()
+                } else {
+                    Log.i(TAG, "ensureCached — blank URL, no local file")
+                }
+                return@withLock false
             }
             val already = downloadedForUrl()
             if (url == already && hasReadyFile()) {

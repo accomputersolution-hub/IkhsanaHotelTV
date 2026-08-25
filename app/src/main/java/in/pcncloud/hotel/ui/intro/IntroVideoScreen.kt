@@ -74,9 +74,12 @@ fun IntroVideoScreen(
     val context = LocalContext.current
     val finished = remember { AtomicBoolean(false) }
     val skipFocus = remember { FocusRequester() }
-    val mediaUri = remember(videoUrl) { IntroVideoCache.parseMediaUri(videoUrl) }
+    val safeVideoUrl = remember(videoUrl) { videoUrl.trim() }
+    val mediaUri = remember(safeVideoUrl) {
+        if (safeVideoUrl.isBlank()) null else IntroVideoCache.parseMediaUri(safeVideoUrl)
+    }
     val playerGeneration by viewModel.playerGeneration.collectAsState()
-    var playbackEverStarted by remember(videoUrl) { mutableStateOf(false) }
+    var playbackEverStarted by remember(safeVideoUrl) { mutableStateOf(false) }
     var mountGeneration by remember { mutableIntStateOf(0) }
 
     fun finishOnce(reason: String) {
@@ -103,9 +106,9 @@ fun IntroVideoScreen(
         finishOnce("back")
     }
 
-    LaunchedEffect(mediaUri) {
-        if (mediaUri == null) {
-            Log.e(TAG, "Invalid intro URI — Home. raw=${videoUrl.take(80)}")
+    LaunchedEffect(mediaUri, safeVideoUrl) {
+        if (safeVideoUrl.isBlank() || mediaUri == null) {
+            Log.e(TAG, "Invalid/empty intro URI — Home. raw=${videoUrl.take(80)}")
             finishOnce("bad_uri")
         }
     }
@@ -123,7 +126,7 @@ fun IntroVideoScreen(
         runCatching { skipFocus.requestFocus() }
     }
 
-    LaunchedEffect(videoUrl, viewModel.playbackWatchdogMs) {
+    LaunchedEffect(safeVideoUrl, viewModel.playbackWatchdogMs) {
         delay(viewModel.playbackWatchdogMs)
         if (!playbackEverStarted) {
             Log.e(TAG, "watchdog — never started after ${viewModel.playbackWatchdogMs}ms")
@@ -145,7 +148,7 @@ fun IntroVideoScreen(
         }
     }
 
-    if (mediaUri == null) {
+    if (safeVideoUrl.isBlank() || mediaUri == null) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -162,7 +165,7 @@ fun IntroVideoScreen(
         if (mountGeneration >= 0) {
             key(mountGeneration) {
                 IntroExoPlayer(
-                    videoUrl = videoUrl,
+                    videoUrl = safeVideoUrl,
                     policy = viewModel,
                     onPlaybackStarted = {
                         playbackEverStarted = true
@@ -206,12 +209,20 @@ private fun IntroExoPlayer(
 ) {
     val context = LocalContext.current
     var playbackEverStarted by remember(videoUrl) { mutableStateOf(false) }
-    val mediaUri = remember(videoUrl) { IntroVideoCache.parseMediaUri(videoUrl) }
+    val mediaUri = remember(videoUrl) {
+        val trimmed = videoUrl.trim()
+        if (trimmed.isBlank()) {
+            Log.e(TAG, "ExoPlayer refuse blank videoUrl")
+            null
+        } else {
+            IntroVideoCache.parseMediaUri(trimmed)
+        }
+    }
 
     val exoPlayer = remember(videoUrl) {
         val uri = mediaUri
         if (uri == null) {
-            Log.e(TAG, "ExoPlayer skip create — bad URI")
+            Log.e(TAG, "ExoPlayer skip create — blank/bad URI")
             return@remember null
         }
         Log.i(

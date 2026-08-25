@@ -329,9 +329,13 @@ class SplashActivity : AppCompatActivity() {
                             },
                             "intro-mp4-download",
                         ).start()
-                    } else if (task.isSuccessful && snap != null && !snap.exists()) {
-                        // Explicit empty config — only clear if we know doc is missing.
-                        Log.i(TAG, "Intro Config/intro missing — keep prior URL/file")
+                    } else if (task.isSuccessful) {
+                        // Config/intro missing or explicit empty URL → No Video: clear local cache.
+                        Log.i(
+                            TAG,
+                            "Intro disabled/empty (exists=${snap?.exists()}) — clear URL + local file",
+                        )
+                        cache.setUrl("")
                     }
                     Log.i(
                         TAG,
@@ -390,14 +394,16 @@ class SplashActivity : AppCompatActivity() {
                     asTrimmedString(data["logo"]),
                 )
 
-                // Admin mirrors introVideoUrl on the hotel root — seed local cache early.
-                val mirroredIntro = IntroVideoCache.normalizeHttpUrl(
-                    firstNonBlank(
-                        asTrimmedString(data["introVideoUrl"]),
-                        asTrimmedString(data["intro_video_url"]),
-                    ),
-                )
-                if (!mirroredIntro.isNullOrBlank()) {
+                // Admin mirrors introVideoUrl on the hotel root — seed / clear local cache.
+                val hasIntroMirror = data.containsKey("introVideoUrl") ||
+                    data.containsKey("intro_video_url")
+                if (hasIntroMirror) {
+                    val mirroredIntro = IntroVideoCache.normalizeHttpUrl(
+                        firstNonBlank(
+                            asTrimmedString(data["introVideoUrl"]),
+                            asTrimmedString(data["intro_video_url"]),
+                        ),
+                    ).orEmpty()
                     IntroVideoCache(applicationContext).setUrl(mirroredIntro)
                 }
 

@@ -40,7 +40,7 @@ import `in`.pcncloud.hotel.ui.services.ServicesScreen
 import `in`.pcncloud.hotel.ui.theme.NavyDeep
 
 object Routes {
-    /** Absolute cold-start destination when [IntroVideoCache] has a valid URL. */
+    /** Absolute cold-start destination when [IntroVideoCache] has a non-blank URL. */
     const val INTRO = "intro"
     const val HOME = "home"
     const val DINING = "dining"
@@ -219,12 +219,24 @@ fun HotelNavGraph(
     LaunchedEffect(repository) {
         runCatching {
             val url = repository.syncIntroVideoUrlToCache()
-            fileStore.ensureCached(url.ifBlank { cachedIntroUrl })
+            if (url.isBlank()) {
+                // Remote cleared / No Video — drop local MP4 so offline cannot replay it.
+                introCache.setUrl("")
+                Log.i(TAG, "background intro sync — empty URL, cache cleared")
+            } else {
+                fileStore.ensureCached(url)
+            }
         }.onFailure { Log.e(TAG, "background intro file sync failed", it) }
         repository.observeIntroVideoUrl().collect { url ->
             Log.d(TAG, "background intro observe tick blank=${url.isBlank()}")
-            runCatching { fileStore.ensureCached(url) }
-                .onFailure { Log.e(TAG, "intro file ensure after observe failed", it) }
+            runCatching {
+                if (url.isBlank()) {
+                    introCache.setUrl("")
+                    fileStore.ensureCached("")
+                } else {
+                    fileStore.ensureCached(url)
+                }
+            }.onFailure { Log.e(TAG, "intro file ensure after observe failed", it) }
         }
     }
 
@@ -273,7 +285,7 @@ fun HotelNavGraph(
             val playback = initialPlaybackUri.ifBlank {
                 fileStore.resolvePlaybackUri(cachedIntroUrl)?.toString().orEmpty()
             }
-            if (playback.isBlank()) {
+            if (playback.isBlank() || cachedIntroUrl.isNullOrBlank()) {
                 LaunchedEffect(Unit) { goHomeReplacingIntro("intro_missing_playback") }
             } else {
                 // Keep downloading in background if we are on remote for the first time.

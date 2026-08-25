@@ -319,6 +319,7 @@ class FirestoreRepository(
     /**
      * Background sync only — updates [IntroVideoCache] for the *next* cold boot.
      * Must not be used to decide the current session start destination.
+     * Explicit empty remote URL clears prefs + [intro_cached.mp4].
      */
     suspend fun syncIntroVideoUrlToCache(): String {
         val url = fetchIntroVideoUrl()
@@ -327,26 +328,30 @@ class FirestoreRepository(
             runCatching { introCache.fileStore().ensureCached(url) }
                 .onFailure { Log.e(TAG, "syncIntroVideoUrlToCache file ensure failed", it) }
         } else {
-            Log.w(TAG, "syncIntroVideoUrlToCache blank — keep prior URL/file")
+            Log.i(TAG, "syncIntroVideoUrlToCache blank — clear URL + local file (intro disabled)")
+            introCache.setUrl("")
         }
         Log.i(
             TAG,
             "syncIntroVideoUrlToCache result blank=${url.isBlank()} len=${url.length} " +
                 "prefix=${url.take(72)} local=${introCache.fileStore().hasReadyFile()}",
         )
-        return url.ifBlank { introCache.getUrl() }
+        return url
     }
 
     /**
      * One-shot intro URL resolve (network). Prefer [IntroVideoCache] for cold boot.
      * Tries [Config/intro] first, then top-level [Hotels/{hotelId}.introVideoUrl]
-     * (admin mirrors both). Persists hits/misses into [introCache].
+     * (admin mirrors both).
+     *
+     * An existing Config/intro (or hotel root intro field) with blank URL is an
+     * explicit "No Video" — clears local cache. Network failures keep prior cache.
      */
     suspend fun fetchIntroVideoUrl(): String {
         val id = hotelId
         Log.i(TAG, "fetchIntroVideoUrl start hotelId=$id")
 
-        // 1) Hotels/{id}/Config/intro
+        // 1) Hotels/{id}/Config/intro — authoritative when the doc exists
         try {
             val snap = firestore
                 .collection(FirestorePaths.HOTELS)
@@ -360,9 +365,13 @@ class FirestoreRepository(
                 "fetchIntroVideoUrl Config/intro exists=${snap.exists()} " +
                     "keys=${snap.data?.keys} fromCache=${snap.metadata.isFromCache}",
             )
-            val fromConfig = parseIntroVideoUrl(snap.data)
-            if (fromConfig.isNotBlank()) {
-                Log.i(TAG, "fetchIntroVideoUrl HIT Config/intro len=${fromConfig.length}")
+            if (snap.exists()) {
+                val fromConfig = parseIntroVideoUrl(snap.data)
+                Log.i(
+                    TAG,
+                    "fetchIntroVideoUrl Config/intro authoritative blank=${fromConfig.isBlank()} " +
+                        "len=${fromConfig.length}",
+                )
                 introCache.setUrl(fromConfig)
                 return fromConfig
             }
@@ -377,13 +386,26 @@ class FirestoreRepository(
                 .document(id)
                 .get()
                 .await()
+            val data = snap.data
+            val hasIntroField = data != null && (
+                data.containsKey("introVideoUrl") || data.containsKey("intro_video_url")
+            )
             Log.i(
                 TAG,
                 "fetchIntroVideoUrl Hotel root exists=${snap.exists()} " +
-                    "hasIntro=${snap.getString("introVideoUrl") != null} " +
-                    "keys=${snap.data?.keys}",
+                    "hasIntroField=$hasIntroField keys=${data?.keys}",
             )
-            val fromHotel = parseIntroVideoUrl(snap.data)
+            if (snap.exists() && hasIntroField) {
+                val fromHotel = parseIntroVideoUrl(data)
+                Log.i(
+                    TAG,
+                    "fetchIntroVideoUrl Hotel root authoritative blank=${fromHotel.isBlank()} " +
+                        "len=${fromHotel.length}",
+                )
+                introCache.setUrl(fromHotel)
+                return fromHotel
+            }
+            val fromHotel = parseIntroVideoUrl(data)
             if (fromHotel.isNotBlank()) {
                 Log.i(TAG, "fetchIntroVideoUrl HIT Hotel root len=${fromHotel.length}")
                 introCache.setUrl(fromHotel)
@@ -394,7 +416,7 @@ class FirestoreRepository(
         }
 
         Log.w(TAG, "fetchIntroVideoUrl MISS hotelId=$id — keep prior cache for offline")
-        // Do not clear URL/file on miss — offline TVs must keep intro_cached.mp4.
+        // Do not clear URL/file on network/doc miss — offline TVs keep intro when still enabled.
         return introCache.getUrl()
     }
 

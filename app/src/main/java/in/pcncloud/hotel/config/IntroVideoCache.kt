@@ -25,8 +25,8 @@ class IntroVideoCache(context: Context) {
         prefs.getString(KEY_INTRO_VIDEO_URL, null)?.trim().orEmpty()
 
     /**
-     * Valid http(s) URL for immediate playback, or null → start at Home
-     * (unless a local file already exists — see [canStartIntro]).
+     * Valid http(s) URL for immediate playback, or null → start at Home.
+     * Blank / whitespace-only prefs never count as a configured intro.
      */
     fun getValidHttpUrl(): String? {
         val raw = getUrl()
@@ -34,9 +34,21 @@ class IntroVideoCache(context: Context) {
         return normalizeHttpUrl(raw)
     }
 
-    /** Cold boot: intro if URL known **or** a previous download is on disk. */
-    fun canStartIntro(): Boolean =
-        fileStore.canPlayIntro(getValidHttpUrl())
+    /**
+     * Cold boot: intro only when a non-blank http(s) URL is configured.
+     * An orphan [intro_cached.mp4] without a URL is deleted and does not start Intro.
+     */
+    fun canStartIntro(): Boolean {
+        val http = getValidHttpUrl()
+        if (http.isNullOrBlank()) {
+            if (fileStore.hasReadyFile()) {
+                Log.w(TAG, "canStartIntro — empty URL with local file; clearing orphan cache")
+                fileStore.clear()
+            }
+            return false
+        }
+        return fileStore.canPlayIntro(http)
+    }
 
     fun fileStore(): IntroVideoFileStore = fileStore
 
