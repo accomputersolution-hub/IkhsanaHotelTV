@@ -170,7 +170,7 @@ fun LuxuryNavCard(
     }
 }
 
-/** Premium glassmorphism corporate tile — day/night adaptive with gold focus ring. */
+/** Corporate tile — same translucent navy glass as hotel, with gold brand accents. */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun CorporateLuxuryNavCard(
@@ -182,7 +182,6 @@ private fun CorporateLuxuryNavCard(
     onClick: () -> Unit,
 ) {
     var isFocused by remember { mutableStateOf(false) }
-    val isNightMode = LocalIsNightMode.current
     val cardShape = RoundedCornerShape(16.dp)
     val scale by animateFloatAsState(
         targetValue = if (isFocused) 1.05f else 1f,
@@ -192,40 +191,19 @@ private fun CorporateLuxuryNavCard(
         ),
         label = "corpNavCardScale",
     )
-    val glassBg by animateColorAsState(
-        targetValue = if (isNightMode) CorpGlassNight else CorpGlassDay,
-        animationSpec = tween(durationMillis = 900),
-        label = "corpNavCardGlass",
+    val titleColor = if (isFocused) CorpGoldBright else CorpGold
+    val subtitleColor = if (isFocused) TextPrimary.copy(alpha = 0.9f) else TextMuted
+    val iconAlpha by animateFloatAsState(
+        targetValue = if (isFocused) 1f else 0.92f,
+        animationSpec = tween(durationMillis = 150),
+        label = "corpNavCardIconAlpha",
     )
-    // Icons + body copy follow day/night; title keeps gold at night for L&T brand.
-    val textColor = if (isNightMode) CorpCardTextNight else CorpCardTextDay
-    val titleColor = when {
-        isFocused -> CorpGoldBright
-        isNightMode -> CorpGold
-        else -> CorpCardTextDay
-    }
-    val subtitleColor = if (isNightMode) CorpCardSubtitleNight else CorpCardSubtitleDay
-    val borderColor = if (isFocused) CorpGoldBright else CorpGoldBorderIdle
-    val borderWidth = if (isFocused) 3.dp else 1.dp
-    val glowElevation = if (isFocused) 24.dp else 4.dp
+    // Match hotel flavor transparency so wallpaper shows through.
+    val fillTop = NavyDeep.copy(alpha = 0.42f)
+    val fillBottom = NavyDeep.copy(alpha = 0.32f)
 
     Box(
         modifier = modifier
-            .shadow(
-                elevation = glowElevation,
-                shape = cardShape,
-                ambientColor = if (isFocused) {
-                    CorpGoldBright.copy(alpha = 0.7f)
-                } else {
-                    Color.Black.copy(alpha = 0.35f)
-                },
-                spotColor = if (isFocused) {
-                    CorpGoldBright.copy(alpha = 0.9f)
-                } else {
-                    Color.Black.copy(alpha = 0.25f)
-                },
-                clip = false,
-            )
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -233,10 +211,31 @@ private fun CorporateLuxuryNavCard(
                 shape = cardShape
             }
             .background(
-                color = glassBg,
+                brush = Brush.verticalGradient(listOf(fillTop, fillBottom)),
                 shape = cardShape,
             )
-            .border(width = borderWidth, color = borderColor, shape = cardShape)
+            .border(
+                width = if (isFocused) 3.dp else 1.dp,
+                brush = if (isFocused) {
+                    Brush.linearGradient(
+                        listOf(
+                            CorpGoldBright,
+                            GoldLight,
+                            CorpGoldBright.copy(alpha = 0.78f),
+                            GoldLight.copy(alpha = 0.95f),
+                            CorpGoldBright,
+                        ),
+                    )
+                } else {
+                    Brush.linearGradient(
+                        listOf(
+                            Color.White.copy(alpha = 0.25f),
+                            Color.White.copy(alpha = 0.12f),
+                        ),
+                    )
+                },
+                shape = cardShape,
+            )
             .onFocusChanged { isFocused = it.isFocused }
             .focusable()
             .onKeyEvent { event ->
@@ -257,15 +256,14 @@ private fun CorporateLuxuryNavCard(
             verticalArrangement = Arrangement.Center,
             modifier = Modifier.fillMaxSize(),
         ) {
+            // Full-color PNG like hotel — tinting flattens the 3D look.
             Image(
                 painter = painterResource(iconRes),
                 contentDescription = title,
-                modifier = Modifier.size(iconSize),
+                modifier = Modifier
+                    .size(iconSize)
+                    .graphicsLayer { alpha = iconAlpha },
                 contentScale = ContentScale.Fit,
-                colorFilter = ColorFilter.tint(
-                    if (isFocused) CorpGoldBright else textColor,
-                    BlendMode.SrcIn,
-                ),
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
