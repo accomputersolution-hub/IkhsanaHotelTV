@@ -30,7 +30,6 @@
     <queries>
         <package android:name="com.onnet.systems.iptv.esto" />
         <package android:name="com.google.android.youtube.tv" />
-        <package android:name="com.netflix.ninja" />
         <package android:name="com.amazon.amazonvideo.livingroom" />
         <package android:name="in.startv.hotstar" />
         <package android:name="com.graymatrix.did" />

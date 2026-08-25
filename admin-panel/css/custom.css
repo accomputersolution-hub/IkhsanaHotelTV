@@ -2764,7 +2764,7 @@ body.modal-open { overflow: hidden; }
   background: rgba(15, 23, 42, 0.55);
 }
 .kiosk-pkg-tags:empty::before {
-  content: 'No packages yet — add YouTube, Netflix, IPTV, etc.';
+  content: 'No packages yet — add YouTube, Prime, IPTV, etc.';
   color: var(--text-dim);
   font-size: 0.78rem;
 }

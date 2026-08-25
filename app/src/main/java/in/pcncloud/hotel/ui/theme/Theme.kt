@@ -5,6 +5,11 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
 import androidx.tv.material3.lightColorScheme
 
+/**
+ * Root TV theme. Gold brand accents ([GoldPrimary] `#c9a962`, [GoldLuxury]) stay
+ * visible in both day and night. Night uses deep navy; day uses slightly lifted
+ * surfaces so wallpaper + UI are less harsh in daylight.
+ */
 @Composable
 fun PcnCloudTvTheme(
     isInDarkTheme: Boolean = true,
@@ -13,18 +18,26 @@ fun PcnCloudTvTheme(
     val colorScheme = if (isInDarkTheme) {
         darkColorScheme(
             primary = GoldLuxury,
+            onPrimary = NavyDeep,
             secondary = GoldPrimary,
+            onSecondary = NavyDeep,
             tertiary = GoldLight,
-            background = NavyDeep,
-            surface = NavyDeep,
+            background = NightBackground,
+            surface = NightSurface,
+            onBackground = TextPrimary,
+            onSurface = TextPrimary,
         )
     } else {
         lightColorScheme(
             primary = GoldLuxury,
+            onPrimary = NavyDeep,
             secondary = GoldPrimary,
+            onSecondary = NavyDeep,
             tertiary = GoldLight,
-            background = NavyDeep,
-            surface = NavyDeep,
+            background = DayBackground,
+            surface = DaySurface,
+            onBackground = DayOnBackground,
+            onSurface = DayOnBackground,
         )
     }
     MaterialTheme(

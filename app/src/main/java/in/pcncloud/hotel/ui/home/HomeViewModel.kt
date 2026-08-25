@@ -76,6 +76,7 @@ class HomeViewModel(
                     "HomeViewModel sync → guest=${profile.guestName} room=${profile.roomNumber} " +
                         "hotel=${branding.hotelName} tagline=${branding.tagline} " +
                         "logo_url=${branding.logoUrl} bg_wallpaper=${branding.bgWallpaperUrl} " +
+                        "bg_wallpaper_dark=${branding.bgWallpaperDarkUrl} " +
                         "status=${branding.status} roomsCount=${rooms.size}",
                 )
                 val sessionChanged = trackedSessionKey != null &&
@@ -222,6 +223,7 @@ class HomeViewModel(
             hotelName = branding.hotelName.ifBlank { hotelName },
             hotelLogoUrl = branding.logoUrl.ifBlank { hotelLogoUrl },
             bgWallpaperUrl = branding.bgWallpaperUrl.ifBlank { bgWallpaperUrl },
+            bgWallpaperDarkUrl = branding.bgWallpaperDarkUrl.ifBlank { bgWallpaperDarkUrl },
             themeColor = branding.themeColor.ifBlank { themeColor },
             tagline = branding.tagline.ifBlank { tagline },
             welcomeMessage = branding.welcomeMessage

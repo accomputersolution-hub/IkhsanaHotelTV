@@ -6,6 +6,15 @@ val NavyDeep = Color(0xFF0B1325)
 val NavyMain = Color(0xFF0F172A)
 val NavySurface = Color(0xFF1B2838)
 
+/** Night-mode scaffold (18:00–05:59). */
+val NightBackground = NavyDeep
+val NightSurface = NavySurface
+
+/** Day-mode scaffold (06:00–17:59) — lifted navy, not flat white (TV glare). */
+val DayBackground = Color(0xFF1A2740)
+val DaySurface = Color(0xFF243552)
+val DayOnBackground = Color(0xFFF8FAFC)
+
 val GoldPrimary = Color(0xFFC9A962)
 val GoldLight = Color(0xFFE8D5A3)
 val GoldMuted = Color(0xFF8B7355)

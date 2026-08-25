@@ -1,8 +1,10 @@
 package `in`.pcncloud.hotel.ui.components
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -51,6 +53,7 @@ import `in`.pcncloud.hotel.data.model.HotelBranding
 import `in`.pcncloud.hotel.ui.home.BrandAssets
 import `in`.pcncloud.hotel.ui.theme.GoldLight
 import `in`.pcncloud.hotel.ui.theme.GoldPrimary
+import `in`.pcncloud.hotel.ui.theme.LocalIsNightMode
 import `in`.pcncloud.hotel.ui.theme.NavyDeep
 import `in`.pcncloud.hotel.ui.theme.NavyMain
 import `in`.pcncloud.hotel.ui.theme.SansBody
@@ -128,6 +131,7 @@ fun ScreensaverOverlay(
     ) {
         ScreensaverBackground(
             wallpaperUrl = branding.bgWallpaperUrl,
+            wallpaperDarkUrl = branding.bgWallpaperDarkUrl,
             drift = drift,
         )
 
@@ -233,47 +237,65 @@ fun ScreensaverOverlay(
 @Composable
 private fun ScreensaverBackground(
     wallpaperUrl: String,
+    wallpaperDarkUrl: String = "",
     drift: Float,
 ) {
-    val lower = wallpaperUrl.lowercase(Locale.US)
-    val useRemote = wallpaperUrl.isNotBlank() &&
-        !lower.contains(".svg") &&
-        !lower.contains("image/svg") &&
-        !lower.contains("format=svg") &&
-        !lower.contains("data:image/svg")
+    val isNightMode = LocalIsNightMode.current
+    val dayOk = wallpaperUrl.isNotBlank() && !isLegacyUnsafeScreensaverUrl(wallpaperUrl)
+    val darkOk = wallpaperDarkUrl.isNotBlank() && !isLegacyUnsafeScreensaverUrl(wallpaperDarkUrl)
+    val useDarkImage = isNightMode && darkOk
+    val activeKey = when {
+        useDarkImage -> "dark:$wallpaperDarkUrl"
+        dayOk -> "day:$wallpaperUrl"
+        else -> "none"
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        if (useRemote) {
-            AsyncImage(
-                model = hotelImageRequest(
-                    context = LocalContext.current,
-                    url = wallpaperUrl,
-                    logTag = "ScreensaverWallpaper",
-                ),
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        scaleX = drift
-                        scaleY = drift
-                    },
-                contentScale = ContentScale.Crop,
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                NavyDeep,
-                                NavyMain,
-                                Color(0xFF152238),
-                                NavyDeep,
+        Crossfade(
+            targetState = activeKey,
+            animationSpec = tween(durationMillis = 900),
+            label = "screensaverWallpaperCrossfade",
+            modifier = Modifier.fillMaxSize(),
+        ) { key ->
+            if (key == "none") {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    NavyDeep,
+                                    NavyMain,
+                                    Color(0xFF152238),
+                                    NavyDeep,
+                                ),
                             ),
                         ),
-                    ),
-            )
+                )
+            } else {
+                val urlForLayer = when {
+                    key.startsWith("dark:") -> key.removePrefix("dark:")
+                    key.startsWith("day:") -> key.removePrefix("day:")
+                    else -> ""
+                }
+                if (urlForLayer.isNotBlank()) {
+                    AsyncImage(
+                        model = hotelImageRequest(
+                            context = LocalContext.current,
+                            url = urlForLayer,
+                            logTag = "ScreensaverWallpaper",
+                        ),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                scaleX = drift
+                                scaleY = drift
+                            },
+                        contentScale = ContentScale.Crop,
+                    )
+                }
+            }
         }
 
         Box(
@@ -289,6 +311,18 @@ private fun ScreensaverBackground(
                         ),
                     ),
                 ),
+        )
+
+        // Dim day wallpaper at night only when no dedicated dark image is set.
+        val nightDimAlpha by animateFloatAsState(
+            targetValue = if (isNightMode && !useDarkImage) 0.50f else 0.0f,
+            animationSpec = tween(durationMillis = 900),
+            label = "screensaverNightDim",
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = nightDimAlpha)),
         )
 
         Box(
@@ -316,6 +350,14 @@ private fun ScreensaverBackground(
                 ),
         )
     }
+}
+
+private fun isLegacyUnsafeScreensaverUrl(url: String): Boolean {
+    val lower = url.lowercase(Locale.US)
+    return lower.contains(".svg") ||
+        lower.contains("image/svg") ||
+        lower.contains("format=svg") ||
+        lower.contains("data:image/svg")
 }
 
 @Composable

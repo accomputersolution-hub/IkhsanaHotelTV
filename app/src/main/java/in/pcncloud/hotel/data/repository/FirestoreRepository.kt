@@ -262,6 +262,7 @@ class FirestoreRepository(
                     "OK Hotel branding snapshot → path=$docPath name=${result.hotelName} " +
                         "tagline=${result.tagline} welcome=${result.welcomeMessage.take(40)} " +
                         "logo_url=${result.logoUrl} bg_wallpaper=${result.bgWallpaperUrl} " +
+                        "bg_wallpaper_dark=${result.bgWallpaperDarkUrl} " +
                         "theme=${result.themeColor} status=${result.status} " +
                         "keys=${snapshot.data?.keys} fromCache=${snapshot.metadata.isFromCache}",
                 )
@@ -1059,6 +1060,18 @@ class FirestoreRepository(
                 asTrimmedString(data["bgWallpaperUrl"]),
                 asTrimmedString(data["wallpaper"]),
                 asTrimmedString(data["wallpaperUrl"]),
+            ),
+            bgWallpaperDarkUrl = firstNonBlank(
+                asTrimmedString(branding["bg_wallpaper_dark"]),
+                asTrimmedString(branding["bgWallpaperDark"]),
+                asTrimmedString(branding["bgWallpaperDarkUrl"]),
+                asTrimmedString(branding["wallpaper_dark"]),
+                asTrimmedString(branding["wallpaperDark"]),
+                asTrimmedString(data["bg_wallpaper_dark"]),
+                asTrimmedString(data["bgWallpaperDark"]),
+                asTrimmedString(data["bgWallpaperDarkUrl"]),
+                asTrimmedString(data["wallpaper_dark"]),
+                asTrimmedString(data["wallpaperDark"]),
             ),
             themeColor = firstNonBlank(
                 asTrimmedString(branding["theme_color"]),
