@@ -1279,6 +1279,22 @@
                     <option value="">Loading rooms…</option>
                   </select>
                 </div>
+                <fieldset class="room-features-scope" id="room-features-scope">
+                  <legend class="block text-sm font-medium mb-1">Apply changes to</legend>
+                  <label class="room-features-scope-option">
+                    <input type="radio" name="room-features-scope" value="one" checked />
+                    <span>Selected room only</span>
+                  </label>
+                  <label class="room-features-scope-option">
+                    <input type="radio" name="room-features-scope" value="all" id="room-features-scope-all" />
+                    <span id="room-features-scope-all-label">All rooms</span>
+                  </label>
+                </fieldset>
+                <div class="room-features-actions">
+                  <button type="button" id="room-features-apply-all-btn" class="quick-btn" disabled>
+                    Copy these toggles to all rooms
+                  </button>
+                </div>
                 <p id="room-features-status" class="text-xs room-features-status" style="color:var(--text-dim)"></p>
               </div>
               <p id="room-features-empty" class="empty-state hidden">
