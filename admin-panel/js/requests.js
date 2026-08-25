@@ -285,7 +285,7 @@ function renderCleaningRooms() {
       try {
         await markRoomCleanAndReady(roomNumber);
         logFirestoreWrite('Room Cleaned', paths.roomDoc(roomNumber), { status: 'vacant', cleaned: true });
-        toast(`Room ${roomNumber} marked Cleaned & Ready — available for check-in`);
+        toast(`${formatRoomLabel(roomNumber)} marked Cleaned & Ready — available for check-in`);
       } catch (err) {
         toast('Failed to update room', 'error');
         console.error('[Firestore ERROR] Mark cleaned failed:', err);
@@ -313,7 +313,7 @@ function renderCleaningRoomCard(room) {
         <div class="service-card-icon">🛏️</div>
         <div class="service-card-info">
           <div class="service-card-title-row">
-            <span class="service-room">Room ${escapeHtml(roomNum)}</span>
+            <span class="service-room">${escapeHtml(formatRoomLabel(roomNum))}</span>
             <span class="req-status-badge req-status-pending">${escapeHtml(statusLabel)}</span>
           </div>
           <p class="service-type">${escapeHtml(roomType)} · ${escapeHtml(turnoverNote)}</p>
@@ -571,7 +571,7 @@ function renderRequestCard(req, department) {
         <div class="service-card-icon">${icon}</div>
         <div class="service-card-info">
           <div class="service-card-title-row">
-            <span class="service-room">Room ${escapeHtml(String(req.roomNumber || '—'))}</span>
+            <span class="service-room">${escapeHtml(formatRoomLabel(req.roomNumber || '—'))}</span>
             <span class="req-status-badge ${badge}">${STATUS_LABELS[status] || status}</span>
           </div>
           <p class="service-type">${escapeHtml(req.serviceLabel || req.serviceType || 'Service Request')}</p>
@@ -643,7 +643,7 @@ async function notifyGuestOnTv(request, department, status) {
   if (department === 'housekeeping') {
     if (status === 'in_progress') {
       title = 'Housekeeping Update';
-      message = `Housekeeping staff is on the way to Room ${room}.`;
+      message = `Housekeeping staff is on the way to ${formatRoomLabel(room)}.`;
     } else {
       title = 'Housekeeping Complete';
       message = `Your ${service} request has been completed. Thank you!`;
@@ -651,7 +651,7 @@ async function notifyGuestOnTv(request, department, status) {
   } else {
     if (status === 'in_progress') {
       title = 'Concierge Update';
-      message = `Concierge is handling your ${service} request for Room ${room}.`;
+      message = `Concierge is handling your ${service} request for ${formatRoomLabel(room)}.`;
     } else {
       title = 'Concierge Complete';
       message = `Your ${service} request has been completed. Enjoy your stay!`;
