@@ -3,6 +3,10 @@ import {
   signInWithEmailAndPassword,
   signOut,
   createUserWithEmailAndPassword,
+  updatePassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  sendPasswordResetEmail,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js';
 import {
   doc,
@@ -32,6 +36,10 @@ const PROFILE_LOAD_TIMEOUT_MS = 12000;
 /** If Firebase never delivers the first auth event, unlock as signed-out. */
 const AUTH_EVENT_FAILSAFE_MS = 4000;
 
+const AUTH_DENIED_MESSAGE = 'Invalid email or password';
+const AUTH_UNAUTHORIZED_MESSAGE =
+  'This account is not authorized. Contact your administrator.';
+
 export function getCurrentUser() {
   return currentUser;
 }
@@ -58,8 +66,48 @@ export function isHotelAdmin() {
   return currentProfile?.role === 'hotel_admin';
 }
 
-export function needsBootstrap() {
-  return Boolean(currentUser) && (!currentProfile || currentProfile.role === 'unknown');
+/** True when profile has a known admin / staff role that may enter the panel. */
+export function hasAuthorizedProfile(profile = currentProfile) {
+  if (!profile) return false;
+  if (profile.role === 'super_admin') return true;
+  if (profile.role === 'hotel_admin') return true;
+  if (normalizeStaffRole(profile.staffRole) && profile.hotelId) return true;
+  return false;
+}
+
+/**
+ * Map Firebase Auth errors to a safe UI message.
+ * Never leak whether the email exists.
+ */
+export function formatAuthError(err) {
+  const code = String(err?.code || '');
+  if (
+    code === 'auth/invalid-credential' ||
+    code === 'auth/wrong-password' ||
+    code === 'auth/user-not-found' ||
+    code === 'auth/invalid-email' ||
+    code === 'auth/invalid-login-credentials' ||
+    code === 'auth/missing-password' ||
+    code === 'auth/user-disabled'
+  ) {
+    return AUTH_DENIED_MESSAGE;
+  }
+  if (code === 'auth/too-many-requests') {
+    return 'Too many attempts. Please try again later.';
+  }
+  if (code === 'auth/network-request-failed') {
+    return 'Network error. Check your connection and try again.';
+  }
+  if (code === 'auth/requires-recent-login') {
+    return 'Please re-enter your current password and try again.';
+  }
+  if (code === 'auth/weak-password') {
+    return 'Password must be at least 6 characters.';
+  }
+  if (err?.message === AUTH_UNAUTHORIZED_MESSAGE) {
+    return AUTH_UNAUTHORIZED_MESSAGE;
+  }
+  return AUTH_DENIED_MESSAGE;
 }
 
 /**
@@ -82,16 +130,6 @@ function notifyAuth() {
       console.error('[auth] listener error', err);
     }
   });
-  updateBootstrapGateUi();
-}
-
-function updateBootstrapGateUi() {
-  const gate = document.getElementById('bootstrap-gate');
-  const form = document.getElementById('login-form');
-  if (!gate) return;
-  const show = needsBootstrap();
-  gate.classList.toggle('hidden', !show);
-  if (form) form.classList.toggle('opacity-60', show);
 }
 
 /**
@@ -107,13 +145,8 @@ async function loadUserProfile(user) {
   try {
     const snap = await getDoc(doc(db, 'users', user.uid));
     if (!snap.exists()) {
-      currentProfile = {
-        role: 'unknown',
-        hotelId: '',
-        email: user.email || '',
-        uid: user.uid,
-      };
-      return currentProfile;
+      currentProfile = null;
+      return null;
     }
     const data = snap.data() || {};
     currentProfile = {
@@ -127,13 +160,9 @@ async function loadUserProfile(user) {
     return currentProfile;
   } catch (err) {
     console.error('[auth] loadUserProfile failed', err);
-    currentProfile = {
-      role: 'unknown',
-      hotelId: '',
-      email: user.email || '',
-      uid: user.uid,
-    };
-    return currentProfile;
+    // Do NOT invent an "unknown" role that could unlock elevation UI.
+    currentProfile = null;
+    return null;
   }
 }
 
@@ -170,12 +199,26 @@ async function loadStaffUserRecord(uid) {
 
 /** Merge RTDB staff role into the in-memory profile used by RBAC. */
 async function attachStaffRole(user) {
-  if (!user?.uid || !currentProfile) return currentProfile;
+  if (!user?.uid) return currentProfile;
   const staff = await loadStaffUserRecord(user.uid);
   if (!staff) {
-    // Property admins without a staff_users node keep full admin module access.
-    if (currentProfile.role === 'hotel_admin' && !currentProfile.staffRole) {
+    if (currentProfile?.role === 'hotel_admin' && !currentProfile.staffRole) {
       currentProfile.staffRole = 'admin';
+    }
+    return currentProfile;
+  }
+
+  if (!currentProfile) {
+    // Staff-only account: RTDB role + hotel is enough for PMS (no Firestore users doc).
+    if (staff.role && staff.hotelId) {
+      currentProfile = {
+        role: 'hotel_admin',
+        hotelId: staff.hotelId,
+        email: staff.email || user.email || '',
+        displayName: staff.displayName || '',
+        uid: user.uid,
+        staffRole: staff.role,
+      };
     }
     return currentProfile;
   }
@@ -188,7 +231,6 @@ async function attachStaffRole(user) {
     currentProfile.displayName = staff.displayName;
   }
 
-  // Staff-only accounts (no Firestore role yet) still need PMS access.
   if (
     staff.role &&
     (!currentProfile.role || currentProfile.role === 'unknown') &&
@@ -205,12 +247,10 @@ async function loadAuthenticatedSession(user) {
   await loadUserProfile(user);
   await attachStaffRole(user);
 
-  // Super Admin is not tied to a single property — never bind hotel / property_type.
   if (currentProfile?.role === 'super_admin') {
     return currentProfile;
   }
 
-  // Property admins / staff: bind their assigned hotel (property_type comes later from Hotels/{id}).
   if (
     (currentProfile?.role === 'hotel_admin' || normalizeStaffRole(currentProfile?.staffRole)) &&
     currentProfile?.hotelId
@@ -286,7 +326,7 @@ export function initAuth(onReady) {
     // User exists — cancel signed-out failsafe before any profile await
     clearTimeout(failsafeTimer);
 
-    // ── 2) Signed in: load role first; Super Admin skips property binding ─
+    // ── 2) Signed in: load role; unauthorized Auth users are signed out ─
     try {
       await withTimeout(
         loadAuthenticatedSession(user),
@@ -295,23 +335,51 @@ export function initAuth(onReady) {
       );
     } catch (err) {
       console.error('[auth] profile load failed', err);
-      if (!currentProfile) {
-        currentProfile = {
-          role: 'unknown',
-          hotelId: '',
-          email: user.email || '',
-          uid: user.uid,
-        };
-      }
-    } finally {
-      firstEventDone = true;
-      resolveAuthGate(user, currentProfile, { initial: wasInitialLoad }, onReady);
+      currentProfile = null;
     }
+
+    if (!hasAuthorizedProfile(currentProfile)) {
+      console.warn('[auth] signed-in user has no authorized profile — forcing sign-out');
+      try {
+        await signOut(auth);
+      } catch (signOutErr) {
+        console.error('[auth] forced sign-out failed', signOutErr);
+      }
+      currentUser = null;
+      currentProfile = null;
+      try {
+        clearHotelContext();
+      } catch (_) {
+        /* ignore */
+      }
+      firstEventDone = true;
+      resolveAuthGate(null, null, { initial: wasInitialLoad }, onReady);
+      return;
+    }
+
+    firstEventDone = true;
+    resolveAuthGate(user, currentProfile, { initial: wasInitialLoad }, onReady);
   });
 }
 
 export async function loginWithEmail(email, password) {
-  const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+  const trimmedEmail = String(email || '').trim();
+  const trimmedPassword = String(password || '');
+  if (!trimmedEmail || !trimmedPassword) {
+    const err = new Error(AUTH_DENIED_MESSAGE);
+    err.code = 'auth/invalid-credential';
+    throw err;
+  }
+
+  let cred;
+  try {
+    cred = await signInWithEmailAndPassword(auth, trimmedEmail, trimmedPassword);
+  } catch (err) {
+    const wrapped = new Error(formatAuthError(err));
+    wrapped.code = err?.code || 'auth/invalid-credential';
+    throw wrapped;
+  }
+
   currentUser = cred.user;
   try {
     await withTimeout(
@@ -321,18 +389,29 @@ export async function loginWithEmail(email, password) {
     );
   } catch (err) {
     console.error('[auth] login profile load failed', err);
-    if (!currentProfile) {
-      currentProfile = {
-        role: 'unknown',
-        hotelId: '',
-        email: cred.user.email || '',
-        uid: cred.user.uid,
-      };
-    }
+    currentProfile = null;
   }
 
-  // Super Admin login: drop any stale property context so routing never
-  // waits on Hotels/{id}.property_type before showing the Master Dashboard.
+  if (!hasAuthorizedProfile(currentProfile)) {
+    try {
+      await signOut(auth);
+    } catch (_) {
+      /* ignore */
+    }
+    currentUser = null;
+    currentProfile = null;
+    try {
+      clearHotelContext();
+    } catch (_) {
+      /* ignore */
+    }
+    authLoading = false;
+    notifyAuth();
+    const denied = new Error(AUTH_UNAUTHORIZED_MESSAGE);
+    denied.code = 'auth/unauthorized-profile';
+    throw denied;
+  }
+
   if (currentProfile?.role === 'super_admin') {
     try {
       clearHotelContext();
@@ -381,7 +460,6 @@ export async function createHotelAdminAccount({
     staffRole: opsRole,
     createdAt: serverTimestamp(),
   });
-  // Mirror operational role for RBAC (staff_users/{uid}/role).
   try {
     await set(ref(rtdb, `staff_users/${uid}`), {
       role: opsRole,
@@ -397,24 +475,54 @@ export async function createHotelAdminAccount({
   return uid;
 }
 
-/** First-login bootstrap: initialize current user as super_admin */
-export async function ensureSuperAdminProfile(displayName = 'Super Admin') {
+/**
+ * Change the signed-in user's password (Firebase Client SDK).
+ * Re-authenticates with [currentPassword] first.
+ */
+export async function changeOwnPassword(currentPassword, newPassword) {
   const user = auth.currentUser;
-  if (!user) throw new Error('Sign in first, then bootstrap');
-  await setDoc(
-    doc(db, 'users', user.uid),
-    {
-      role: 'super_admin',
-      hotelId: '',
-      email: user.email || '',
-      displayName,
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true },
-  );
-  await loadUserProfile(user);
-  notifyAuth();
-  return currentProfile;
+  if (!user?.email) {
+    throw new Error('You must be signed in to change your password');
+  }
+  const next = String(newPassword || '');
+  if (next.length < 6) {
+    const err = new Error('Password must be at least 6 characters.');
+    err.code = 'auth/weak-password';
+    throw err;
+  }
+  try {
+    const credential = EmailAuthProvider.credential(user.email, String(currentPassword || ''));
+    await reauthenticateWithCredential(user, credential);
+    await updatePassword(user, next);
+  } catch (err) {
+    const wrapped = new Error(formatAuthError(err));
+    wrapped.code = err?.code || 'auth/invalid-credential';
+    throw wrapped;
+  }
+}
+
+/**
+ * Send a Firebase password-reset email for another staff account.
+ * Client SDK cannot set other users' passwords without Admin SDK.
+ */
+export async function sendStaffPasswordReset(email) {
+  const target = String(email || '').trim();
+  if (!target) throw new Error('Staff email is required');
+  if (!hasAuthorizedProfile(currentProfile)) {
+    throw new Error('Not authorized');
+  }
+  try {
+    await sendPasswordResetEmail(auth, target);
+  } catch (err) {
+    console.error('[auth] sendPasswordResetEmail failed', err?.code || err);
+    const wrapped = new Error(
+      err?.code === 'auth/invalid-email'
+        ? 'Invalid email address'
+        : 'Could not send reset email. Try again or check the address.',
+    );
+    wrapped.code = err?.code || 'auth/reset-failed';
+    throw wrapped;
+  }
 }
 
 export function getEffectiveHotelId() {

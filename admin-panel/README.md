@@ -23,12 +23,15 @@ npm start
 
 Open **http://localhost:3000** → `#/login`.
 
-### Bootstrap Super Admin (once)
+### Super Admin setup (secure)
 
-1. Firebase Console → Authentication → enable Email/Password → create a user.
-2. Sign in on the login screen with that user.
-3. Click **Bootstrap Super Admin profile** (writes `users/{uid}.role = super_admin`).
-4. You land on `#/super-admin`.
+1. Firebase Console → Authentication → enable Email/Password → create the Super Admin user.
+2. In Firestore, create `users/{uid}` manually with:
+   `{ "role": "super_admin", "hotelId": "", "email": "<same email>" }`
+3. Sign in on `#/login` with that email/password.
+4. There is **no** client-side bootstrap / self-elevation to Super Admin.
+
+Invalid credentials always show **Invalid email or password** and never grant access.
 
 ### Onboard a hotel
 

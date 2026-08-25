@@ -3118,22 +3118,22 @@ body.modal-open { overflow: hidden; }
   font-size: 0.875rem;
 }
 
-.bootstrap-gate {
-  margin-top: 1.25rem;
-  padding: 1rem;
-  border-radius: 0.9rem;
-  border: 1px solid rgba(201, 169, 98, 0.35);
-  background: rgba(201, 169, 98, 0.08);
-}
-.bootstrap-gate-title {
-  font-weight: 700;
-  color: var(--gold-light);
-  margin-bottom: 0.35rem;
-}
-.bootstrap-gate-text {
+.login-error {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  background: rgba(127, 29, 29, 0.28);
+  color: #fecaca;
   font-size: 0.85rem;
-  color: var(--text-muted);
-  margin-bottom: 0.85rem;
+  line-height: 1.4;
+}
+
+.staff-actions-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  justify-content: flex-end;
 }
 
 .account-deactivated-gate {

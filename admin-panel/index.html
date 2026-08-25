@@ -124,13 +124,9 @@
           <input id="login-password" type="password" required autocomplete="current-password" class="w-full px-4 py-2.5 rounded-xl outline-none" />
         </div>
         <button type="submit" class="w-full py-3 font-semibold rounded-xl btn-gold">Sign In</button>
+        <p id="login-error" class="login-error hidden" role="alert"></p>
       </form>
-      <div id="bootstrap-gate" class="bootstrap-gate hidden">
-        <p class="bootstrap-gate-title">No user profile found</p>
-        <p class="bootstrap-gate-text">Initialize this account as <strong>Super Admin</strong> to unlock the master panel.</p>
-        <button id="bootstrap-super-admin" type="button" class="w-full py-3 font-semibold rounded-xl btn-gold">Bootstrap Super Admin</button>
-      </div>
-      <p class="login-hint">Auth: Email/Password · Routes: <code>#/login</code> · <code>#/super-admin</code> · <code>#/pms</code></p>
+      <p class="login-hint">Sign in with your Firebase Auth email and password.</p>
     </div>
   </div>
 
@@ -150,6 +146,7 @@
         </label>
         <button id="add-hotel-btn" type="button" class="btn-gold">+ Add New Hotel</button>
         <button id="super-admin-refresh" type="button" class="quick-btn">Refresh</button>
+        <button type="button" class="quick-btn" data-change-password>Change Password</button>
         <button type="button" class="quick-btn" data-logout>Sign out</button>
       </div>
     </header>
@@ -843,6 +840,7 @@
 
       <div class="sidebar-footer">
         <button id="open-super-admin-link" type="button" class="sidebar-footer-text hidden">← Super Admin</button>
+        <button type="button" class="sidebar-footer-text" data-change-password>Change Password</button>
         <button type="button" class="sidebar-footer-text" data-logout>Sign out</button>
       </div>
     </aside>
@@ -1619,6 +1617,32 @@
           </select>
         </div>
         <button type="submit" class="w-full py-3 font-semibold rounded-xl btn-gold">Save Staff</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Change own password modal -->
+  <div id="change-password-modal" class="modal-overlay hidden">
+    <div class="modal-panel">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-lg font-bold">Change Password</h3>
+        <button id="change-password-close" type="button" class="modal-close-btn">&times;</button>
+      </div>
+      <form id="change-password-form" class="flex flex-col gap-4">
+        <div>
+          <label for="change-password-current" class="block text-sm font-medium mb-1">Current password</label>
+          <input id="change-password-current" type="password" required autocomplete="current-password" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+        </div>
+        <div>
+          <label for="change-password-new" class="block text-sm font-medium mb-1">New password</label>
+          <input id="change-password-new" type="password" required minlength="6" autocomplete="new-password" class="w-full px-4 py-2.5 rounded-xl outline-none" placeholder="Min 6 characters" />
+        </div>
+        <div>
+          <label for="change-password-confirm" class="block text-sm font-medium mb-1">Confirm new password</label>
+          <input id="change-password-confirm" type="password" required minlength="6" autocomplete="new-password" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+        </div>
+        <p id="change-password-error" class="login-error hidden" role="alert"></p>
+        <button type="submit" class="w-full py-3 font-semibold rounded-xl btn-gold">Update Password</button>
       </form>
     </div>
   </div>

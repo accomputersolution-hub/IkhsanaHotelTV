@@ -1,4 +1,4 @@
-import { initAudio, setConnectionStatus, toast } from './utils.js';
+import { initAudio, setConnectionStatus, toast, openModal, closeModal, setupModalClose } from './utils.js';
 import { initOrders } from './orders.js';
 import { initAlerts } from './alerts.js';
 import { initMenu } from './menu.js';
@@ -26,8 +26,9 @@ import {
   logout,
   isSuperAdmin,
   getCurrentProfile,
-  ensureSuperAdminProfile,
-  needsBootstrap,
+  hasAuthorizedProfile,
+  formatAuthError,
+  changeOwnPassword,
   isAuthLoading,
   forceAuthReady,
 } from './auth.js';
@@ -210,7 +211,7 @@ async function applyRoute(route) {
   try {
     const profile = getCurrentProfile();
 
-    if (!profile || needsBootstrap()) {
+    if (!hasAuthorizedProfile(profile)) {
       stopHotelStatusWatch();
       showDeactivatedGate(false);
       showShell('login');
@@ -386,8 +387,22 @@ function updateImpersonationBanner() {
 
 function setupLoginForm() {
   const form = document.getElementById('login-form');
+  const errorEl = document.getElementById('login-error');
+
+  function setLoginError(message) {
+    if (!errorEl) return;
+    if (message) {
+      errorEl.textContent = message;
+      errorEl.classList.remove('hidden');
+    } else {
+      errorEl.textContent = '';
+      errorEl.classList.add('hidden');
+    }
+  }
+
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
+    setLoginError('');
     const email = document.getElementById('login-email')?.value?.trim();
     const password = document.getElementById('login-password')?.value || '';
     const btn = form.querySelector('button[type="submit"]');
@@ -401,7 +416,6 @@ function setupLoginForm() {
       setAuthBootUi(false);
 
       if (profile?.role === 'super_admin') {
-        // Role-first: Master Dashboard only — no property_type / Hotels/{id} gate
         enterSuperAdminDashboard();
         return;
       }
@@ -414,17 +428,15 @@ function setupLoginForm() {
         return;
       }
 
-      if (profile?.role === 'unknown') {
-        toast('No users/{uid} profile yet — use Bootstrap Super Admin below.', 'error');
-        showShell('login');
-        return;
-      }
-
-      toast('Unknown role', 'error');
+      setLoginError('This account is not authorized. Contact your administrator.');
+      toast('Access denied', 'error');
       showShell('login');
     } catch (err) {
       console.error(err);
-      toast(err.message || 'Login failed', 'error');
+      const message = formatAuthError(err);
+      setLoginError(message);
+      toast(message, 'error');
+      showShell('login');
     } finally {
       if (btn) {
         btn.disabled = false;
@@ -432,15 +444,66 @@ function setupLoginForm() {
       }
     }
   });
+}
 
-  document.getElementById('bootstrap-super-admin')?.addEventListener('click', async () => {
+function setupChangePasswordUi() {
+  setupModalClose('change-password-modal', 'change-password-close');
+
+  document.querySelectorAll('[data-change-password]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const form = document.getElementById('change-password-form');
+      form?.reset();
+      const err = document.getElementById('change-password-error');
+      if (err) {
+        err.textContent = '';
+        err.classList.add('hidden');
+      }
+      openModal('change-password-modal');
+    });
+  });
+
+  document.getElementById('change-password-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const currentPassword = document.getElementById('change-password-current')?.value || '';
+    const nextPassword = document.getElementById('change-password-new')?.value || '';
+    const confirmPassword = document.getElementById('change-password-confirm')?.value || '';
+    const errEl = document.getElementById('change-password-error');
+    const btn = e.target.querySelector('button[type="submit"]');
+
+    const showErr = (msg) => {
+      if (!errEl) return;
+      errEl.textContent = msg;
+      errEl.classList.toggle('hidden', !msg);
+    };
+
+    showErr('');
+    if (nextPassword.length < 6) {
+      showErr('Password must be at least 6 characters.');
+      return;
+    }
+    if (nextPassword !== confirmPassword) {
+      showErr('New passwords do not match.');
+      return;
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Updating…';
+    }
     try {
-      await ensureSuperAdminProfile();
-      toast('Super Admin profile saved');
-      navigateTo('/super-admin');
-      await applyRoute(getRoute());
+      await changeOwnPassword(currentPassword, nextPassword);
+      toast('Password updated');
+      closeModal('change-password-modal');
+      e.target.reset();
     } catch (err) {
-      toast(err.message || 'Bootstrap failed — sign in first', 'error');
+      console.error('[auth] change password failed', err);
+      showErr(formatAuthError(err));
+      toast(formatAuthError(err), 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Update Password';
+      }
     }
   });
 }
@@ -507,6 +570,7 @@ document.addEventListener('DOMContentLoaded', () => {
   try {
     initRouter();
     setupLoginForm();
+    setupChangePasswordUi();
     setupChromeActions();
     initSuperAdmin();
   } catch (err) {

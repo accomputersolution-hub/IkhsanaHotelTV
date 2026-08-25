@@ -147,9 +147,17 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if signedIn() && (request.auth.uid == userId || isSuperAdmin());
-      allow write: if isSuperAdmin()
-        || (signedIn() && request.auth.uid == userId
-            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'hotelId']));
+      // Creates/updates that set role or hotelId: Super Admin only.
+      // Self-service may update non-privilege fields on an existing profile only.
+      // Never allow a signed-in user to create their own super_admin profile.
+      allow create: if isSuperAdmin();
+      allow update: if isSuperAdmin()
+        || (signedIn()
+            && request.auth.uid == userId
+            && resource != null
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['role', 'hotelId']));
+      allow delete: if isSuperAdmin();
     }
 
     match /Live_Orders/{orderId} {

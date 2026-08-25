@@ -9,7 +9,7 @@ import { getHotelId } from './tenant-context.js';
 import { toast, escapeHtml, openModal, closeModal, setupModalClose } from './utils.js';
 import { canAccessModule } from './rbac.js';
 import { STAFF_ROLES, normalizeStaffRole, roleLabel } from './rbac-roles.js';
-import { createHotelAdminAccount } from './auth.js';
+import { createHotelAdminAccount, sendStaffPasswordReset } from './auth.js';
 
 let staffUnsub = null;
 let staffRows = [];
@@ -78,8 +78,9 @@ function renderStaffTable() {
       <td>${escapeHtml(row.email || '—')}</td>
       <td><span class="staff-role-pill staff-role-${escapeHtml(row.role)}">${escapeHtml(roleLabel(row.role))}</span></td>
       <td><code class="hotel-id-code">${escapeHtml(row.uid.slice(0, 8))}…</code></td>
-      <td class="text-right">
+      <td class="text-right staff-actions-cell">
         <button type="button" class="quick-btn quick-btn-edit" data-edit-staff="${escapeHtml(row.uid)}">Edit role</button>
+        <button type="button" class="quick-btn" data-reset-staff-password="${escapeHtml(row.uid)}" ${row.email ? '' : 'disabled'}>Reset password</button>
         <button type="button" class="quick-btn" data-remove-staff="${escapeHtml(row.uid)}">Remove</button>
       </td>
     </tr>`,
@@ -88,6 +89,13 @@ function renderStaffTable() {
 
   tbody.querySelectorAll('[data-edit-staff]').forEach((btn) => {
     btn.addEventListener('click', () => openStaffModal(btn.getAttribute('data-edit-staff')));
+  });
+  tbody.querySelectorAll('[data-reset-staff-password]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const uid = btn.getAttribute('data-reset-staff-password');
+      const row = staffRows.find((r) => r.uid === uid);
+      if (row) void resetStaffPassword(row, btn);
+    });
   });
   tbody.querySelectorAll('[data-remove-staff]').forEach((btn) => {
     btn.addEventListener('click', () => removeStaffUser(btn.getAttribute('data-remove-staff')));
@@ -183,5 +191,40 @@ async function removeStaffUser(uid) {
     toast('Staff RBAC record removed');
   } catch (err) {
     toast(err.message || 'Remove failed', 'error');
+  }
+}
+
+/**
+ * Client SDK cannot set another user's password without Admin SDK.
+ * Send Firebase password-reset email instead.
+ */
+async function resetStaffPassword(row, btn) {
+  if (!canAccessModule('staff')) {
+    toast('Admin access required', 'error');
+    return;
+  }
+  const email = String(row?.email || '').trim();
+  if (!email) {
+    toast('Staff email missing — cannot send reset', 'error');
+    return;
+  }
+  if (!confirm(`Send a password reset email to ${email}?`)) return;
+
+  const prev = btn?.textContent;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+  }
+  try {
+    await sendStaffPasswordReset(email);
+    toast(`Password reset email sent to ${email}`);
+  } catch (err) {
+    console.error('[staff] reset password failed', err);
+    toast(err.message || 'Failed to send reset email', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = prev || 'Reset password';
+    }
   }
 }
