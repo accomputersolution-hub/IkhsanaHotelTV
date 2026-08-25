@@ -54,6 +54,7 @@ export function initSuperAdmin() {
   setupKioskSettingsModal();
   setupImpersonationSelect();
   document.getElementById('add-hotel-btn')?.addEventListener('click', () => {
+    resetCreateRoomBlocks();
     openModal('add-hotel-modal');
   });
   document.getElementById('super-admin-refresh')?.addEventListener('click', () => {
@@ -361,6 +362,33 @@ export function getHotelsCache() {
 
 function setupAddHotelModal() {
   setupModalClose('add-hotel-modal', 'add-hotel-close');
+  document.getElementById('hotel-add-room-block-btn')?.addEventListener('click', () => {
+    appendRoomBlockCard('hotel-room-blocks');
+    updateRoomBlocksSummary('hotel-room-blocks', 'hotel-room-blocks-summary');
+  });
+  document.getElementById('hotel-room-blocks')?.addEventListener('click', (e) => {
+    const btn = e.target instanceof Element ? e.target.closest('[data-remove-block]') : null;
+    if (!(btn instanceof HTMLElement)) return;
+    const card = btn.closest('.room-block-card');
+    card?.remove();
+    renumberRoomBlockCards('hotel-room-blocks');
+    updateRoomBlocksSummary('hotel-room-blocks', 'hotel-room-blocks-summary');
+  });
+  document.getElementById('hotel-room-blocks')?.addEventListener('change', (e) => {
+    const select = e.target;
+    if (!(select instanceof HTMLSelectElement) || !select.classList.contains('room-block-gen-type')) {
+      updateRoomBlocksSummary('hotel-room-blocks', 'hotel-room-blocks-summary');
+      return;
+    }
+    const card = select.closest('.room-block-card');
+    syncRoomBlockModeUi(card);
+    updateRoomBlocksSummary('hotel-room-blocks', 'hotel-room-blocks-summary');
+  });
+  document.getElementById('hotel-room-blocks')?.addEventListener('input', () => {
+    updateRoomBlocksSummary('hotel-room-blocks', 'hotel-room-blocks-summary');
+  });
+  resetCreateRoomBlocks();
+
   const form = document.getElementById('add-hotel-form');
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -383,15 +411,23 @@ function setupAddHotelModal() {
     const propertyType = normalizePropertyType(
       document.getElementById('hotel-property-type')?.value,
     );
-    const totalRoomsRaw = Number(document.getElementById('hotel-total-rooms')?.value);
-    const totalRooms = Number.isFinite(totalRoomsRaw) ? Math.floor(totalRoomsRaw) : 0;
+    const roomPlan = expandRoomBlocks(collectRoomBlocks('hotel-room-blocks'));
+    if (roomPlan.error) {
+      toast(roomPlan.error, 'error');
+      return;
+    }
+    if (!roomPlan.rooms.length) {
+      toast('Add at least one room block with rooms to create', 'error');
+      return;
+    }
+    if (roomPlan.rooms.length > 500) {
+      toast('Too many rooms in one create (max 500). Split across properties or add later.', 'error');
+      return;
+    }
+    const totalRooms = roomPlan.rooms.length;
 
     if (!name || !hotelId || !publicSlug || !adminEmail || password.length < 6) {
       toast('Fill all required fields (password min 6 chars)', 'error');
-      return;
-    }
-    if (!Number.isInteger(totalRooms) || totalRooms < 1 || totalRooms > 500) {
-      toast('Total Rooms must be a whole number between 1 and 500', 'error');
       return;
     }
     if (!/^[a-z0-9][a-z0-9_]{1,62}$/.test(hotelId)) {
@@ -494,11 +530,12 @@ function setupAddHotelModal() {
         { merge: true },
       );
 
-      // Dynamic rooms: 101 … (100 + totalRooms) — no hardcoded default list
-      await batchCreateSequentialRooms(hotelId, totalRooms, ROOM_START_NUMBER);
+      // Dynamic rooms from category blocks → flat Hotels/{id}/Rooms/{roomId}
+      await batchCreateRooms(hotelId, roomPlan.rooms);
 
       closeModal('add-hotel-modal');
       form.reset();
+      resetCreateRoomBlocks();
       toast(`Hotel “${name}” onboarded with ${totalRooms} rooms`);
     } catch (err) {
       console.error(err);
@@ -542,10 +579,36 @@ function setupEditHotelModal() {
     closeModal('edit-hotel-modal');
     editingHotelId = null;
     editingHotelRooms = [];
+    hideEditAddBlockPanel();
   });
 
   document.getElementById('edit-hotel-add-rooms-btn')?.addEventListener('click', () => {
-    void onAddMoreRoomsClick();
+    showEditAddBlockPanel();
+  });
+  document.getElementById('edit-hotel-add-block-cancel')?.addEventListener('click', () => {
+    hideEditAddBlockPanel();
+  });
+  document.getElementById('edit-hotel-add-block-submit')?.addEventListener('click', () => {
+    void onGenerateEditRoomBlock();
+  });
+  document.getElementById('edit-hotel-room-blocks')?.addEventListener('click', (e) => {
+    const btn = e.target instanceof Element ? e.target.closest('[data-remove-block]') : null;
+    if (!(btn instanceof HTMLElement)) return;
+    const card = btn.closest('.room-block-card');
+    const list = document.getElementById('edit-hotel-room-blocks');
+    if (list && list.querySelectorAll('.room-block-card').length <= 1) {
+      toast('Keep at least one block, or Cancel', 'error');
+      return;
+    }
+    card?.remove();
+    renumberRoomBlockCards('edit-hotel-room-blocks');
+  });
+  document.getElementById('edit-hotel-room-blocks')?.addEventListener('change', (e) => {
+    const select = e.target;
+    if (!(select instanceof HTMLSelectElement) || !select.classList.contains('room-block-gen-type')) {
+      return;
+    }
+    syncRoomBlockModeUi(select.closest('.room-block-card'));
   });
 
   document.getElementById('edit-hotel-rooms-list')?.addEventListener('click', (e) => {
@@ -728,19 +791,26 @@ function openEditHotelModal(hotel) {
   );
   syncActiveToggleLabel();
   editingHotelRooms = [];
+  hideEditAddBlockPanel();
   renderEditingHotelRooms();
   openModal('edit-hotel-modal');
   void loadEditingHotelRooms(hotel.id);
 }
 
+const UNCATEGORIZED_ROOM_CATEGORY = 'Uncategorized';
+
 /**
  * Vacant room shell written when Super Admin generates rooms.
+ * Flat path: Hotels/{hotelId}/Rooms/{roomId} + category string.
  * @param {string} roomId
+ * @param {string} [category]
  */
-function vacantRoomPayload(roomId) {
+function vacantRoomPayload(roomId, category = '') {
   const id = normalizeRoom(roomId);
+  const cat = String(category || '').trim() || UNCATEGORIZED_ROOM_CATEGORY;
   return {
     roomNumber: id,
+    category: cat,
     roomType: 'deluxe',
     status: 'vacant',
     guestName: 'Guest',
@@ -760,31 +830,222 @@ function isValidRoomDocId(raw) {
   return true;
 }
 
+function roomBlockCardHtml(index, defaults = {}) {
+  const category = escapeHtml(defaults.category || '');
+  const mode = defaults.mode === 'custom' ? 'custom' : 'numeric';
+  const start = defaults.start ?? (ROOM_START_NUMBER + index * 100);
+  const end = defaults.end ?? start + 9;
+  const names = escapeHtml(defaults.names || '');
+  return `
+    <div class="room-block-card" data-block-index="${index}">
+      <div class="room-block-card-head">
+        <span class="room-block-card-title">Block ${index + 1}</span>
+        <button type="button" class="quick-btn" data-remove-block aria-label="Remove block">&times;</button>
+      </div>
+      <div class="room-block-fields">
+        <div>
+          <label>Category Name</label>
+          <input type="text" class="room-block-category" required maxlength="80"
+            placeholder="e.g. First Floor / Suite Rooms" value="${category}" />
+        </div>
+        <div class="room-block-grid">
+          <div>
+            <label>Generation Type</label>
+            <select class="room-block-gen-type">
+              <option value="numeric"${mode === 'numeric' ? ' selected' : ''}>Numeric Range</option>
+              <option value="custom"${mode === 'custom' ? ' selected' : ''}>Custom Names</option>
+            </select>
+          </div>
+        </div>
+        <div class="room-block-numeric${mode === 'custom' ? ' hidden' : ''}">
+          <div class="room-block-grid">
+            <div>
+              <label>Start No.</label>
+              <input type="number" class="room-block-start" min="1" max="9999" step="1" value="${start}" />
+            </div>
+            <div>
+              <label>End No.</label>
+              <input type="number" class="room-block-end" min="1" max="9999" step="1" value="${end}" />
+            </div>
+          </div>
+        </div>
+        <div class="room-block-custom${mode === 'custom' ? '' : ' hidden'}">
+          <label>Custom Names (comma-separated)</label>
+          <textarea class="room-block-names" placeholder="Middle East, Mandela, Board Room A">${names}</textarea>
+        </div>
+      </div>
+    </div>`;
+}
+
+function syncRoomBlockModeUi(card) {
+  if (!card) return;
+  const select = card.querySelector('.room-block-gen-type');
+  const mode = select instanceof HTMLSelectElement ? select.value : 'numeric';
+  card.querySelector('.room-block-numeric')?.classList.toggle('hidden', mode !== 'numeric');
+  card.querySelector('.room-block-custom')?.classList.toggle('hidden', mode !== 'custom');
+}
+
+function appendRoomBlockCard(containerId, defaults = {}) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const index = container.querySelectorAll('.room-block-card').length;
+  container.insertAdjacentHTML('beforeend', roomBlockCardHtml(index, defaults));
+  const card = container.lastElementChild;
+  syncRoomBlockModeUi(card);
+}
+
+function renumberRoomBlockCards(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.querySelectorAll('.room-block-card').forEach((card, index) => {
+    card.dataset.blockIndex = String(index);
+    const title = card.querySelector('.room-block-card-title');
+    if (title) title.textContent = `Block ${index + 1}`;
+  });
+}
+
+function resetCreateRoomBlocks() {
+  const container = document.getElementById('hotel-room-blocks');
+  if (!container) return;
+  container.innerHTML = '';
+  appendRoomBlockCard('hotel-room-blocks', {
+    category: 'First Floor',
+    mode: 'numeric',
+    start: 101,
+    end: 110,
+  });
+  updateRoomBlocksSummary('hotel-room-blocks', 'hotel-room-blocks-summary');
+}
+
+function showEditAddBlockPanel() {
+  const panel = document.getElementById('edit-hotel-add-block-panel');
+  const container = document.getElementById('edit-hotel-room-blocks');
+  if (!panel || !container) return;
+  container.innerHTML = '';
+  const nextStart = nextSequentialRoomNumber(editingHotelRooms.map((r) => String(r.id)));
+  appendRoomBlockCard('edit-hotel-room-blocks', {
+    category: '',
+    mode: 'numeric',
+    start: nextStart,
+    end: nextStart + 4,
+  });
+  panel.classList.remove('hidden');
+}
+
+function hideEditAddBlockPanel() {
+  document.getElementById('edit-hotel-add-block-panel')?.classList.add('hidden');
+  const container = document.getElementById('edit-hotel-room-blocks');
+  if (container) container.innerHTML = '';
+}
+
 /**
- * Create `count` rooms starting at `startNumber` (inclusive), as String ids.
- * @param {string} hotelId
- * @param {number} count
- * @param {number} startNumber
+ * @returns {{ category: string, mode: 'numeric'|'custom', start?: number, end?: number, names?: string[] }[]}
  */
-async function batchCreateSequentialRooms(hotelId, count, startNumber) {
-  const ids = [];
-  for (let i = 0; i < count; i += 1) {
-    ids.push(String(startNumber + i));
+function collectRoomBlocks(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return [];
+  return [...container.querySelectorAll('.room-block-card')].map((card) => {
+    const category = String(card.querySelector('.room-block-category')?.value || '').trim();
+    const mode =
+      card.querySelector('.room-block-gen-type')?.value === 'custom' ? 'custom' : 'numeric';
+    const start = Number.parseInt(String(card.querySelector('.room-block-start')?.value || ''), 10);
+    const end = Number.parseInt(String(card.querySelector('.room-block-end')?.value || ''), 10);
+    const namesRaw = String(card.querySelector('.room-block-names')?.value || '');
+    const names = namesRaw
+      .split(',')
+      .map((n) => normalizeRoom(n))
+      .filter(Boolean);
+    return { category, mode, start, end, names };
+  });
+}
+
+/**
+ * Expand blocks → flat room list with categories. Detects duplicate ids.
+ * @returns {{ rooms: Array<{ roomId: string, category: string }>, error?: string }}
+ */
+function expandRoomBlocks(blocks) {
+  /** @type {Array<{ roomId: string, category: string }>} */
+  const rooms = [];
+  const seen = new Set();
+
+  for (let i = 0; i < blocks.length; i += 1) {
+    const block = blocks[i];
+    const category = String(block.category || '').trim();
+    if (!category) {
+      return { rooms: [], error: `Block ${i + 1}: category name is required` };
+    }
+
+    /** @type {string[]} */
+    let ids = [];
+    if (block.mode === 'custom') {
+      ids = block.names || [];
+      if (!ids.length) {
+        return { rooms: [], error: `Block ${i + 1} (${category}): add at least one custom name` };
+      }
+    } else {
+      const start = block.start;
+      const end = block.end;
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) {
+        return {
+          rooms: [],
+          error: `Block ${i + 1} (${category}): enter a valid Start–End range (e.g. 101–115)`,
+        };
+      }
+      if (end - start + 1 > 300) {
+        return { rooms: [], error: `Block ${i + 1} (${category}): range too large (max 300)` };
+      }
+      for (let n = start; n <= end; n += 1) ids.push(String(n));
+    }
+
+    for (const roomId of ids) {
+      if (!isValidRoomDocId(roomId)) {
+        return { rooms: [], error: `Invalid room id “${roomId}” in ${category}` };
+      }
+      if (seen.has(roomId)) {
+        return { rooms: [], error: `Duplicate room id “${roomId}” across blocks` };
+      }
+      seen.add(roomId);
+      rooms.push({ roomId, category });
+    }
   }
 
-  for (let i = 0; i < ids.length; i += BATCH_LIMIT) {
-    const chunk = ids.slice(i, i + BATCH_LIMIT);
+  return { rooms };
+}
+
+function updateRoomBlocksSummary(containerId, summaryId) {
+  const el = document.getElementById(summaryId);
+  if (!el) return;
+  const plan = expandRoomBlocks(collectRoomBlocks(containerId));
+  if (plan.error) {
+    el.textContent = plan.error;
+    return;
+  }
+  const byCat = new Map();
+  for (const r of plan.rooms) {
+    byCat.set(r.category, (byCat.get(r.category) || 0) + 1);
+  }
+  const parts = [...byCat.entries()].map(([c, n]) => `${c}: ${n}`);
+  el.textContent = plan.rooms.length
+    ? `Will create ${plan.rooms.length} room(s) — ${parts.join(' · ')}`
+    : 'No rooms configured yet.';
+}
+
+/**
+ * @param {string} hotelId
+ * @param {Array<{ roomId: string, category: string }>} rooms
+ */
+async function batchCreateRooms(hotelId, rooms) {
+  for (let i = 0; i < rooms.length; i += BATCH_LIMIT) {
+    const chunk = rooms.slice(i, i + BATCH_LIMIT);
     const batch = writeBatch(db);
-    for (const roomId of chunk) {
+    for (const { roomId, category } of chunk) {
       const ref = doc(db, 'Hotels', hotelId, 'Rooms', roomId);
-      batch.set(ref, vacantRoomPayload(roomId), { merge: true });
+      batch.set(ref, vacantRoomPayload(roomId, category), { merge: true });
     }
     await batch.commit();
   }
-  console.log(
-    `[super-admin] Created ${ids.length} rooms for Hotels/${hotelId} (${ids[0]}…${ids[ids.length - 1]})`,
-  );
-  return ids;
+  console.log(`[super-admin] Created ${rooms.length} categorized rooms for Hotels/${hotelId}`);
+  return rooms;
 }
 
 function nextSequentialRoomNumber(existingIds) {
@@ -808,6 +1069,11 @@ async function syncHotelTotalRooms(hotelId, total) {
   }
 }
 
+function roomCategoryOf(room) {
+  const raw = String(room?.category || room?.floor || '').trim();
+  return raw || UNCATEGORIZED_ROOM_CATEGORY;
+}
+
 async function loadEditingHotelRooms(hotelId) {
   const list = document.getElementById('edit-hotel-rooms-list');
   if (list) {
@@ -817,7 +1083,13 @@ async function loadEditingHotelRooms(hotelId) {
     const snap = await getDocs(collection(db, 'Hotels', hotelId, 'Rooms'));
     editingHotelRooms = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
-      .sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
+      .sort((a, b) => {
+        const catCmp = roomCategoryOf(a).localeCompare(roomCategoryOf(b), undefined, {
+          sensitivity: 'base',
+        });
+        if (catCmp !== 0) return catCmp;
+        return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+      });
     renderEditingHotelRooms();
   } catch (err) {
     console.error('[super-admin] load rooms failed', err);
@@ -838,47 +1110,82 @@ function renderEditingHotelRooms() {
 
   if (!editingHotelRooms.length) {
     list.innerHTML =
-      '<p class="empty-state text-xs">No rooms yet. Use “Add More Rooms” to create sequential ids (101, 102, …).</p>';
+      '<p class="empty-state text-xs">No rooms yet. Use “Add Room Block” to create categorized rooms.</p>';
     return;
   }
 
-  list.innerHTML = editingHotelRooms
-    .map((room) => {
-      const id = String(room.id);
-      const status = String(room.status || (room.occupied ? 'occupied' : 'vacant'));
-      const guest = String(room.guestName || '').trim();
-      const guestBit =
-        guest && guest !== 'Guest' ? ` · ${escapeHtml(guest)}` : '';
+  /** @type {Map<string, typeof editingHotelRooms>} */
+  const groups = new Map();
+  for (const room of editingHotelRooms) {
+    const cat = roomCategoryOf(room);
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat).push(room);
+  }
+
+  list.innerHTML = [...groups.entries()]
+    .map(([category, rooms], groupIndex) => {
+      const rows = rooms
+        .map((room) => {
+          const id = String(room.id);
+          const status = String(room.status || (room.occupied ? 'occupied' : 'vacant'));
+          const guest = String(room.guestName || '').trim();
+          const guestBit =
+            guest && guest !== 'Guest' ? ` · ${escapeHtml(guest)}` : '';
+          return `
+            <div class="edit-hotel-room-row">
+              <div class="edit-hotel-room-meta">
+                <span class="edit-hotel-room-id">${escapeHtml(formatRoomLabel(id))}</span>
+                <span class="edit-hotel-room-status">${escapeHtml(status)}${guestBit}</span>
+              </div>
+              <div class="edit-hotel-room-btns">
+                <button type="button" class="quick-btn" data-room-action="rename" data-room-id="${escapeHtml(id)}" ${editingRoomsBusy ? 'disabled' : ''}>Edit</button>
+                <button type="button" class="quick-btn quick-btn-danger" data-room-action="delete" data-room-id="${escapeHtml(id)}" ${editingRoomsBusy ? 'disabled' : ''}>Delete</button>
+              </div>
+            </div>`;
+        })
+        .join('');
       return `
-        <div class="edit-hotel-room-row">
-          <div class="edit-hotel-room-meta">
-            <span class="edit-hotel-room-id">${escapeHtml(formatRoomLabel(id))}</span>
-            <span class="edit-hotel-room-status">${escapeHtml(status)}${guestBit}</span>
-          </div>
-          <div class="edit-hotel-room-btns">
-            <button type="button" class="quick-btn" data-room-action="rename" data-room-id="${escapeHtml(id)}" ${editingRoomsBusy ? 'disabled' : ''}>Edit</button>
-            <button type="button" class="quick-btn quick-btn-danger" data-room-action="delete" data-room-id="${escapeHtml(id)}" ${editingRoomsBusy ? 'disabled' : ''}>Delete</button>
-          </div>
-        </div>`;
+        <details class="room-category-group" ${groupIndex === 0 ? 'open' : ''}>
+          <summary class="room-category-summary">
+            <span class="room-category-summary-title">${escapeHtml(category)}</span>
+            <span class="room-category-summary-meta">${rooms.length} room${rooms.length === 1 ? '' : 's'}</span>
+          </summary>
+          <div class="room-category-body">${rows}</div>
+        </details>`;
     })
     .join('');
 }
 
-async function onAddMoreRoomsClick() {
+async function onGenerateEditRoomBlock() {
   if (!editingHotelId || editingRoomsBusy) return;
-  const raw = prompt('How many new rooms to add?', '5');
-  if (raw == null) return;
-  const count = Number.parseInt(String(raw).trim(), 10);
-  if (!Number.isInteger(count) || count < 1 || count > 200) {
-    toast('Enter a whole number between 1 and 200', 'error');
+  const plan = expandRoomBlocks(collectRoomBlocks('edit-hotel-room-blocks'));
+  if (plan.error) {
+    toast(plan.error, 'error');
+    return;
+  }
+  if (!plan.rooms.length) {
+    toast('Configure at least one room in the block', 'error');
     return;
   }
 
-  const start = nextSequentialRoomNumber(editingHotelRooms.map((r) => String(r.id)));
-  const end = start + count - 1;
+  const existing = new Set(editingHotelRooms.map((r) => String(r.id)));
+  const clash = plan.rooms.find((r) => existing.has(r.roomId));
+  if (clash) {
+    toast(`Room “${clash.roomId}” already exists`, 'error');
+    return;
+  }
+
+  const summary = plan.rooms
+    .reduce((acc, r) => {
+      acc[r.category] = (acc[r.category] || 0) + 1;
+      return acc;
+    }, {});
+  const summaryText = Object.entries(summary)
+    .map(([c, n]) => `${c}: ${n}`)
+    .join(', ');
   if (
     !confirm(
-      `Add ${count} room(s) as ${start}…${end} under Hotels/${editingHotelId}/Rooms?`,
+      `Create ${plan.rooms.length} room(s) under Hotels/${editingHotelId}/Rooms?\n\n${summaryText}`,
     )
   ) {
     return;
@@ -887,10 +1194,11 @@ async function onAddMoreRoomsClick() {
   editingRoomsBusy = true;
   renderEditingHotelRooms();
   try {
-    await batchCreateSequentialRooms(editingHotelId, count, start);
+    await batchCreateRooms(editingHotelId, plan.rooms);
+    hideEditAddBlockPanel();
     await loadEditingHotelRooms(editingHotelId);
     await syncHotelTotalRooms(editingHotelId, editingHotelRooms.length);
-    toast(`Added rooms ${start}–${end}`);
+    toast(`Added ${plan.rooms.length} room(s)`);
   } catch (err) {
     console.error(err);
     toast(err.message || 'Failed to add rooms', 'error');
@@ -902,24 +1210,35 @@ async function onAddMoreRoomsClick() {
 
 async function onRenameRoomClick(oldId) {
   if (!editingHotelId || editingRoomsBusy) return;
-  const raw = prompt(
-    'New room id / name (digits like 101, or a name like Middle East):',
+  const room = editingHotelRooms.find((r) => String(r.id) === oldId);
+  const currentCategory = roomCategoryOf(room || {});
+
+  const rawId = prompt(
+    'Room id / name (digits like 101, or a name like Middle East):',
     oldId,
   );
-  if (raw == null) return;
-  const newId = normalizeRoom(raw);
+  if (rawId == null) return;
+  const newId = normalizeRoom(rawId);
   if (!isValidRoomDocId(newId)) {
     toast('Invalid room id (1–64 chars, no “/”)', 'error');
     return;
   }
-  if (newId === oldId) return;
-  if (editingHotelRooms.some((r) => String(r.id) === newId)) {
+  if (newId !== oldId && editingHotelRooms.some((r) => String(r.id) === newId)) {
     toast(`Room “${newId}” already exists`, 'error');
     return;
   }
+
+  const rawCategory = prompt('Category / floor name:', currentCategory);
+  if (rawCategory == null) return;
+  const newCategory = String(rawCategory).trim() || UNCATEGORIZED_ROOM_CATEGORY;
+
+  if (newId === oldId && newCategory === currentCategory) return;
+
   if (
     !confirm(
-      `Rename “${oldId}” → “${newId}”?\n\nThis copies the room document to a new id and deletes the old one. Pair TVs to the new id if needed.`,
+      newId === oldId
+        ? `Update category for “${oldId}” → “${newCategory}”?`
+        : `Rename “${oldId}” → “${newId}” (category: ${newCategory})?\n\nRenaming copies the doc to a new id and deletes the old one.`,
     )
   ) {
     return;
@@ -929,7 +1248,6 @@ async function onRenameRoomClick(oldId) {
   renderEditingHotelRooms();
   try {
     const oldRef = doc(db, 'Hotels', editingHotelId, 'Rooms', oldId);
-    const newRef = doc(db, 'Hotels', editingHotelId, 'Rooms', newId);
     const snap = await getDoc(oldRef);
     if (!snap.exists()) {
       toast('Room no longer exists', 'error');
@@ -938,22 +1256,38 @@ async function onRenameRoomClick(oldId) {
     }
     const data = snap.data() || {};
     const { updatedAt: _drop, ...rest } = data;
-    await setDoc(
-      newRef,
-      {
-        ...rest,
-        roomNumber: newId,
+
+    if (newId === oldId) {
+      await updateDoc(oldRef, {
+        category: newCategory,
+        roomNumber: oldId,
         updatedAt: serverTimestamp(),
-      },
-      { merge: false },
-    );
-    await deleteDoc(oldRef);
+      });
+    } else {
+      const newRef = doc(db, 'Hotels', editingHotelId, 'Rooms', newId);
+      await setDoc(
+        newRef,
+        {
+          ...rest,
+          roomNumber: newId,
+          category: newCategory,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: false },
+      );
+      await deleteDoc(oldRef);
+    }
+
     await loadEditingHotelRooms(editingHotelId);
     await syncHotelTotalRooms(editingHotelId, editingHotelRooms.length);
-    toast(`Renamed to ${formatRoomLabel(newId)}`);
+    toast(
+      newId === oldId
+        ? `Updated category → ${newCategory}`
+        : `Renamed to ${formatRoomLabel(newId)}`,
+    );
   } catch (err) {
     console.error(err);
-    toast(err.message || 'Failed to rename room', 'error');
+    toast(err.message || 'Failed to update room', 'error');
   } finally {
     editingRoomsBusy = false;
     renderEditingHotelRooms();
