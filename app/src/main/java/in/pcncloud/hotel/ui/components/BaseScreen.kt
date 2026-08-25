@@ -3,6 +3,8 @@ package `in`.pcncloud.hotel.ui.components
 import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -72,10 +74,13 @@ import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.home.BrandAssets
 import `in`.pcncloud.hotel.ui.home.HomeViewModel
 import `in`.pcncloud.hotel.ui.theme.CorporateBlue
+import `in`.pcncloud.hotel.ui.theme.DayBackground
 import `in`.pcncloud.hotel.ui.theme.GoldLight
 import `in`.pcncloud.hotel.ui.theme.GoldPrimary
+import `in`.pcncloud.hotel.ui.theme.LocalIsNightMode
 import `in`.pcncloud.hotel.ui.theme.NavyDeep
 import `in`.pcncloud.hotel.ui.theme.NavyMain
+import `in`.pcncloud.hotel.ui.theme.NightBackground
 import `in`.pcncloud.hotel.ui.theme.SansBody
 import `in`.pcncloud.hotel.ui.theme.SerifDisplay
 import `in`.pcncloud.hotel.ui.theme.TextMuted
@@ -171,19 +176,32 @@ fun BaseScreen(
 }
 
 /**
- * Full-bleed branding wallpaper with a semi-transparent dark overlay so
- * gold/white UI stays readable. Falls back to the navy luxury gradient.
+ * Full-bleed branding wallpaper. Night mode adds a stronger black dim overlay
+ * (smooth crossfade) so bright wallpapers do not glare after 18:00.
  */
 @Composable
 fun HotelWallpaperBackground(
     wallpaperUrl: String,
     modifier: Modifier = Modifier,
 ) {
+    val isNightMode = LocalIsNightMode.current
+    val nightDimAlpha by animateFloatAsState(
+        targetValue = if (isNightMode) 0.55f else 0.0f,
+        animationSpec = tween(durationMillis = 900),
+        label = "nightWallpaperDim",
+    )
+    val baseScrimAlpha by animateFloatAsState(
+        targetValue = if (isNightMode) 0.40f else 0.28f,
+        animationSpec = tween(durationMillis = 900),
+        label = "baseWallpaperScrim",
+    )
+    val scaffoldBg = if (isNightMode) NightBackground else DayBackground
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .clip(RectangleShape)
-            .background(NavyDeep),
+            .background(scaffoldBg),
     ) {
         if (wallpaperUrl.isNotBlank() && !isLegacyUnsafeImageUrl(wallpaperUrl)) {
             AsyncImage(
@@ -202,7 +220,7 @@ fun HotelWallpaperBackground(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.34f)),
+                    .background(Color.Black.copy(alpha = baseScrimAlpha)),
             )
             Box(
                 modifier = Modifier
@@ -217,13 +235,19 @@ fun HotelWallpaperBackground(
                         ),
                     ),
             )
+            // Automatic night dim — crossfades when local time crosses 18:00 / 06:00.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = nightDimAlpha)),
+            )
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
                         Brush.radialGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = 0.05f),
+                                Color.White.copy(alpha = if (isNightMode) 0.03f else 0.05f),
                                 Color.Transparent,
                             ),
                         ),
@@ -236,7 +260,7 @@ fun HotelWallpaperBackground(
                     .background(
                         Brush.horizontalGradient(
                             colorStops = arrayOf(
-                                0.0f to NavyDeep,
+                                0.0f to scaffoldBg,
                                 0.55f to NavyMain,
                                 0.85f to Color(0xFF152238),
                                 1.0f to Color(0xFF1A2D45),
@@ -259,6 +283,11 @@ fun HotelWallpaperBackground(
                         ),
                 )
             }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = nightDimAlpha * 0.5f)),
+            )
         }
     }
 }

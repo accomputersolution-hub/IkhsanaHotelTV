@@ -3,6 +3,7 @@ package `in`.pcncloud.hotel.ui.components
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -51,6 +52,7 @@ import `in`.pcncloud.hotel.data.model.HotelBranding
 import `in`.pcncloud.hotel.ui.home.BrandAssets
 import `in`.pcncloud.hotel.ui.theme.GoldLight
 import `in`.pcncloud.hotel.ui.theme.GoldPrimary
+import `in`.pcncloud.hotel.ui.theme.LocalIsNightMode
 import `in`.pcncloud.hotel.ui.theme.NavyDeep
 import `in`.pcncloud.hotel.ui.theme.NavyMain
 import `in`.pcncloud.hotel.ui.theme.SansBody
@@ -289,6 +291,18 @@ private fun ScreensaverBackground(
                         ),
                     ),
                 ),
+        )
+
+        val isNightMode = LocalIsNightMode.current
+        val nightDimAlpha by animateFloatAsState(
+            targetValue = if (isNightMode) 0.50f else 0.0f,
+            animationSpec = tween(durationMillis = 900),
+            label = "screensaverNightDim",
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = nightDimAlpha)),
         )
 
         Box(

@@ -85,12 +85,7 @@ fun entertainmentCatalog(): List<EntertainmentApp> = listOf(
         packageName = "com.google.android.youtube.tv",
         fallbackIconRes = R.drawable.ic_youtube,
     ),
-    EntertainmentApp(
-        id = "netflix",
-        labelRes = R.string.ott_netflix,
-        packageName = "com.netflix.ninja",
-        fallbackIconRes = R.drawable.ic_netflix,
-    ),
+    // Netflix omitted — many Android 9 TV boxes lack Netflix / com.netflix.ninja.
     EntertainmentApp(
         id = "prime",
         labelRes = R.string.ott_prime,

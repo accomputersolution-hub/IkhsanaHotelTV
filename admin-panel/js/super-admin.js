@@ -419,7 +419,6 @@ function setupAddHotelModal() {
         isKioskModeEnabled: true,
         allowedPackages: [
           'com.google.android.youtube.tv',
-          'com.netflix.ninja',
           'com.amazon.amazonvideo.livingroom',
         ],
         branding: {

@@ -44,8 +44,11 @@ import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.ScreensaverOverlay
 import `in`.pcncloud.hotel.ui.components.ServiceSuspendedScreen
 import `in`.pcncloud.hotel.ui.navigation.HotelNavGraph
+import `in`.pcncloud.hotel.ui.theme.DayBackground
+import `in`.pcncloud.hotel.ui.theme.NightBackground
 import `in`.pcncloud.hotel.ui.theme.PcnCloudTvTheme
-import `in`.pcncloud.hotel.ui.theme.NavyDeep
+import `in`.pcncloud.hotel.ui.theme.ProvideDayNightMode
+import `in`.pcncloud.hotel.ui.theme.rememberIsNightMode
 import com.google.firebase.FirebaseApp
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
@@ -601,30 +604,35 @@ class MainActivity : ComponentActivity() {
                 Log.i(TAG, "Inactivity timeout — showing screen saver")
             }
 
-            PcnCloudTvTheme {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(NavyDeep),
-                ) {
-                    if (!hotelActive) {
-                        ServiceSuspendedScreen(hotelName = branding.hotelName)
-                    } else {
-                        HotelNavGraph(
-                            viewModelFactory = viewModelFactory,
-                            repository = repository,
-                            navigateHomeSignal = navigateHomeSignal,
-                        )
-                        if (screensaverVisible) {
-                            ScreensaverOverlay(branding = branding)
-                        }
-                        // Covers Entertainment only while applying pending Root Home on return.
-                        if (ottTransitionCover) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(NavyDeep),
+            val isNightMode = rememberIsNightMode()
+            ProvideDayNightMode(isNightMode) {
+                PcnCloudTvTheme(isInDarkTheme = isNightMode) {
+                    // Scaffold follows day/night so the Compose window stays glare-free after dark.
+                    val scaffoldBg = if (isNightMode) NightBackground else DayBackground
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(scaffoldBg),
+                    ) {
+                        if (!hotelActive) {
+                            ServiceSuspendedScreen(hotelName = branding.hotelName)
+                        } else {
+                            HotelNavGraph(
+                                viewModelFactory = viewModelFactory,
+                                repository = repository,
+                                navigateHomeSignal = navigateHomeSignal,
                             )
+                            if (screensaverVisible) {
+                                ScreensaverOverlay(branding = branding)
+                            }
+                            // Covers Entertainment only while applying pending Root Home on return.
+                            if (ottTransitionCover) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(scaffoldBg),
+                                )
+                            }
                         }
                     }
                 }
