@@ -19,6 +19,7 @@ import { TenantManager, clearHotelContext, getHotelId } from './tenant-context.j
 import { escapeHtml, toast, openModal, closeModal, setupModalClose } from './utils.js';
 import { navigateTo } from './router.js';
 import { normalizeHotelId } from './firebase-config.js';
+import { normalizeRoom, formatRoomLabel, isNumericRoomId } from './paths.js';
 
 const HOTEL_SUBCOLLECTIONS = [
   'Rooms',
@@ -31,6 +32,8 @@ const HOTEL_SUBCOLLECTIONS = [
   'Daily_Agenda',
 ];
 const BATCH_LIMIT = 400;
+/** First sequential room id when generating rooms for a new property. */
+const ROOM_START_NUMBER = 101;
 
 let hotelsUnsub = null;
 let hotelsCache = [];
@@ -40,6 +43,9 @@ let pendingDeleteHotel = null;
 let editingHotelId = null;
 /** @type {string | null} */
 let kioskHotelId = null;
+/** @type {Array<{ id: string, [key: string]: any }>} */
+let editingHotelRooms = [];
+let editingRoomsBusy = false;
 
 export function initSuperAdmin() {
   setupAddHotelModal();
@@ -377,9 +383,15 @@ function setupAddHotelModal() {
     const propertyType = normalizePropertyType(
       document.getElementById('hotel-property-type')?.value,
     );
+    const totalRoomsRaw = Number(document.getElementById('hotel-total-rooms')?.value);
+    const totalRooms = Number.isFinite(totalRoomsRaw) ? Math.floor(totalRoomsRaw) : 0;
 
     if (!name || !hotelId || !publicSlug || !adminEmail || password.length < 6) {
       toast('Fill all required fields (password min 6 chars)', 'error');
+      return;
+    }
+    if (!Number.isInteger(totalRooms) || totalRooms < 1 || totalRooms > 500) {
+      toast('Total Rooms must be a whole number between 1 and 500', 'error');
       return;
     }
     if (!/^[a-z0-9][a-z0-9_]{1,62}$/.test(hotelId)) {
@@ -432,6 +444,7 @@ function setupAddHotelModal() {
         property_type: propertyType,
         status: 'active',
         activeTvScreens: 0,
+        totalRooms,
         isKioskModeEnabled: true,
         allowOverlayPopups: true,
         allow_overlay_popups: true,
@@ -481,9 +494,12 @@ function setupAddHotelModal() {
         { merge: true },
       );
 
+      // Dynamic rooms: 101 … (100 + totalRooms) — no hardcoded default list
+      await batchCreateSequentialRooms(hotelId, totalRooms, ROOM_START_NUMBER);
+
       closeModal('add-hotel-modal');
       form.reset();
-      toast(`Hotel “${name}” onboarded`);
+      toast(`Hotel “${name}” onboarded with ${totalRooms} rooms`);
     } catch (err) {
       console.error(err);
       toast(err.message || 'Failed to create hotel', 'error');
@@ -525,6 +541,21 @@ function setupEditHotelModal() {
   document.getElementById('edit-hotel-cancel')?.addEventListener('click', () => {
     closeModal('edit-hotel-modal');
     editingHotelId = null;
+    editingHotelRooms = [];
+  });
+
+  document.getElementById('edit-hotel-add-rooms-btn')?.addEventListener('click', () => {
+    void onAddMoreRoomsClick();
+  });
+
+  document.getElementById('edit-hotel-rooms-list')?.addEventListener('click', (e) => {
+    const btn = e.target instanceof Element ? e.target.closest('[data-room-action]') : null;
+    if (!(btn instanceof HTMLElement)) return;
+    const action = btn.dataset.roomAction;
+    const roomId = btn.dataset.roomId;
+    if (!action || !roomId || !editingHotelId) return;
+    if (action === 'rename') void onRenameRoomClick(roomId);
+    if (action === 'delete') void onDeleteRoomClick(roomId);
   });
 
   const logoInput = document.getElementById('edit-hotel-logo-url');
@@ -611,6 +642,7 @@ function setupEditHotelModal() {
         welcome_message: welcomeMessage,
         property_type: propertyType,
         status: isActive ? 'active' : 'inactive',
+        totalRooms: editingHotelRooms.length,
         branding: {
           logoUrl,
           logo_url: logoUrl,
@@ -632,6 +664,7 @@ function setupEditHotelModal() {
       });
       closeModal('edit-hotel-modal');
       editingHotelId = null;
+      editingHotelRooms = [];
       toast(`Updated “${name}”`);
       // Table + stats refresh via Hotels onSnapshot
     } catch (err) {
@@ -694,7 +727,269 @@ function openEditHotelModal(hotel) {
     'edit-hotel-wallpaper-dark-placeholder',
   );
   syncActiveToggleLabel();
+  editingHotelRooms = [];
+  renderEditingHotelRooms();
   openModal('edit-hotel-modal');
+  void loadEditingHotelRooms(hotel.id);
+}
+
+/**
+ * Vacant room shell written when Super Admin generates rooms.
+ * @param {string} roomId
+ */
+function vacantRoomPayload(roomId) {
+  const id = normalizeRoom(roomId);
+  return {
+    roomNumber: id,
+    roomType: 'deluxe',
+    status: 'vacant',
+    guestName: 'Guest',
+    guestPhone: '',
+    checkOutDate: '',
+    hotelName: '',
+    occupied: false,
+    cleaned: true,
+    updatedAt: serverTimestamp(),
+  };
+}
+
+function isValidRoomDocId(raw) {
+  const id = normalizeRoom(raw);
+  if (!id || id.length > 64) return false;
+  if (id.includes('/') || id.includes('..')) return false;
+  return true;
+}
+
+/**
+ * Create `count` rooms starting at `startNumber` (inclusive), as String ids.
+ * @param {string} hotelId
+ * @param {number} count
+ * @param {number} startNumber
+ */
+async function batchCreateSequentialRooms(hotelId, count, startNumber) {
+  const ids = [];
+  for (let i = 0; i < count; i += 1) {
+    ids.push(String(startNumber + i));
+  }
+
+  for (let i = 0; i < ids.length; i += BATCH_LIMIT) {
+    const chunk = ids.slice(i, i + BATCH_LIMIT);
+    const batch = writeBatch(db);
+    for (const roomId of chunk) {
+      const ref = doc(db, 'Hotels', hotelId, 'Rooms', roomId);
+      batch.set(ref, vacantRoomPayload(roomId), { merge: true });
+    }
+    await batch.commit();
+  }
+  console.log(
+    `[super-admin] Created ${ids.length} rooms for Hotels/${hotelId} (${ids[0]}…${ids[ids.length - 1]})`,
+  );
+  return ids;
+}
+
+function nextSequentialRoomNumber(existingIds) {
+  let max = ROOM_START_NUMBER - 1;
+  for (const id of existingIds) {
+    if (isNumericRoomId(id)) {
+      max = Math.max(max, Number.parseInt(String(id), 10));
+    }
+  }
+  return max + 1;
+}
+
+async function syncHotelTotalRooms(hotelId, total) {
+  try {
+    await updateDoc(doc(db, 'Hotels', hotelId), {
+      totalRooms: total,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.warn('[super-admin] totalRooms sync skipped', err);
+  }
+}
+
+async function loadEditingHotelRooms(hotelId) {
+  const list = document.getElementById('edit-hotel-rooms-list');
+  if (list) {
+    list.innerHTML = '<p class="empty-state text-xs">Loading rooms…</p>';
+  }
+  try {
+    const snap = await getDocs(collection(db, 'Hotels', hotelId, 'Rooms'));
+    editingHotelRooms = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
+    renderEditingHotelRooms();
+  } catch (err) {
+    console.error('[super-admin] load rooms failed', err);
+    toast('Failed to load rooms', 'error');
+    if (list) {
+      list.innerHTML = '<p class="empty-state text-xs">Failed to load rooms.</p>';
+    }
+  }
+}
+
+function renderEditingHotelRooms() {
+  const list = document.getElementById('edit-hotel-rooms-list');
+  const countEl = document.getElementById('edit-hotel-rooms-count');
+  const addBtn = document.getElementById('edit-hotel-add-rooms-btn');
+  if (countEl) countEl.textContent = String(editingHotelRooms.length);
+  if (addBtn) addBtn.disabled = editingRoomsBusy || !editingHotelId;
+  if (!list) return;
+
+  if (!editingHotelRooms.length) {
+    list.innerHTML =
+      '<p class="empty-state text-xs">No rooms yet. Use “Add More Rooms” to create sequential ids (101, 102, …).</p>';
+    return;
+  }
+
+  list.innerHTML = editingHotelRooms
+    .map((room) => {
+      const id = String(room.id);
+      const status = String(room.status || (room.occupied ? 'occupied' : 'vacant'));
+      const guest = String(room.guestName || '').trim();
+      const guestBit =
+        guest && guest !== 'Guest' ? ` · ${escapeHtml(guest)}` : '';
+      return `
+        <div class="edit-hotel-room-row">
+          <div class="edit-hotel-room-meta">
+            <span class="edit-hotel-room-id">${escapeHtml(formatRoomLabel(id))}</span>
+            <span class="edit-hotel-room-status">${escapeHtml(status)}${guestBit}</span>
+          </div>
+          <div class="edit-hotel-room-btns">
+            <button type="button" class="quick-btn" data-room-action="rename" data-room-id="${escapeHtml(id)}" ${editingRoomsBusy ? 'disabled' : ''}>Edit</button>
+            <button type="button" class="quick-btn quick-btn-danger" data-room-action="delete" data-room-id="${escapeHtml(id)}" ${editingRoomsBusy ? 'disabled' : ''}>Delete</button>
+          </div>
+        </div>`;
+    })
+    .join('');
+}
+
+async function onAddMoreRoomsClick() {
+  if (!editingHotelId || editingRoomsBusy) return;
+  const raw = prompt('How many new rooms to add?', '5');
+  if (raw == null) return;
+  const count = Number.parseInt(String(raw).trim(), 10);
+  if (!Number.isInteger(count) || count < 1 || count > 200) {
+    toast('Enter a whole number between 1 and 200', 'error');
+    return;
+  }
+
+  const start = nextSequentialRoomNumber(editingHotelRooms.map((r) => String(r.id)));
+  const end = start + count - 1;
+  if (
+    !confirm(
+      `Add ${count} room(s) as ${start}…${end} under Hotels/${editingHotelId}/Rooms?`,
+    )
+  ) {
+    return;
+  }
+
+  editingRoomsBusy = true;
+  renderEditingHotelRooms();
+  try {
+    await batchCreateSequentialRooms(editingHotelId, count, start);
+    await loadEditingHotelRooms(editingHotelId);
+    await syncHotelTotalRooms(editingHotelId, editingHotelRooms.length);
+    toast(`Added rooms ${start}–${end}`);
+  } catch (err) {
+    console.error(err);
+    toast(err.message || 'Failed to add rooms', 'error');
+  } finally {
+    editingRoomsBusy = false;
+    renderEditingHotelRooms();
+  }
+}
+
+async function onRenameRoomClick(oldId) {
+  if (!editingHotelId || editingRoomsBusy) return;
+  const raw = prompt(
+    'New room id / name (digits like 101, or a name like Middle East):',
+    oldId,
+  );
+  if (raw == null) return;
+  const newId = normalizeRoom(raw);
+  if (!isValidRoomDocId(newId)) {
+    toast('Invalid room id (1–64 chars, no “/”)', 'error');
+    return;
+  }
+  if (newId === oldId) return;
+  if (editingHotelRooms.some((r) => String(r.id) === newId)) {
+    toast(`Room “${newId}” already exists`, 'error');
+    return;
+  }
+  if (
+    !confirm(
+      `Rename “${oldId}” → “${newId}”?\n\nThis copies the room document to a new id and deletes the old one. Pair TVs to the new id if needed.`,
+    )
+  ) {
+    return;
+  }
+
+  editingRoomsBusy = true;
+  renderEditingHotelRooms();
+  try {
+    const oldRef = doc(db, 'Hotels', editingHotelId, 'Rooms', oldId);
+    const newRef = doc(db, 'Hotels', editingHotelId, 'Rooms', newId);
+    const snap = await getDoc(oldRef);
+    if (!snap.exists()) {
+      toast('Room no longer exists', 'error');
+      await loadEditingHotelRooms(editingHotelId);
+      return;
+    }
+    const data = snap.data() || {};
+    const { updatedAt: _drop, ...rest } = data;
+    await setDoc(
+      newRef,
+      {
+        ...rest,
+        roomNumber: newId,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: false },
+    );
+    await deleteDoc(oldRef);
+    await loadEditingHotelRooms(editingHotelId);
+    await syncHotelTotalRooms(editingHotelId, editingHotelRooms.length);
+    toast(`Renamed to ${formatRoomLabel(newId)}`);
+  } catch (err) {
+    console.error(err);
+    toast(err.message || 'Failed to rename room', 'error');
+  } finally {
+    editingRoomsBusy = false;
+    renderEditingHotelRooms();
+  }
+}
+
+async function onDeleteRoomClick(roomId) {
+  if (!editingHotelId || editingRoomsBusy) return;
+  const room = editingHotelRooms.find((r) => String(r.id) === roomId);
+  const status = String(room?.status || '');
+  const occupied = Boolean(room?.occupied) || status === 'occupied';
+  const warn = occupied
+    ? `\n\nWarning: this room looks occupied (${status || 'occupied'}).`
+    : '';
+  if (
+    !confirm(
+      `Delete room “${roomId}” from Hotels/${editingHotelId}/Rooms?${warn}\n\nThis cannot be undone.`,
+    )
+  ) {
+    return;
+  }
+
+  editingRoomsBusy = true;
+  renderEditingHotelRooms();
+  try {
+    await deleteDoc(doc(db, 'Hotels', editingHotelId, 'Rooms', roomId));
+    await loadEditingHotelRooms(editingHotelId);
+    await syncHotelTotalRooms(editingHotelId, editingHotelRooms.length);
+    toast(`Deleted ${formatRoomLabel(roomId)}`);
+  } catch (err) {
+    console.error(err);
+    toast(err.message || 'Failed to delete room', 'error');
+  } finally {
+    editingRoomsBusy = false;
+    renderEditingHotelRooms();
+  }
 }
 
 function updateMediaPreview(url, imgId, placeholderId) {

@@ -239,6 +239,24 @@
           </select>
           <p class="text-xs mt-1" style="color:var(--text-dim)">Controls TV &amp; KDS wording (rooms vs conference / pantry).</p>
         </div>
+        <div>
+          <label for="hotel-total-rooms" class="block text-sm font-medium mb-1">Total Rooms</label>
+          <input
+            id="hotel-total-rooms"
+            type="number"
+            required
+            min="1"
+            max="500"
+            step="1"
+            value="10"
+            placeholder="e.g. 10"
+            class="w-full px-4 py-2.5 rounded-xl outline-none"
+          />
+          <p class="text-xs mt-1" style="color:var(--text-dim)">
+            Creates sequential room docs <code>101</code>, <code>102</code>, … in
+            <code>Hotels/{id}/Rooms</code>. Rename later for named spaces (e.g. Middle East).
+          </p>
+        </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label for="hotel-admin-email" class="block text-sm font-medium mb-1">Admin Email</label>
@@ -413,6 +431,24 @@
               </div>
             </div>
           </div>
+
+          <section class="edit-hotel-rooms-section" aria-labelledby="edit-hotel-rooms-heading">
+            <div class="edit-hotel-rooms-head">
+              <div>
+                <h4 id="edit-hotel-rooms-heading" class="text-sm font-bold">Rooms</h4>
+                <p class="text-xs mt-0.5" style="color:var(--text-dim)">
+                  Manage <code>Hotels/{id}/Rooms</code> — add sequential rooms, rename (e.g. Middle East), or delete.
+                </p>
+              </div>
+              <div class="edit-hotel-rooms-actions">
+                <span id="edit-hotel-rooms-count" class="count-badge">0</span>
+                <button type="button" id="edit-hotel-add-rooms-btn" class="quick-btn">Add More Rooms</button>
+              </div>
+            </div>
+            <div id="edit-hotel-rooms-list" class="edit-hotel-rooms-list">
+              <p class="empty-state text-xs">Open a hotel to load rooms…</p>
+            </div>
+          </section>
         </div>
         <div class="edit-property-modal-footer">
           <button id="edit-hotel-cancel" type="button" class="quick-btn">Cancel</button>

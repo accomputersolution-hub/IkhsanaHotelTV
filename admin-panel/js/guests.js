@@ -7,15 +7,7 @@ import {
   serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 import { ref as rtdbRef, update as rtdbUpdate } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js';
-import {
-  escapeHtml,
-  toast,
-  showConnectionError,
-  hideConnectionError,
-  openModal,
-  closeModal,
-  setupModalClose,
-} from './utils.js';
+import { escapeHtml, toast, showConnectionError, hideConnectionError, openModal, closeModal, setupModalClose } from './utils.js';
 import { normalizeRoom, formatRoomLabel, paths, logFirestoreWrite, logFirestoreListen } from './paths.js';
 import { flushRoomSession, newSessionKey } from './session-reset.js';
 import { getHotelId, onHotelChange } from './tenant-context.js';
@@ -28,23 +20,13 @@ const ROOM_STATUSES = {
   needs_cleaning: { label: 'Needs Cleaning', badge: 'room-status-housekeeping' },
 };
 
-const DEFAULT_ROOMS = Array.from({ length: 16 }, (_, i) => {
-  const num = 101 + i;
-  return {
-    roomNumber: String(num),
-    roomType: num <= 108 ? 'deluxe' : 'suite',
-  };
-});
-
 let roomsCache = [];
-let seedAttempted = false;
 let roomsUnsub = null;
 
 export function initGuests() {
   setupCheckInModal();
   setupAddRoomModal();
   onHotelChange(() => {
-    seedAttempted = false;
     listenRooms();
   });
 }
@@ -67,14 +49,8 @@ function listenRooms() {
 
   roomsUnsub = onSnapshot(
     collection(db, 'Hotels', hotelId, 'Rooms'),
-    async (snapshot) => {
+    (snapshot) => {
       hideConnectionError();
-
-      if (!snapshot.docs.length && !seedAttempted) {
-        seedAttempted = true;
-        await seedDefaultRooms();
-        return;
-      }
 
       roomsCache = snapshot.docs
         .map((d) => ({ id: d.id, ...d.data() }))
@@ -88,31 +64,6 @@ function listenRooms() {
       showConnectionError('Could not load guest rooms from Firestore.');
     },
   );
-}
-
-async function seedDefaultRooms() {
-  try {
-    await Promise.all(
-      DEFAULT_ROOMS.map(({ roomNumber, roomType }) => {
-        const payload = {
-          roomNumber,
-          roomType,
-          status: 'vacant',
-          guestName: 'Guest',
-          guestPhone: '',
-          checkOutDate: '',
-          hotelName: '',
-          updatedAt: serverTimestamp(),
-        };
-        return setDoc(doc(db, 'Hotels', getHotelId(), 'Rooms', roomNumber), payload, { merge: true });
-      }),
-    );
-    console.log('[PMS] Seeded default rooms 101–116');
-    toast('Initialized rooms 101–116');
-  } catch (err) {
-    console.error('[Firestore ERROR] Room seed failed:', err);
-    toast('Failed to initialize default rooms', 'error');
-  }
 }
 
 function deriveStatus(room) {
@@ -205,7 +156,8 @@ function renderRoomGrid(rooms) {
   if (!rooms.length) {
     container.innerHTML = `
       <p class="empty-state col-span-full">
-        No rooms configured yet. Click <strong>+ Add Room</strong> to create one.
+        No rooms configured yet. Super Admin can generate rooms when creating/editing the property,
+        or click <strong>+ Add Room</strong> here.
       </p>`;
     return;
   }
