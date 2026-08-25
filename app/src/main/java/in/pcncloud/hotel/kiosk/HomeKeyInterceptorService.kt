@@ -209,7 +209,10 @@ class HomeKeyInterceptorService : AccessibilityService() {
                         Intent.FLAG_ACTIVITY_CLEAR_TOP or
                         Intent.FLAG_ACTIVITY_SINGLE_TOP,
                 )
-                putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
+                // Do not snap Secret Settings closed when staff is configuring the TV.
+                if (!KioskPolicy.isStaffAdminUiActive() && !KioskPolicy.isExitingAppCleanly()) {
+                    putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
+                }
             }
             startActivity(intent)
             Log.i(TAG, "Launched MainActivity from Home intercept (posted)")

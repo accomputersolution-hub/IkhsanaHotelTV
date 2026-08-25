@@ -337,5 +337,22 @@ class AlertOverlayService : Service() {
                 )
             }
         }
+
+        /**
+         * Tear down overlay WindowManager views and stop the service.
+         * Used by clean kiosk exit so SYSTEM_ALERT_WINDOW popups cannot glitch on.
+         */
+        fun stopFully(context: Context) {
+            val app = context.applicationContext
+            runCatching {
+                app.startService(
+                    Intent(app, AlertOverlayService::class.java).setAction(ACTION_STOP),
+                )
+            }.onFailure { Log.w(TAG, "ACTION_STOP startService failed", it) }
+            runCatching {
+                app.stopService(Intent(app, AlertOverlayService::class.java))
+            }.onFailure { Log.w(TAG, "stopService AlertOverlayService failed", it) }
+            Log.i(TAG, "stopFully — dismiss + stop requested")
+        }
     }
 }

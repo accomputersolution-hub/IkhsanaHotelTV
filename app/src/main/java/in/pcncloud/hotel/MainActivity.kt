@@ -1461,6 +1461,10 @@ class MainActivity : ComponentActivity() {
 
         if (!hasFocus) {
             if (!KioskPolicy.isKioskModeEnabled(this)) return
+            if (KioskPolicy.shouldSkipKioskReclaim("onWindowFocusChanged")) {
+                Log.d(TAG, "onWindowFocusChanged — staff/exit suppress, skip reclaim")
+                return
+            }
             if (KioskPolicy.isExternalAppActive(this)) {
                 Log.d(TAG, "onWindowFocusChanged — OTT session, skip reclaim")
                 return
@@ -1635,6 +1639,7 @@ class MainActivity : ComponentActivity() {
 
         val kioskOn = KioskPolicy.isKioskModeEnabled(this)
         if (!kioskOn) return
+        if (KioskPolicy.shouldSkipKioskReclaim("onPause")) return
         if (KioskPolicy.isExternalAppActive(this)) return
 
         // Physical TV: NEVER reclaim from onPause — it fires mid-resume of our own
@@ -1686,6 +1691,7 @@ class MainActivity : ComponentActivity() {
         super.onStop()
 
         if (!KioskPolicy.isKioskModeEnabled(this)) return
+        if (KioskPolicy.shouldSkipKioskReclaim("onStop")) return
         if (KioskPolicy.isExternalAppActive(this)) return
 
         // Physical TV: reclaim only from onUserLeaveHint (same reason as onPause).
@@ -1786,6 +1792,8 @@ class MainActivity : ComponentActivity() {
                 if (KioskPolicy.isIntroPlaybackActive()) {
                     // Bring-to-front only — do not tear down IntroVideoScreen / ExoPlayer.
                     Log.i(TAG, "onNewIntent reclaim — intro playing, skip Root Home nav")
+                } else if (KioskPolicy.isStaffAdminUiActive()) {
+                    Log.i(TAG, "onNewIntent reclaim — staff admin UI, skip Root Home nav")
                 } else {
                     // Hide guest overlays / pop to Root Home (same as in-app Home).
                     finishReturnFromExternalApp()
@@ -1826,6 +1834,12 @@ class MainActivity : ComponentActivity() {
     fun navigateToRootHomeScreen(showCover: Boolean = true) {
         if (KioskPolicy.isIntroPlaybackActive()) {
             Log.i(TAG, "navigateToRootHomeScreen suppressed — intro still playing")
+            intent?.removeExtra(EXTRA_NAVIGATE_TO_HOME)
+            intent?.removeExtra(EXTRA_SOFT_HOME_RESET)
+            return
+        }
+        if (KioskPolicy.isStaffAdminUiActive()) {
+            Log.i(TAG, "navigateToRootHomeScreen suppressed — staff admin UI active")
             intent?.removeExtra(EXTRA_NAVIGATE_TO_HOME)
             intent?.removeExtra(EXTRA_SOFT_HOME_RESET)
             return
@@ -1892,6 +1906,11 @@ class MainActivity : ComponentActivity() {
 
         if (KioskPolicy.isIntroPlaybackActive()) {
             Log.i(TAG, "finishReturnFromExternalApp — intro playing, skip nav reset")
+            return
+        }
+        if (KioskPolicy.isStaffAdminUiActive()) {
+            // Staff PIN / Secret Settings — never snap overlays closed on reclaim.
+            Log.i(TAG, "finishReturnFromExternalApp — staff admin UI active, skip Root Home")
             return
         }
 
@@ -2015,6 +2034,12 @@ class MainActivity : ComponentActivity() {
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
 
+        if (KioskPolicy.shouldSkipKioskReclaim("onUserLeaveHint")) {
+            Log.i(TAG, "onUserLeaveHint — staff/exit suppress, skip reclaim")
+            super.onUserLeaveHint()
+            return
+        }
+
         val kioskOn = KioskPolicy.isKioskModeEnabled(this)
         val ottActive = KioskPolicy.isExternalAppActive(this)
         val physicalTv = KioskPolicy.needsPhysicalTvFallback(this)
@@ -2024,7 +2049,7 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "onUserLeaveHint — PendingIntent reclaim PRE-super (0ms, bypass guard)")
             KioskPolicy.forceBringToFrontPhysicalTvUrgent(
                 context = this,
-                navigateToHome = true,
+                navigateToHome = !KioskPolicy.isStaffAdminUiActive(),
                 bypassDuplicateGuard = true,
             )
             @Suppress("DEPRECATION")

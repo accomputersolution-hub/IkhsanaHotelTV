@@ -19,6 +19,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
+import `in`.pcncloud.hotel.alert.AlertOverlayService
 import `in`.pcncloud.hotel.config.HotelConfig
 
 /**
@@ -81,6 +82,20 @@ object KioskPolicy {
     @Volatile
     private var introPlaybackActive: Boolean = false
 
+    /**
+     * True while Staff Secret Settings / Master PIN UI is on screen.
+     * Process-local — focus loss from Toast / dialogs must NOT snap to Home.
+     */
+    @Volatile
+    private var staffAdminUiActive: Boolean = false
+
+    /**
+     * True while technician [exitKioskModeCleanly] is tearing down kiosk.
+     * Blocks Watchdog / onUserLeaveHint reclaim for the duration of the exit.
+     */
+    @Volatile
+    private var exitingAppCleanly: Boolean = false
+
     /** True while MainActivity is inside onNewIntent / onResume reclaim handling. */
     @Volatile
     private var reclaimLifecycleBusy: Boolean = false
@@ -89,7 +104,7 @@ object KioskPolicy {
     @Volatile
     private var reclaimQuietUntilMs: Long = 0L
 
-    /** Wall-clock until which reclaim Intents are suppressed (e.g. Home picker). */
+    /** Wall-clock until which reclaim Intents are suppressed (staff UI / clean exit). */
     @Volatile
     private var reclaimSuppressedUntilMs: Long = 0L
 
@@ -258,12 +273,13 @@ object KioskPolicy {
     }
 
     /**
-     * Formerly suppressed Watchdog reclaim during the OS Home picker.
-     * **No-op:** Home-picker suppression was removed so reclaim is never delayed.
+     * Temporarily pause Watchdog / focus-loss / leave-hint reclaim.
+     * Used for Staff Secret Settings (PIN dialog) and clean launcher exit.
      */
     fun suppressReclaimFor(durationMs: Long, reason: String) {
-        reclaimSuppressedUntilMs = 0L
-        Log.i(TAG, "suppressReclaimFor ignored ($reason, ${durationMs}ms) — Home-picker suppress removed")
+        val until = System.currentTimeMillis() + durationMs.coerceAtLeast(0L)
+        reclaimSuppressedUntilMs = maxOf(reclaimSuppressedUntilMs, until)
+        Log.i(TAG, "suppressReclaimFor ($reason) until=$until (${durationMs}ms)")
     }
 
     fun clearReclaimSuppression(reason: String = "cleared") {
@@ -271,8 +287,59 @@ object KioskPolicy {
         Log.d(TAG, "reclaim suppression cleared ($reason)")
     }
 
-    /** Always false — Home-picker reclaim suppression has been stripped out. */
-    fun isReclaimSuppressed(): Boolean = false
+    /** True while [suppressReclaimFor] window is still active. */
+    fun isReclaimSuppressed(): Boolean {
+        val until = reclaimSuppressedUntilMs
+        if (until <= 0L) return false
+        if (System.currentTimeMillis() >= until) {
+            reclaimSuppressedUntilMs = 0L
+            return false
+        }
+        return true
+    }
+
+    /**
+     * Staff Secret Settings / Master PIN overlay is visible.
+     * While true, reclaim must never fire [MainActivity.EXTRA_NAVIGATE_TO_HOME].
+     */
+    fun setStaffAdminUiActive(active: Boolean) {
+        staffAdminUiActive = active
+        if (active) {
+            suppressReclaimFor(10 * 60 * 1000L, "staff_admin_ui")
+        } else if (!exitingAppCleanly) {
+            // Keep any exit suppress; drop long staff suppress when leaving admin.
+            clearReclaimSuppression("staff_admin_ui_closed")
+        }
+        Log.i(TAG, "staffAdminUiActive=$active")
+    }
+
+    fun isStaffAdminUiActive(): Boolean = staffAdminUiActive
+
+    fun setExitingAppCleanly(exiting: Boolean) {
+        exitingAppCleanly = exiting
+        Log.i(TAG, "exitingAppCleanly=$exiting")
+    }
+
+    fun isExitingAppCleanly(): Boolean = exitingAppCleanly
+
+    /**
+     * Unified gate: reclaim / Watchdog / Root-Home snap must not run.
+     */
+    fun shouldSkipKioskReclaim(reason: String = ""): Boolean {
+        if (exitingAppCleanly) {
+            Log.d(TAG, "skip reclaim — exitingAppCleanly ($reason)")
+            return true
+        }
+        if (staffAdminUiActive) {
+            Log.d(TAG, "skip reclaim — staffAdminUiActive ($reason)")
+            return true
+        }
+        if (isReclaimSuppressed()) {
+            Log.d(TAG, "skip reclaim — suppress window ($reason)")
+            return true
+        }
+        return false
+    }
 
     /**
      * Persist Super Admin package whitelist for [hotelId] only.
@@ -688,6 +755,72 @@ object KioskPolicy {
         }
     }
 
+    /**
+     * Technician "Exit to Main Launcher" — ordered teardown so Watchdog / overlay
+     * cannot glitch during unpin.
+     *
+     * Order:
+     * 1. [setExitingAppCleanly] + long reclaim suppress
+     * 2. Stop [AlertOverlayService] / remove WindowManager popups
+     * 3. [disableKioskMode] (stopLockTask + clear packages + stop Watchdog)
+     * 4. Launch standard HOME intent, then [moveTaskToBack] as backup
+     */
+    fun exitKioskModeCleanly(activity: Activity): Boolean {
+        Log.i(TAG, "exitKioskModeCleanly — begin")
+        setExitingAppCleanly(true)
+        suppressReclaimFor(120_000L, "exit_kiosk_cleanly")
+        markCleanExit(activity)
+        markUserMinimized(activity)
+        staffAdminUiActive = false
+
+        // Stop SYSTEM_ALERT_WINDOW popups before teardown (prevents exit glitch).
+        try {
+            AlertOverlayService.stopFully(activity)
+        } catch (e: Exception) {
+            Log.w(TAG, "exitKioskModeCleanly — AlertOverlayService stop failed", e)
+        }
+
+        try {
+            disableKioskMode(
+                activity = activity,
+                source = KioskSource.LOCAL_ADMIN,
+                persistFlag = true,
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "exitKioskModeCleanly — disableKioskMode failed", e)
+            try {
+                activity.stopLockTask()
+            } catch (_: Exception) {
+            }
+        }
+
+        // Route to the default TV launcher (CATEGORY_HOME), not a hard-coded package.
+        var launchedHome = false
+        try {
+            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            activity.startActivity(homeIntent)
+            launchedHome = true
+            Log.i(TAG, "exitKioskModeCleanly — CATEGORY_HOME launched")
+        } catch (e: Exception) {
+            Log.e(TAG, "exitKioskModeCleanly — HOME intent failed", e)
+        }
+
+        val moved = try {
+            activity.moveTaskToBack(true)
+        } catch (e: Exception) {
+            Log.w(TAG, "exitKioskModeCleanly — moveTaskToBack failed", e)
+            false
+        }
+        Log.i(
+            TAG,
+            "exitKioskModeCleanly — done home=$launchedHome moveTaskToBack=$moved",
+        )
+        return launchedHome || moved
+    }
+
     private fun resolveActivity(context: Context): Activity? {
         if (context is Activity) return context
         var ctx: Context? = context
@@ -889,6 +1022,7 @@ object KioskPolicy {
         navigateToHome: Boolean = true,
         preferImmediateOptions: Boolean = false,
     ): Boolean {
+        if (shouldSkipKioskReclaim("forceBringToFrontSafely")) return false
         val guardMs = loopGuardMs(context)
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastForceBringAtMs < guardMs) {
@@ -915,9 +1049,11 @@ object KioskPolicy {
 
         lastForceBringAtMs = currentTime
         reclaimQuietUntilMs = currentTime + guardMs
+        // Never snap to Root Home while staff PIN / settings are open.
+        val home = navigateToHome && !isStaffAdminUiActive()
         return forceBringToFront(
             context = context,
-            navigateToHome = navigateToHome,
+            navigateToHome = home,
             skipDebounce = preferImmediateOptions,
             applyLoopGuard = false, // already applied above
         )
@@ -946,11 +1082,12 @@ object KioskPolicy {
         navigateToHome: Boolean = true,
         bypassDuplicateGuard: Boolean = false,
     ): Boolean {
+        if (shouldSkipKioskReclaim("forceBringToFrontPhysicalTvUrgent")) return false
         if (!isKioskModeEnabled(context)) return false
         if (isDeviceOwner(context)) {
             return forceBringToFrontSafely(
                 context = context,
-                navigateToHome = navigateToHome,
+                navigateToHome = navigateToHome && !isStaffAdminUiActive(),
                 preferImmediateOptions = true,
             )
         }
@@ -996,7 +1133,10 @@ object KioskPolicy {
                 "bypassGuard=$bypassDuplicateGuard " +
                 "(elapsed was ${if (elapsedMs == Long.MAX_VALUE) "n/a" else "${elapsedMs}ms"})",
         )
-        return sendPhysicalTvUrgentPendingIntent(context, navigateToHome)
+        return sendPhysicalTvUrgentPendingIntent(
+            context,
+            navigateToHome && !isStaffAdminUiActive(),
+        )
     }
 
     /**
@@ -1233,6 +1373,9 @@ object KioskPolicy {
      * - An existing task is already created (unless crash recovery / kiosk needs reorder)
      */
     fun shouldBringAppToFront(context: Context, allowReorderIfKiosk: Boolean = true): Boolean {
+        if (shouldSkipKioskReclaim("shouldBringAppToFront")) {
+            return false
+        }
         // Never reclaim UI while guest is in YouTube / OTT under kiosk.
         if (isExternalAppActive(context)) {
             Log.d(TAG, "shouldBringAppToFront=false (isExternalAppActive=true)")
@@ -1335,6 +1478,7 @@ object KioskPolicy {
         applyLoopGuard: Boolean = true,
         ignoreLifecycleBusy: Boolean = false,
     ): Boolean {
+        if (shouldSkipKioskReclaim("forceBringToFront")) return false
         if (!isKioskModeEnabled(context)) return false
         if (isExternalAppActive(context)) {
             Log.d(TAG, "forceBringToFront skipped — OTT/external session active")
@@ -1360,9 +1504,10 @@ object KioskPolicy {
         }
 
         val appContext = context.applicationContext
+        val wantHome = navigateToHome && !isStaffAdminUiActive()
         val intent = Intent(appContext, MainActivity::class.java).apply {
             flags = reclaimIntentFlags()
-            if (navigateToHome) {
+            if (wantHome) {
                 putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
             }
         }

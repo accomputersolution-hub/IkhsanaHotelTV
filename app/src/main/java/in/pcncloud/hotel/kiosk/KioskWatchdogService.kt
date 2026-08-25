@@ -86,6 +86,11 @@ class KioskWatchdogService : Service() {
     }
 
     private fun maybeBringToFront(reason: String) {
+        // Hard gate: never steal focus during clean exit or Staff Settings.
+        if (KioskPolicy.shouldSkipKioskReclaim(reason)) {
+            Log.d(TAG, "maybeBringToFront skipped — staff/exit suppress ($reason)")
+            return
+        }
         // Hard gate: never steal focus from YouTube / Netflix / Live TV / etc.
         if (KioskPolicy.isExternalAppActive(this)) {
             Log.d(TAG, "maybeBringToFront skipped — isExternalAppActive=true ($reason)")
@@ -102,9 +107,9 @@ class KioskWatchdogService : Service() {
         }
 
         // Reclaim MainActivity only — Splash mid-frame finish → EGL 12301.
-        // While intro is playing, bring to front WITHOUT NAVIGATE_TO_HOME so
-        // ExoPlayer is not torn down by finishReturnFromExternalApp.
-        val introPlaying = KioskPolicy.isIntroPlaybackActive()
+        // While intro / staff admin plays, bring to front WITHOUT NAVIGATE_TO_HOME.
+        val omitHomeNav = KioskPolicy.isIntroPlaybackActive() ||
+            KioskPolicy.isStaffAdminUiActive()
         val launch = Intent(this, MainActivity::class.java).apply {
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -112,10 +117,10 @@ class KioskWatchdogService : Service() {
                     Intent.FLAG_ACTIVITY_SINGLE_TOP or
                     Intent.FLAG_ACTIVITY_NO_ANIMATION,
             )
-            if (!introPlaying) {
+            if (!omitHomeNav) {
                 putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
             } else {
-                Log.i(TAG, "maybeBringToFront — intro playing, omit NAVIGATE_TO_HOME ($reason)")
+                Log.i(TAG, "maybeBringToFront — omit NAVIGATE_TO_HOME ($reason)")
             }
         }
         KioskPolicy.startActivityIfAllowed(this, launch, reason)

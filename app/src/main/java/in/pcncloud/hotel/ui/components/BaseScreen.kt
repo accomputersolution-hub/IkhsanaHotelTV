@@ -71,6 +71,7 @@ import coil.compose.AsyncImage
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.data.RoomIds
+import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.home.BrandAssets
 import `in`.pcncloud.hotel.ui.home.HomeViewModel
@@ -534,6 +535,8 @@ private fun RoomBadge(
             clickCount = 0
             lastClickAt = 0L
             Log.d("AdminUI", "Room badge 5-click easter egg — opening Staff Settings")
+            // Pre-arm suppress before Toast/focus churn can snap to Home.
+            KioskPolicy.setStaffAdminUiActive(true)
             onOpenAdmin()
             return
         }
@@ -541,6 +544,7 @@ private fun RoomBadge(
         clickCount = nextCount
         val remaining = STAFF_SETTINGS_EASTER_EGG_CLICKS - nextCount
         if (nextCount >= 3) {
+            KioskPolicy.suppressReclaimFor(15_000L, "staff_easter_egg_toast")
             Toast.makeText(
                 context,
                 context.resources.getQuantityString(

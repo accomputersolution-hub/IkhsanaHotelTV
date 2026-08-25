@@ -149,6 +149,8 @@ fun HotelNavGraph(
 
     fun openStaffSettings() {
         clearStaffAdminSession("open_staff_settings")
+        // Arm before overlay mounts so Toast/focus reclaim cannot race it closed.
+        KioskPolicy.setStaffAdminUiActive(true)
         showOverlay(Routes.ADMIN)
     }
 

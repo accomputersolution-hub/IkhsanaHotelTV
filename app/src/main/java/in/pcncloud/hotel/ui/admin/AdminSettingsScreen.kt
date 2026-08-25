@@ -52,6 +52,7 @@ import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
+import `in`.pcncloud.hotel.alert.AlertOverlayService
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.kiosk.BlockedKeysManager
 import `in`.pcncloud.hotel.kiosk.HotelSessionManager
@@ -104,11 +105,14 @@ fun AdminSettingsScreen(
 
     DisposableEffect(sessionEpoch) {
         // Always start locked when Staff Settings is shown.
+        // Whitelist this UI so focus loss (Toast / PIN) cannot snap to Home.
+        KioskPolicy.setStaffAdminUiActive(true)
         authVm.resetSession()
         onDispose {
             BlockedKeysManager.setLearnMode(context.applicationContext, false)
             (activity as? MainActivity)?.nestedAdminBackHandler = null
             authVm.resetSession()
+            KioskPolicy.setStaffAdminUiActive(false)
         }
     }
 
@@ -297,34 +301,25 @@ fun AdminSettingsScreen(
                         },
                         onExitToAndroidTv = {
                             onRemoteActivity()
-                            // Leave guest lock; never start GTPL intents (black screen) —
-                            // moveTaskToBack lets default launcher gain focus naturally.
+                            // Ordered teardown: suppress reclaim → stop overlay →
+                            // stopLockTask → CATEGORY_HOME (no Watchdog snap / overlay glitch).
                             val host = activity
-                            if (kioskEnabled) {
-                                if (host != null) {
-                                    KioskPolicy.disableKioskMode(
-                                        activity = host,
-                                        source = KioskPolicy.KioskSource.LOCAL_ADMIN,
-                                        persistFlag = true,
-                                    )
-                                } else {
-                                    KioskPolicy.setKioskModeEnabled(
-                                        context = context,
-                                        enabled = false,
-                                        source = KioskPolicy.KioskSource.LOCAL_ADMIN,
-                                    )
-                                }
-                                (host as? MainActivity)
-                                    ?.applyKioskModeChangedLocally(false, "AdminSettings.exitTv")
-                                kioskEnabled = false
-                            }
                             authVm.resetSession()
                             if (host != null) {
-                                KioskPolicy.launchSystemDefaultLauncher(host)
+                                (host as? MainActivity)
+                                    ?.applyKioskModeChangedLocally(false, "AdminSettings.exitTv")
+                                KioskPolicy.exitKioskModeCleanly(host)
                             } else {
+                                KioskPolicy.setKioskModeEnabled(
+                                    context = context,
+                                    enabled = false,
+                                    source = KioskPolicy.KioskSource.LOCAL_ADMIN,
+                                )
+                                AlertOverlayService.stopFully(context)
                                 KioskPolicy.launchSystemDefaultLauncher(context)
                             }
-                            Log.i(TAG, "Technician exit → disableKioskMode + moveTaskToBack")
+                            kioskEnabled = false
+                            Log.i(TAG, "Technician exit → exitKioskModeCleanly")
                             exitAdmin("exit_android_tv")
                         },
                         onUnpair = {
