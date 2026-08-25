@@ -3456,6 +3456,20 @@ body.modal-open { overflow: hidden; }
   min-height: 44px;
 }
 
+.intro-video-url-row {
+  margin-top: 12px;
+}
+
+.intro-video-preview {
+  display: block;
+  width: min(100%, 480px);
+  max-height: 240px;
+  margin-top: 14px;
+  border-radius: 12px;
+  background: #000;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
 /* ── Staff RBAC ───────────────────────────────────────────────────────────── */
 .staff-role-badge {
   display: inline-flex;
