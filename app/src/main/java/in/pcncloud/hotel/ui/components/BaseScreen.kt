@@ -4,7 +4,6 @@ import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -178,9 +177,9 @@ fun BaseScreen(
 }
 
 /**
- * Full-bleed branding wallpaper with smart Day/Night adaptation:
- * - Night + [wallpaperDarkUrl] → crossfade to the dark image
- * - Night without dark image → keep day wallpaper + dim overlay (~55%)
+ * Full-bleed branding wallpaper with Day/Night image switching:
+ * - Night + [wallpaperDarkUrl] → crossfade to the night image
+ * - Night without night image → keep day [wallpaperUrl] (no extra dim)
  * - Day → standard [wallpaperUrl]
  */
 @Composable
@@ -193,22 +192,6 @@ fun HotelWallpaperBackground(
     val dayOk = wallpaperUrl.isNotBlank() && !isLegacyUnsafeImageUrl(wallpaperUrl)
     val darkOk = wallpaperDarkUrl.isNotBlank() && !isLegacyUnsafeImageUrl(wallpaperDarkUrl)
     val useDarkImage = isNightMode && darkOk
-
-    // Dedicated night asset → show it; otherwise dim the day image after dark.
-    val nightDimAlpha by animateFloatAsState(
-        targetValue = if (isNightMode && !useDarkImage) 0.55f else 0.0f,
-        animationSpec = tween(durationMillis = 900),
-        label = "nightWallpaperDim",
-    )
-    val baseScrimAlpha by animateFloatAsState(
-        targetValue = when {
-            useDarkImage -> 0.32f
-            isNightMode -> 0.40f
-            else -> 0.28f
-        },
-        animationSpec = tween(durationMillis = 900),
-        label = "baseWallpaperScrim",
-    )
     val scaffoldBg = if (isNightMode) NightBackground else DayBackground
 
     // Crossfade key embeds the URL so Coil loads the correct layer during the fade.
@@ -284,11 +267,12 @@ fun HotelWallpaperBackground(
             }
         }
 
+        // Stable readability scrim only (no night dim fallback).
         if (dayOk || darkOk) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = baseScrimAlpha)),
+                    .background(Color.Black.copy(alpha = 0.28f)),
             )
             Box(
                 modifier = Modifier
@@ -303,29 +287,17 @@ fun HotelWallpaperBackground(
                         ),
                     ),
             )
-            // Dim fallback when night has no dedicated dark wallpaper.
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = nightDimAlpha)),
-            )
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
                         Brush.radialGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = if (isNightMode) 0.03f else 0.05f),
+                                Color.White.copy(alpha = 0.05f),
                                 Color.Transparent,
                             ),
                         ),
                     ),
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = nightDimAlpha * 0.5f)),
             )
         }
     }
