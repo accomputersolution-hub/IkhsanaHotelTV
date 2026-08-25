@@ -507,11 +507,15 @@ object KioskPolicy {
      * Uses REORDER_TO_FRONT | SINGLE_TOP (no PendingIntent storm, no process restart).
      */
     fun bringMainActivityToFrontGracefully(context: Context): Boolean {
+        if (shouldSkipKioskReclaim("bringMainActivityToFrontGracefully")) return false
         return try {
             val appContext = context.applicationContext
+            val wantHome = !isStaffAdminUiActive()
             val intent = Intent(appContext, MainActivity::class.java).apply {
                 flags = reclaimIntentFlags()
-                putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
+                if (wantHome) {
+                    putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
+                }
             }
             when (context) {
                 is Activity -> {
@@ -519,7 +523,9 @@ object KioskPolicy {
                         flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
                             Intent.FLAG_ACTIVITY_SINGLE_TOP or
                             Intent.FLAG_ACTIVITY_NO_ANIMATION
-                        putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
+                        if (wantHome) {
+                            putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
+                        }
                     }
                     context.startActivity(
                         activityIntent,
