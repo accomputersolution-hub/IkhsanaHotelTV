@@ -1062,52 +1062,6 @@
                   </div>
                 </div>
 
-                <div class="announcement-admin-card intro-video-admin-card">
-                  <div class="announcement-admin-head">
-                    <div>
-                      <p class="announcement-admin-label">Intro / Splash Video</p>
-                      <p class="announcement-admin-hint">
-                        Uploaded .mp4 plays fullscreen when the TV app launches, then opens Home.
-                        Leave empty to skip straight to Home.
-                      </p>
-                      <p id="intro-video-path" class="announcement-admin-path">Hotels/{hotelId}/Config/intro</p>
-                      <p id="intro-video-status" class="announcement-admin-hint"></p>
-                      <div id="intro-video-setup-warning" class="intro-video-setup-warning">
-                        <strong>Upload .mp4 needs Firebase Storage.</strong>
-                        Project <code>ikhsana-hotel-tv</code> must have Storage enabled (Blaze billing)
-                        → <a href="https://console.firebase.google.com/project/ikhsana-hotel-tv/storage" target="_blank" rel="noopener">Console → Storage → Get Started</a>,
-                        then publish rules from <code>storage.rules.example</code>.
-                        Until then, host the .mp4 elsewhere and <strong>paste the HTTPS URL</strong> below — that still works.
-                      </div>
-                    </div>
-                  </div>
-                  <input id="intro-video-input" type="file" accept="video/mp4,.mp4" class="hidden" />
-                  <div class="announcement-admin-row intro-video-actions">
-                    <button id="intro-video-upload-btn" type="button" class="btn-gold">Upload .mp4</button>
-                    <button id="intro-video-clear-btn" type="button" class="quick-btn" disabled>Remove Video</button>
-                  </div>
-                  <div id="intro-video-progress" class="intro-video-progress hidden" aria-hidden="true">
-                    <div class="intro-video-progress-track">
-                      <div id="intro-video-progress-fill" class="intro-video-progress-fill"></div>
-                    </div>
-                    <span id="intro-video-progress-text" class="intro-video-progress-text">0%</span>
-                  </div>
-                  <div class="intro-video-url-row">
-                    <label for="intro-video-url-input" class="block text-sm font-medium mb-1">Or paste a direct .mp4 URL</label>
-                    <div class="announcement-admin-row">
-                      <input
-                        id="intro-video-url-input"
-                        type="url"
-                        autocomplete="off"
-                        placeholder="https://…/intro.mp4"
-                        class="announcement-admin-input"
-                      />
-                      <button id="intro-video-save-url-btn" type="button" class="quick-btn">Save URL</button>
-                    </div>
-                  </div>
-                  <video id="intro-video-preview" class="intro-video-preview hidden" controls playsinline preload="metadata"></video>
-                </div>
-
                 <form id="broadcast-form" class="broadcast-form space-y-4">
                   <div>
                     <label class="section-label block mb-2">Alert Preset</label>
