@@ -81,7 +81,7 @@ fun HotelNavGraph(
             )
             Routes.INTRO
         } else {
-            Log.i(TAG, "startDestination=HOME (no url / no local file)")
+            Log.i(TAG, "startDestination=HOME (empty/blank introVideoUrl — No Video)")
             Routes.HOME
         }
     }
