@@ -17,6 +17,7 @@ import androidx.appcompat.app.AppCompatActivity
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.data.RoomIds
+import `in`.pcncloud.hotel.data.RoomTvPairing
 import `in`.pcncloud.hotel.kiosk.HotelSessionManager
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
@@ -376,6 +377,8 @@ class PairingActivity : AppCompatActivity() {
             if (status == "claimed" && roomNumber.isNotBlank()) {
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
+                    if (pairingInFlight) return@runOnUiThread
+                    pairingInFlight = true
                     completePairing(roomNumber)
                 }
             }
@@ -385,6 +388,42 @@ class PairingActivity : AppCompatActivity() {
     private fun completePairing(roomNumber: String) {
         codeListener?.remove()
         codeListener = null
+        tvPairingWaiting.text = "Securing room pairing…"
+
+        Thread {
+            try {
+                val firestore = FirebaseFirestore.getInstance()
+                RoomTvPairing.pairRoomOrThrow(
+                    firestore = firestore,
+                    hotelId = resolvedHotelId,
+                    roomNumber = roomNumber,
+                    deviceId = deviceId,
+                )
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    finishLocalPairing(roomNumber)
+                }
+            } catch (e: RoomTvPairing.AlreadyPairedException) {
+                Log.w(TAG, "Room already paired: $roomNumber", e)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    pairingInFlight = false
+                    showError(getString(R.string.pairing_already_paired))
+                    showSlugStep()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "pairRoom transaction failed", e)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    pairingInFlight = false
+                    showError(e.message ?: "Could not complete pairing")
+                    showSlugStep()
+                }
+            }
+        }.start()
+    }
+
+    private fun finishLocalPairing(roomNumber: String) {
         try {
             hotelConfig.setHotelId(resolvedHotelId)
             hotelConfig.setRoomNumber(roomNumber)
@@ -392,9 +431,11 @@ class PairingActivity : AppCompatActivity() {
                 applicationContext,
                 resolvedHotelId,
                 roomNumber,
+                deviceId,
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save HotelConfig", e)
+            pairingInFlight = false
             showError(e.message ?: "Could not save hotel settings")
             showSlugStep()
             return

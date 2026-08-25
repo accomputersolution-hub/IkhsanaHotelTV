@@ -1,5 +1,6 @@
 /**
  * Reception: claim a kiosk pairing code → bind roomNumber.
+ * Rejects rooms that already have an active TV pairing.
  * After claim, mint Custom Claims via Cloud Function (recommended) so the
  * device can read Hotels/{hotelId}/Rooms/{room} under security rules.
  */
@@ -31,6 +32,17 @@ export function initPairingClaim() {
   document.getElementById('pairing-claim-form')?.addEventListener('submit', onClaimSubmit);
 }
 
+function isRoomAlreadyPaired(roomData) {
+  if (!roomData || typeof roomData !== 'object') return false;
+  const device = String(roomData.pairedDeviceId || roomData.paired_device_id || '').trim();
+  const flagged =
+    roomData.isTvPaired === true ||
+    roomData.is_tv_paired === true ||
+    roomData.pairingCounted === true ||
+    roomData.pairing_counted === true;
+  return Boolean(device) || flagged;
+}
+
 async function onClaimSubmit(e) {
   e.preventDefault();
   const hotelId = getHotelId();
@@ -51,6 +63,13 @@ async function onClaimSubmit(e) {
 
   btn.disabled = true;
   try {
+    const roomRef = doc(db, 'Hotels', hotelId, 'Rooms', roomNumber);
+    const roomSnap = await getDoc(roomRef);
+    if (roomSnap.exists() && isRoomAlreadyPaired(roomSnap.data())) {
+      toast('Already paired with another TV. Please unpair first.', 'error');
+      return;
+    }
+
     const ref = doc(db, 'Hotels', hotelId, 'pairing_codes', code);
     const snap = await getDoc(ref);
     if (!snap.exists()) {
@@ -75,7 +94,7 @@ async function onClaimSubmit(e) {
       claimedBy: 'staff_admin',
     });
 
-    toast(`Device paired to ${formatRoomLabel(roomNumber)}`);
+    toast(`Code claimed for ${formatRoomLabel(roomNumber)} — waiting for TV…`);
     closeModal('pairing-claim-modal');
   } catch (err) {
     console.error('[pairing] claim failed', err);

@@ -73,24 +73,18 @@ export function startSuperAdminListeners() {
         snapshot.docs.map(async (d) => {
           const data = d.data() || {};
           let tvCount = data.activeTvScreens;
-          if (typeof tvCount !== 'number') {
-            try {
-              const roomsSnap = await getDocs(collection(db, 'Hotels', d.id, 'Rooms'));
-              tvCount = roomsSnap.docs.filter((r) => {
-                const rd = r.data();
-                return rd.status === 'occupied' || rd.guestName;
-              }).length;
-            } catch {
-              tvCount = 0;
-            }
+          if (typeof tvCount !== 'number' || !Number.isFinite(tvCount)) {
+            // Prefer explicit counter written on pair/unpair — do not invent from guest status.
+            tvCount = Number(data.active_tv_screens);
           }
+          if (!Number.isFinite(tvCount) || tvCount < 0) tvCount = 0;
           return {
             id: d.id,
             name: data.name || d.id,
             adminEmail: data.adminEmail || '',
             adminUid: data.adminUid || '',
             status: data.status || 'active',
-            activeTvScreens: tvCount,
+            activeTvScreens: Math.floor(tvCount),
             branding: data.branding || {},
             ...data,
           };
