@@ -3,6 +3,7 @@ package `in`.pcncloud.hotel.ui.components
 import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -47,7 +48,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -118,6 +118,7 @@ fun BaseScreen(
     val unreadAlerts = chromeState.alerts.count { !it.read && !it.revoked }
 
     val wallpaperUrl = branding.bgWallpaperUrl.ifBlank { profile.bgWallpaperUrl }
+    val wallpaperDarkUrl = branding.bgWallpaperDarkUrl.ifBlank { profile.bgWallpaperDarkUrl }
     val hotelLogoUrl = branding.logoUrl.ifBlank { profile.hotelLogoUrl }
     val hotelName = branding.hotelName.ifBlank { profile.hotelName }
     val tagline = branding.tagline.ifBlank { profile.tagline }
@@ -130,6 +131,7 @@ fun BaseScreen(
     ) {
         HotelWallpaperBackground(
             wallpaperUrl = wallpaperUrl,
+            wallpaperDarkUrl = wallpaperDarkUrl,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -176,26 +178,45 @@ fun BaseScreen(
 }
 
 /**
- * Full-bleed branding wallpaper. Night mode adds a stronger black dim overlay
- * (smooth crossfade) so bright wallpapers do not glare after 18:00.
+ * Full-bleed branding wallpaper with smart Day/Night adaptation:
+ * - Night + [wallpaperDarkUrl] → crossfade to the dark image
+ * - Night without dark image → keep day wallpaper + dim overlay (~55%)
+ * - Day → standard [wallpaperUrl]
  */
 @Composable
 fun HotelWallpaperBackground(
     wallpaperUrl: String,
+    wallpaperDarkUrl: String = "",
     modifier: Modifier = Modifier,
 ) {
     val isNightMode = LocalIsNightMode.current
+    val dayOk = wallpaperUrl.isNotBlank() && !isLegacyUnsafeImageUrl(wallpaperUrl)
+    val darkOk = wallpaperDarkUrl.isNotBlank() && !isLegacyUnsafeImageUrl(wallpaperDarkUrl)
+    val useDarkImage = isNightMode && darkOk
+
+    // Dedicated night asset → show it; otherwise dim the day image after dark.
     val nightDimAlpha by animateFloatAsState(
-        targetValue = if (isNightMode) 0.55f else 0.0f,
+        targetValue = if (isNightMode && !useDarkImage) 0.55f else 0.0f,
         animationSpec = tween(durationMillis = 900),
         label = "nightWallpaperDim",
     )
     val baseScrimAlpha by animateFloatAsState(
-        targetValue = if (isNightMode) 0.40f else 0.28f,
+        targetValue = when {
+            useDarkImage -> 0.32f
+            isNightMode -> 0.40f
+            else -> 0.28f
+        },
         animationSpec = tween(durationMillis = 900),
         label = "baseWallpaperScrim",
     )
     val scaffoldBg = if (isNightMode) NightBackground else DayBackground
+
+    // Crossfade key embeds the URL so Coil loads the correct layer during the fade.
+    val activeWallpaperKey = when {
+        useDarkImage -> "dark:$wallpaperDarkUrl"
+        dayOk -> "day:$wallpaperUrl"
+        else -> "none"
+    }
 
     Box(
         modifier = modifier
@@ -203,20 +224,67 @@ fun HotelWallpaperBackground(
             .clip(RectangleShape)
             .background(scaffoldBg),
     ) {
-        if (wallpaperUrl.isNotBlank() && !isLegacyUnsafeImageUrl(wallpaperUrl)) {
-            AsyncImage(
-                model = hotelImageRequest(
-                    context = LocalContext.current,
-                    url = wallpaperUrl,
-                    logTag = "HotelWallpaper",
-                ),
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RectangleShape),
-                contentScale = ContentScale.Crop,
-                alignment = Alignment.Center,
-            )
+        Crossfade(
+            targetState = activeWallpaperKey,
+            animationSpec = tween(durationMillis = 900),
+            label = "wallpaperDayNightCrossfade",
+            modifier = Modifier.fillMaxSize(),
+        ) { key ->
+            if (key == "none") {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.horizontalGradient(
+                                colorStops = arrayOf(
+                                    0.0f to scaffoldBg,
+                                    0.55f to NavyMain,
+                                    0.85f to Color(0xFF152238),
+                                    1.0f to Color(0xFF1A2D45),
+                                ),
+                            ),
+                        ),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .fillMaxHeight()
+                            .fillMaxWidth(0.38f)
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        Color(0xFF1E3A52).copy(alpha = 0.55f),
+                                        Color.Transparent,
+                                    ),
+                                ),
+                            ),
+                    )
+                }
+            } else {
+                val urlForLayer = when {
+                    key.startsWith("dark:") -> key.removePrefix("dark:")
+                    key.startsWith("day:") -> key.removePrefix("day:")
+                    else -> ""
+                }
+                if (urlForLayer.isNotBlank()) {
+                    AsyncImage(
+                        model = hotelImageRequest(
+                            context = LocalContext.current,
+                            url = urlForLayer,
+                            logTag = "HotelWallpaper",
+                        ),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RectangleShape),
+                        contentScale = ContentScale.Crop,
+                        alignment = Alignment.Center,
+                    )
+                }
+            }
+        }
+
+        if (dayOk || darkOk) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -235,7 +303,7 @@ fun HotelWallpaperBackground(
                         ),
                     ),
             )
-            // Automatic night dim — crossfades when local time crosses 18:00 / 06:00.
+            // Dim fallback when night has no dedicated dark wallpaper.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -254,35 +322,6 @@ fun HotelWallpaperBackground(
                     ),
             )
         } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.horizontalGradient(
-                            colorStops = arrayOf(
-                                0.0f to scaffoldBg,
-                                0.55f to NavyMain,
-                                0.85f to Color(0xFF152238),
-                                1.0f to Color(0xFF1A2D45),
-                            ),
-                        ),
-                    ),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .fillMaxWidth(0.38f)
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(
-                                    Color(0xFF1E3A52).copy(alpha = 0.55f),
-                                    Color.Transparent,
-                                ),
-                            ),
-                        ),
-                )
-            }
             Box(
                 modifier = Modifier
                     .fillMaxSize()

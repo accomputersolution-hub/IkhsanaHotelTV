@@ -28,6 +28,7 @@ export async function fetchPublicHotelBySlug(slug) {
     logoUrl: data.logoUrl || data.logo_url || '',
     themeColor: data.themeColor || '',
     bgWallpaper: data.bgWallpaper || data.bg_wallpaper || '',
+    bgWallpaperDark: data.bgWallpaperDark || data.bg_wallpaper_dark || '',
   };
 }
 

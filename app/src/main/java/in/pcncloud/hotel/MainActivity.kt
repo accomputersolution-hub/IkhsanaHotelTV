@@ -645,7 +645,8 @@ class MainActivity : ComponentActivity() {
                 Log.d(
                     TAG,
                     "MainActivity branding update → logo_url=${branding.logoUrl} " +
-                        "bg_wallpaper=${branding.bgWallpaperUrl} name=${branding.hotelName} " +
+                        "bg_wallpaper=${branding.bgWallpaperUrl} " +
+                        "bg_wallpaper_dark=${branding.bgWallpaperDarkUrl} name=${branding.hotelName} " +
                         "status=${branding.status}",
                 )
             },

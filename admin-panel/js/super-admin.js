@@ -126,6 +126,12 @@ function brandingOf(hotel) {
   return {
     logoUrl: b.logoUrl || b.logo_url || hotel?.logoUrl || '',
     bgWallpaper: b.bgWallpaper || b.bg_wallpaper || hotel?.bgWallpaper || '',
+    bgWallpaperDark:
+      b.bgWallpaperDark ||
+      b.bg_wallpaper_dark ||
+      hotel?.bgWallpaperDark ||
+      hotel?.bg_wallpaper_dark ||
+      '',
     themeColor: b.themeColor || b.theme_color || hotel?.themeColor || '#C9A962',
     tagline: b.tagline || hotel?.tagline || '',
     welcomeMessage:
@@ -362,6 +368,9 @@ function setupAddHotelModal() {
     const logoUrl = sanitizeImageUrl(document.getElementById('hotel-logo-url')?.value || '');
     const themeColor = document.getElementById('hotel-theme-color')?.value?.trim() || '#C9A962';
     const bgWallpaper = sanitizeImageUrl(document.getElementById('hotel-bg-wallpaper')?.value || '');
+    const bgWallpaperDark = sanitizeImageUrl(
+      document.getElementById('hotel-bg-wallpaper-dark')?.value || '',
+    );
     const propertyType = normalizePropertyType(
       document.getElementById('hotel-property-type')?.value,
     );
@@ -378,7 +387,11 @@ function setupAddHotelModal() {
       toast('Public slug must be lowercase (e.g. grand_hotel) — used as subdomain', 'error');
       return;
     }
-    if (!assertDirectImageUrl(logoUrl, 'Logo') || !assertDirectImageUrl(bgWallpaper, 'Wallpaper')) {
+    if (
+      !assertDirectImageUrl(logoUrl, 'Logo') ||
+      !assertDirectImageUrl(bgWallpaper, 'Wallpaper') ||
+      !assertDirectImageUrl(bgWallpaperDark, 'Night wallpaper')
+    ) {
       return;
     }
 
@@ -427,6 +440,8 @@ function setupAddHotelModal() {
           themeColor,
           bgWallpaper,
           bg_wallpaper: bgWallpaper,
+          bgWallpaperDark,
+          bg_wallpaper_dark: bgWallpaperDark,
         },
         createdAt: serverTimestamp(),
       });
@@ -438,6 +453,8 @@ function setupAddHotelModal() {
         logoUrl,
         themeColor,
         bgWallpaper,
+        bgWallpaperDark,
+        bg_wallpaper_dark: bgWallpaperDark,
         property_type: propertyType,
         status: 'active',
         createdAt: serverTimestamp(),
@@ -507,6 +524,7 @@ function setupEditHotelModal() {
 
   const logoInput = document.getElementById('edit-hotel-logo-url');
   const wallpaperInput = document.getElementById('edit-hotel-wallpaper-url');
+  const wallpaperDarkInput = document.getElementById('edit-hotel-wallpaper-dark-url');
   const activeToggle = document.getElementById('edit-hotel-active');
 
   logoInput?.addEventListener('input', () => {
@@ -521,6 +539,13 @@ function setupEditHotelModal() {
       wallpaperInput.value.trim(),
       'edit-hotel-wallpaper-preview',
       'edit-hotel-wallpaper-placeholder',
+    );
+  });
+  wallpaperDarkInput?.addEventListener('input', () => {
+    updateMediaPreview(
+      wallpaperDarkInput.value.trim(),
+      'edit-hotel-wallpaper-dark-preview',
+      'edit-hotel-wallpaper-dark-placeholder',
     );
   });
   activeToggle?.addEventListener('change', () => {
@@ -543,6 +568,9 @@ function setupEditHotelModal() {
     const bgWallpaper = sanitizeImageUrl(
       document.getElementById('edit-hotel-wallpaper-url')?.value || '',
     );
+    const bgWallpaperDark = sanitizeImageUrl(
+      document.getElementById('edit-hotel-wallpaper-dark-url')?.value || '',
+    );
     const isActive = Boolean(document.getElementById('edit-hotel-active')?.checked);
     const propertyType = normalizePropertyType(
       document.getElementById('edit-hotel-property-type')?.value,
@@ -554,7 +582,11 @@ function setupEditHotelModal() {
       toast('Hotel name and admin email are required', 'error');
       return;
     }
-    if (!assertDirectImageUrl(logoUrl, 'Logo') || !assertDirectImageUrl(bgWallpaper, 'Wallpaper')) {
+    if (
+      !assertDirectImageUrl(logoUrl, 'Logo') ||
+      !assertDirectImageUrl(bgWallpaper, 'Wallpaper') ||
+      !assertDirectImageUrl(bgWallpaperDark, 'Night wallpaper')
+    ) {
       return;
     }
 
@@ -580,6 +612,8 @@ function setupEditHotelModal() {
           themeColor: brand.themeColor || '#C9A962',
           bgWallpaper,
           bg_wallpaper: bgWallpaper,
+          bgWallpaperDark,
+          bg_wallpaper_dark: bgWallpaperDark,
           tagline,
           welcomeMessage,
         },
@@ -587,6 +621,8 @@ function setupEditHotelModal() {
         logo_url: logoUrl,
         bgWallpaper,
         bg_wallpaper: bgWallpaper,
+        bgWallpaperDark,
+        bg_wallpaper_dark: bgWallpaperDark,
         updatedAt: serverTimestamp(),
       });
       closeModal('edit-hotel-modal');
@@ -622,6 +658,7 @@ function openEditHotelModal(hotel) {
   const welcomeEl = document.getElementById('edit-hotel-welcome-message');
   const logoEl = document.getElementById('edit-hotel-logo-url');
   const wallEl = document.getElementById('edit-hotel-wallpaper-url');
+  const wallDarkEl = document.getElementById('edit-hotel-wallpaper-dark-url');
   const activeEl = document.getElementById('edit-hotel-active');
 
   if (nameEl) nameEl.value = hotel.name || '';
@@ -633,6 +670,7 @@ function openEditHotelModal(hotel) {
   if (welcomeEl) welcomeEl.value = brand.welcomeMessage || '';
   if (logoEl) logoEl.value = brand.logoUrl || '';
   if (wallEl) wallEl.value = brand.bgWallpaper || '';
+  if (wallDarkEl) wallDarkEl.value = brand.bgWallpaperDark || '';
   if (activeEl) activeEl.checked = isActive;
 
   updateMediaPreview(
@@ -644,6 +682,11 @@ function openEditHotelModal(hotel) {
     brand.bgWallpaper,
     'edit-hotel-wallpaper-preview',
     'edit-hotel-wallpaper-placeholder',
+  );
+  updateMediaPreview(
+    brand.bgWallpaperDark,
+    'edit-hotel-wallpaper-dark-preview',
+    'edit-hotel-wallpaper-dark-placeholder',
   );
   syncActiveToggleLabel();
   openModal('edit-hotel-modal');

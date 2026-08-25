@@ -260,8 +260,13 @@
           </div>
         </div>
         <div>
-          <label for="hotel-bg-wallpaper" class="block text-sm font-medium mb-1">BG Wallpaper URL</label>
+          <label for="hotel-bg-wallpaper" class="block text-sm font-medium mb-1">BG Wallpaper URL (Day)</label>
           <input id="hotel-bg-wallpaper" type="url" placeholder="https://…" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+        </div>
+        <div>
+          <label for="hotel-bg-wallpaper-dark" class="block text-sm font-medium mb-1">BG Wallpaper Dark (Night, optional)</label>
+          <input id="hotel-bg-wallpaper-dark" type="url" placeholder="https://… (leave blank to auto-dim day image)" class="w-full px-4 py-2.5 rounded-xl outline-none" />
+          <p class="text-xs mt-1" style="color:var(--text-dim)">If empty, TV dims the day wallpaper after 18:00.</p>
         </div>
         <p class="text-xs" style="color:var(--text-dim)">Creates <code>Hotels/{slug}</code>, Auth user, and <code>users/{uid}</code> with role hotel_admin.</p>
         <button type="submit" class="w-full py-3 font-semibold rounded-xl btn-gold">Create Hotel</button>
@@ -364,7 +369,7 @@
                 </div>
               </div>
               <div>
-                <label for="edit-hotel-wallpaper-url" class="block text-sm font-medium mb-1">Wallpaper / Background Image URL</label>
+                <label for="edit-hotel-wallpaper-url" class="block text-sm font-medium mb-1">Wallpaper / Background Image URL (Day)</label>
                 <input
                   id="edit-hotel-wallpaper-url"
                   type="text"
@@ -377,6 +382,22 @@
                 <div class="sa-media-preview sa-media-preview-wide mt-2 max-h-32">
                   <img id="edit-hotel-wallpaper-preview" alt="Wallpaper preview" class="sa-preview-img sa-preview-wallpaper max-h-32 object-contain hidden" />
                   <span id="edit-hotel-wallpaper-placeholder" class="sa-preview-placeholder">Wallpaper preview</span>
+                </div>
+              </div>
+              <div>
+                <label for="edit-hotel-wallpaper-dark-url" class="block text-sm font-medium mb-1">Night Wallpaper URL (optional)</label>
+                <input
+                  id="edit-hotel-wallpaper-dark-url"
+                  type="text"
+                  spellcheck="false"
+                  autocomplete="off"
+                  placeholder="https://i.ibb.co/…/wallpaper-night.jpg"
+                  class="sa-field w-full outline-none"
+                />
+                <p class="text-xs mt-1" style="color:var(--text-dim)">Blank = auto-dim day wallpaper after 18:00. Set a dark image for a true night look.</p>
+                <div class="sa-media-preview sa-media-preview-wide mt-2 max-h-32">
+                  <img id="edit-hotel-wallpaper-dark-preview" alt="Night wallpaper preview" class="sa-preview-img sa-preview-wallpaper max-h-32 object-contain hidden" />
+                  <span id="edit-hotel-wallpaper-dark-placeholder" class="sa-preview-placeholder">Night wallpaper preview</span>
                 </div>
               </div>
               <div class="sa-status-toggle-row">

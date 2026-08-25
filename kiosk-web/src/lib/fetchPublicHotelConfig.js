@@ -65,6 +65,7 @@ export async function fetchPublicHotelConfig(db, publicSlug) {
     logoUrl: branding.logoUrl || branding.logo_url || '',
     themeColor: branding.themeColor || '#C9A962',
     bgWallpaper: branding.bgWallpaper || branding.bg_wallpaper || '',
+    bgWallpaperDark: branding.bgWallpaperDark || branding.bg_wallpaper_dark || '',
     property_type: data.property_type || 'hotel',
     status: data.status || 'active',
   };
@@ -78,6 +79,7 @@ function mapPublicDoc(slug, data) {
     logoUrl: data.logoUrl || data.logo_url || '',
     themeColor: data.themeColor || '#C9A962',
     bgWallpaper: data.bgWallpaper || data.bg_wallpaper || '',
+    bgWallpaperDark: data.bgWallpaperDark || data.bg_wallpaper_dark || '',
     property_type: data.property_type || 'hotel',
     status: data.status || 'active',
   };
