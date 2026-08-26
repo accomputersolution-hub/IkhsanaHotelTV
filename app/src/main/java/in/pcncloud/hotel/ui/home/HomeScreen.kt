@@ -78,7 +78,6 @@ import `in`.pcncloud.hotel.ui.components.BroadcastAlertOverlay
 import `in`.pcncloud.hotel.ui.components.LuxuryNavCard
 import `in`.pcncloud.hotel.ui.components.ServiceToast
 import `in`.pcncloud.hotel.ui.theme.GoldLuxury
-import `in`.pcncloud.hotel.ui.theme.LocalIsNightMode
 import `in`.pcncloud.hotel.ui.theme.NavyDeep
 import `in`.pcncloud.hotel.ui.theme.SerifDisplay
 import `in`.pcncloud.hotel.ui.theme.TextPrimary
