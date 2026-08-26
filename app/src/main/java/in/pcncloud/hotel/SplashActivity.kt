@@ -17,15 +17,17 @@ import androidx.core.view.isVisible
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.config.IntroVideoCache
 import `in`.pcncloud.hotel.data.FirestorePaths
-import `in`.pcncloud.hotel.integration.TailscaleWakeHelper
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.ui.home.BrandAssets
+import `in`.pcncloud.hotel.vpn.KioskVpnController
+import `in`.pcncloud.hotel.vpn.KioskVpnPermissionBridge
 import coil.imageLoader
 import coil.request.ImageRequest
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.MetadataChanges
+import androidx.activity.result.contract.ActivityResultContracts
 
 /**
  * Dedicated cold-start splash:
@@ -61,6 +63,19 @@ class SplashActivity : AppCompatActivity() {
     /** True while Settings overlay screen is open via [startActivityForResult]. */
     private var awaitingOverlayResult = false
 
+    /** True while the system VPN consent activity is open. */
+    private var awaitingVpnPermission = false
+
+    /** One-shot VPN consent (only if Device Owner Always-On has not already authorized). */
+    private val vpnPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        awaitingVpnPermission = false
+        if (BuildConfig.IS_CORPORATE && result.resultCode == RESULT_OK) {
+            KioskVpnController.ensureRunning(applicationContext)
+        }
+    }
+
     private val proceedUnpaired = Runnable { openPairing() }
     private val proceedMain = Runnable { openMain() }
     private val forceProceedMain = Runnable {
@@ -92,12 +107,20 @@ class SplashActivity : AppCompatActivity() {
         splashProgress = findViewById(R.id.splash_progress)
         startedAtMs = SystemClock.elapsedRealtime()
 
-        // Corporate only: brief Tailscale UI wake, then return to MainActivity.
+        // Corporate: start built-in WireGuard VPN (no external Tailscale UI).
+        // Ask VpnService.prepare first on the UI thread so consent is not raced.
         if (BuildConfig.IS_CORPORATE) {
             try {
-                TailscaleWakeHelper.wakeViaUiThenReturnToKiosk(applicationContext)
+                val prepare = KioskVpnController.preparePermissionIntent(this)
+                if (prepare != null) {
+                    awaitingVpnPermission = true
+                    vpnPermissionLauncher.launch(prepare)
+                } else {
+                    KioskVpnPermissionBridge.consume() // clear any stale offer
+                    KioskVpnController.ensureRunning(applicationContext)
+                }
             } catch (e: Exception) {
-                Log.w(TAG, "Tailscale UI wake from Splash failed", e)
+                Log.w(TAG, "Built-in VPN start from Splash failed", e)
             }
         }
 
@@ -259,14 +282,20 @@ class SplashActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         KioskPolicy.clearUserMinimized(this)
-        if (hasNavigated || awaitingOverlayResult || !overlayGatePassed) return
+        if (hasNavigated || awaitingOverlayResult || awaitingVpnPermission || !overlayGatePassed) {
+            return
+        }
         resumePendingNavigation()
     }
 
     override fun onStop() {
         clearCallbacks()
         mainTransitionScheduled = false
-        if (!isChangingConfigurations && !isFinishing && !awaitingOverlayResult) {
+        if (!isChangingConfigurations &&
+            !isFinishing &&
+            !awaitingOverlayResult &&
+            !awaitingVpnPermission
+        ) {
             KioskPolicy.markUserMinimized(this)
             Log.i(TAG, "onStop — cancelled pending navigation (user backgrounded)")
         }
@@ -274,7 +303,9 @@ class SplashActivity : AppCompatActivity() {
     }
 
     private fun resumePendingNavigation() {
-        if (hasNavigated || !overlayGatePassed || awaitingOverlayResult) return
+        if (hasNavigated || !overlayGatePassed || awaitingOverlayResult || awaitingVpnPermission) {
+            return
+        }
         if (unpairedFlow) {
             splashRoot().removeCallbacks(proceedUnpaired)
             splashRoot().postDelayed(proceedUnpaired, UNPAIRED_DELAY_MS)

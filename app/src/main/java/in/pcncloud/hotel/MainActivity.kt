@@ -40,6 +40,7 @@ import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
 import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
+import `in`.pcncloud.hotel.vpn.KioskVpnController
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.ScreensaverOverlay
 import `in`.pcncloud.hotel.ui.components.ServiceSuspendedScreen
@@ -1622,6 +1623,16 @@ class MainActivity : ComponentActivity() {
                 }
                 // Android 10 BAL exemption: overlay permission must be granted.
                 ensureOverlayPermissionForBal()
+            }
+
+            // Corporate: re-assert built-in WireGuard VPN (no external UI).
+            if (BuildConfig.IS_CORPORATE) {
+                try {
+                    MyDeviceAdminReceiver.ensureAlwaysOnInternalVpn(this)
+                    KioskVpnController.ensureRunning(this)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Built-in VPN ensure from MainActivity failed", e)
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "onResume error", e)

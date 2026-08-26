@@ -12,9 +12,9 @@ import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.PairingActivity
 import `in`.pcncloud.hotel.config.HotelConfig
-import `in`.pcncloud.hotel.integration.TailscaleWakeHelper
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
+import `in`.pcncloud.hotel.vpn.KioskVpnController
 
 /**
  * Auto-starts the hotel UI after device restart.
@@ -80,24 +80,12 @@ class BootReceiver : BroadcastReceiver() {
         // PendingIntent launch first (BAL-safe). Watchdog after UI attempt.
         launchUiAfterBoot(context, launchIntent, target.simpleName, action)
 
-        // Corporate only: brief Tailscale UI wake, then MainActivity REORDER_TO_FRONT.
-        // Hotel flavor skips entirely. goAsync keeps the receiver alive for the 12s delay.
+        // Corporate: start built-in WireGuard VPN in the background (no external UI).
         if (BuildConfig.IS_CORPORATE) {
-            val pendingResult = goAsync()
             try {
-                TailscaleWakeHelper.wakeViaUiThenReturnToKiosk(appContext) {
-                    try {
-                        pendingResult.finish()
-                    } catch (e: Exception) {
-                        Log.w(TAG, "BootReceiver PendingResult.finish failed", e)
-                    }
-                }
+                KioskVpnController.ensureRunning(appContext)
             } catch (e: Exception) {
-                Log.w(TAG, "Tailscale UI wake after boot failed", e)
-                try {
-                    pendingResult.finish()
-                } catch (_: Exception) {
-                }
+                Log.w(TAG, "Built-in VPN start after boot failed", e)
             }
         }
 

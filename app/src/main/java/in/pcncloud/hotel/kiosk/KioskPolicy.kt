@@ -22,7 +22,6 @@ import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.alert.AlertOverlayService
 import `in`.pcncloud.hotel.config.HotelConfig
-import `in`.pcncloud.hotel.integration.TailscaleWakeHelper
 
 /**
  * Central gate for kiosk / custom-launcher behaviour.
@@ -326,10 +325,6 @@ object KioskPolicy {
 
     /**
      * Unified gate: reclaim / Watchdog / Root-Home snap must not run.
-     *
-     * When [context] is provided on corporate builds, also skips while Tailscale
-     * VPN UI is briefly visible (Always-On connect) so we do not inject
-     * REORDER_TO_FRONT after the initial Tailscale wake sequence.
      */
     fun shouldSkipKioskReclaim(reason: String = "", context: Context? = null): Boolean {
         if (exitingAppCleanly) {
@@ -344,37 +339,7 @@ object KioskPolicy {
             Log.d(TAG, "skip reclaim — suppress window ($reason)")
             return true
         }
-        if (context != null && isCorporateTailscaleVisible(context)) {
-            Log.d(TAG, "skip reclaim — Tailscale VPN UI visible ($reason)")
-            return true
-        }
         return false
-    }
-
-    /**
-     * True when corporate Tailscale is in the foreground / visible importance.
-     * Avoids post-VPN-connect reclaim glitches. Not a ConnectivityManager listener.
-     */
-    fun isCorporateTailscaleVisible(context: Context): Boolean {
-        if (!BuildConfig.IS_CORPORATE) return false
-        return try {
-            val am = context.applicationContext
-                .getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-                ?: return false
-            val tailscale = TailscaleWakeHelper.PACKAGE_NAME
-            val procs = am.runningAppProcesses ?: return false
-            for (proc in procs) {
-                val name = proc.processName ?: continue
-                if (name != tailscale && !name.startsWith("$tailscale:")) continue
-                if (proc.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE) {
-                    return true
-                }
-            }
-            false
-        } catch (t: Throwable) {
-            Log.w(TAG, "isCorporateTailscaleVisible failed", t)
-            false
-        }
     }
 
     /**

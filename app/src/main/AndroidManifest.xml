@@ -18,6 +18,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
     <uses-feature
         android:name="android.hardware.touchscreen"
@@ -141,7 +143,7 @@
 
         <!--
           Device Owner admin receiver — required for true Lock Task / Home suppression
-          and (corporate) Always-On VPN via DevicePolicyManager.setAlwaysOnVpnPackage.
+          and (corporate) Always-On VPN pinned to THIS app's built-in VpnService.
           Provision once (factory-reset TV, no Google account):
           Hotel:     adb shell dpm set-device-owner in.pcncloud.hotel/in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
           Corporate: adb shell dpm set-device-owner in.pcncloud.corporate/in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
@@ -175,6 +177,52 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Hotel TV optional kiosk keep-alive; does not relaunch UI on minimize" />
+        </service>
+
+        <!--
+          Built-in kiosk VPN orchestrator (foreground keep-alive).
+          Does NOT expose android.net.VpnService — Always-On must resolve exactly one
+          VPN service (GoBackend$VpnService below).
+        -->
+        <service
+            android:name=".vpn.KioskVpnService"
+            android:enabled="true"
+            android:exported="false"
+            android:directBootAware="true"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Built-in WireGuard VPN tunnel for corporate kiosk" />
+        </service>
+
+        <!--
+          Sole android.net.VpnService for this package (WireGuard GoBackend TUN).
+          Device Owner Always-On VPN targets this package and starts this service.
+        -->
+        <service
+            android:name="com.wireguard.android.backend.GoBackend$VpnService"
+            android:exported="false"
+            android:directBootAware="true"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="specialUse">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="WireGuard userspace TUN for corporate kiosk" />
+        </service>
+
+        <service
+            android:name=".vpn.KioskVpnKeepAliveService"
+            android:enabled="true"
+            android:exported="false"
+            android:directBootAware="true"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Re-assert built-in WireGuard tunnel after boot / process death" />
         </service>
 
         <!--

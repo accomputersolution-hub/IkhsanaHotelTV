@@ -30,10 +30,16 @@ class HotelTvApplication : Application(), ImageLoaderFactory {
             Log.w(TAG, "logProvisioningDiagnostics failed during Application.onCreate", e)
         }
         try {
-            // Corporate Device Owner: pin Tailscale as Always-On VPN (no-op on hotel / non-DO).
-            MyDeviceAdminReceiver.ensureAlwaysOnTailscaleVpn(this)
+            // Corporate Device Owner: Always-On VPN = this app (built-in WireGuard).
+            MyDeviceAdminReceiver.ensureAlwaysOnInternalVpn(this)
         } catch (e: Exception) {
-            Log.w(TAG, "ensureAlwaysOnTailscaleVpn failed during Application.onCreate", e)
+            Log.w(TAG, "ensureAlwaysOnInternalVpn failed during Application.onCreate", e)
+        }
+        try {
+            // Corporate: start built-in VPN with no external UI (no-op without config).
+            `in`.pcncloud.hotel.vpn.KioskVpnController.ensureRunning(this)
+        } catch (e: Exception) {
+            Log.w(TAG, "KioskVpnController.ensureRunning failed during Application.onCreate", e)
         }
         try {
             KioskPolicy.onProcessStart(this)
