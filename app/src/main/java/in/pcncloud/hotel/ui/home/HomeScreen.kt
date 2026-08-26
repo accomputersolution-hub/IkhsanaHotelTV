@@ -337,18 +337,18 @@ fun HomeScreen(
                                 val pm = context.packageManager
                                 val intent = pm.getLaunchIntentForPackage(liveTvPackage)
                                     ?: pm.getLeanbackLaunchIntentForPackage(liveTvPackage)
-                                if (intent == null) {
+                                if (intent != null) {
+                                    // Mark before startActivity so Watchdog / leave-hint skip reclaim.
+                                    KioskPolicy.markOttLaunched(context, liveTvPackage)
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(intent)
+                                } else {
                                     Toast.makeText(
                                         context.applicationContext,
                                         context.getString(R.string.live_tv_app_not_installed),
                                         Toast.LENGTH_LONG,
                                     ).show()
-                                    return@onLiveTv
                                 }
-                                // Mark before startActivity so Watchdog / leave-hint skip reclaim.
-                                KioskPolicy.markOttLaunched(context, liveTvPackage)
-                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                context.startActivity(intent)
                             } catch (_: Exception) {
                                 try {
                                     KioskPolicy.clearOttLaunchState(context)
