@@ -11,6 +11,7 @@ import android.util.Log
 import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.PairingActivity
 import `in`.pcncloud.hotel.config.HotelConfig
+import `in`.pcncloud.hotel.integration.TailscaleWakeHelper
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
 
@@ -77,6 +78,25 @@ class BootReceiver : BroadcastReceiver() {
 
         // PendingIntent launch first (BAL-safe). Watchdog after UI attempt.
         launchUiAfterBoot(context, launchIntent, target.simpleName, action)
+
+        // Wake Tailscale VPN in the background (no Tailscale UI).
+        // goAsync keeps the receiver alive for the ~2.5s CONNECT retry.
+        val pendingResult = goAsync()
+        try {
+            TailscaleWakeHelper.wakeConnectWithRetry(appContext) {
+                try {
+                    pendingResult.finish()
+                } catch (e: Exception) {
+                    Log.w(TAG, "BootReceiver PendingResult.finish failed", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Tailscale silent wake after boot failed", e)
+            try {
+                pendingResult.finish()
+            } catch (_: Exception) {
+            }
+        }
 
         if (hotelConfig.isPaired() && isKioskActive) {
             try {

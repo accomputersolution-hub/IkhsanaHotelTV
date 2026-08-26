@@ -17,6 +17,7 @@ import androidx.core.view.isVisible
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.config.IntroVideoCache
 import `in`.pcncloud.hotel.data.FirestorePaths
+import `in`.pcncloud.hotel.integration.TailscaleWakeHelper
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.ui.home.BrandAssets
 import coil.imageLoader
@@ -90,6 +91,13 @@ class SplashActivity : AppCompatActivity() {
         splashStatus = findViewById(R.id.splash_status)
         splashProgress = findViewById(R.id.splash_progress)
         startedAtMs = SystemClock.elapsedRealtime()
+
+        // Silent Tailscale CONNECT (no Tailscale UI). Complements BootReceiver.
+        try {
+            TailscaleWakeHelper.wakeConnectWithRetry(applicationContext)
+        } catch (e: Exception) {
+            Log.w(TAG, "Tailscale silent wake from Splash failed", e)
+        }
 
         // Hotel build: keep splash logo hidden until branding arrives, so the
         // default flower does not flash before the remote logo replaces it.
