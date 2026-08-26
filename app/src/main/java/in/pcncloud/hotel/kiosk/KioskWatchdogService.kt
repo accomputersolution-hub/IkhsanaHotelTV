@@ -87,7 +87,7 @@ class KioskWatchdogService : Service() {
 
     private fun maybeBringToFront(reason: String) {
         // Hard gate: never steal focus during clean exit or Staff Settings.
-        if (KioskPolicy.shouldSkipKioskReclaim(reason)) {
+        if (KioskPolicy.shouldSkipKioskReclaim(reason, this)) {
             Log.d(TAG, "maybeBringToFront skipped — staff/exit suppress ($reason)")
             return
         }

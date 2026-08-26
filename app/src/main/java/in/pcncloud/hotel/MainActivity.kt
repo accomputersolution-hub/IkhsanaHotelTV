@@ -1461,7 +1461,7 @@ class MainActivity : ComponentActivity() {
 
         if (!hasFocus) {
             if (!KioskPolicy.isKioskModeEnabled(this)) return
-            if (KioskPolicy.shouldSkipKioskReclaim("onWindowFocusChanged")) {
+            if (KioskPolicy.shouldSkipKioskReclaim("onWindowFocusChanged", this)) {
                 Log.d(TAG, "onWindowFocusChanged — staff/exit suppress, skip reclaim")
                 return
             }
@@ -1639,7 +1639,7 @@ class MainActivity : ComponentActivity() {
 
         val kioskOn = KioskPolicy.isKioskModeEnabled(this)
         if (!kioskOn) return
-        if (KioskPolicy.shouldSkipKioskReclaim("onPause")) return
+        if (KioskPolicy.shouldSkipKioskReclaim("onPause", this)) return
         if (KioskPolicy.isExternalAppActive(this)) return
 
         // Physical TV: NEVER reclaim from onPause — it fires mid-resume of our own
@@ -1691,7 +1691,7 @@ class MainActivity : ComponentActivity() {
         super.onStop()
 
         if (!KioskPolicy.isKioskModeEnabled(this)) return
-        if (KioskPolicy.shouldSkipKioskReclaim("onStop")) return
+        if (KioskPolicy.shouldSkipKioskReclaim("onStop", this)) return
         if (KioskPolicy.isExternalAppActive(this)) return
 
         // Physical TV: reclaim only from onUserLeaveHint (same reason as onPause).
@@ -2034,7 +2034,7 @@ class MainActivity : ComponentActivity() {
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
 
-        if (KioskPolicy.shouldSkipKioskReclaim("onUserLeaveHint")) {
+        if (KioskPolicy.shouldSkipKioskReclaim("onUserLeaveHint", this)) {
             Log.i(TAG, "onUserLeaveHint — staff/exit suppress, skip reclaim")
             super.onUserLeaveHint()
             return

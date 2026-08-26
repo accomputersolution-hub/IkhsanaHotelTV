@@ -13,11 +13,14 @@ import `in`.pcncloud.hotel.kiosk.KioskPolicy
 /**
  * Corporate-only Tailscale VPN wake via a short UI launch.
  *
- * Custom TV OS blocks background broadcasts and has no Settings package, so the
- * only reliable path on Android 9 is:
+ * Boot/splash only:
  * 1. [PackageManager.getLaunchIntentForPackage] → start Tailscale
- * 2. After [RETURN_TO_KIOSK_DELAY_MS] (12s), bring [MainActivity] back with
- *    [Intent.FLAG_ACTIVITY_REORDER_TO_FRONT]
+ * 2. After [RETURN_TO_KIOSK_DELAY_MS] (12s), one-shot restore of [MainActivity]
+ *
+ * There is **no** ConnectivityManager / VPN network listener. After this one-shot
+ * sequence finishes, later Tailscale VPN UI flashes are ignored by
+ * [KioskPolicy.shouldSkipKioskReclaim] so we never inject more REORDER_TO_FRONT
+ * intents when the tunnel connects.
  *
  * Hotel flavor: every entry point is a no-op.
  */
@@ -27,7 +30,7 @@ object TailscaleWakeHelper {
 
     const val PACKAGE_NAME = "com.tailscale.ipn"
 
-    /** How long Tailscale stays foreground before kiosk UI is restored. */
+    /** How long Tailscale stays foreground before the one-shot kiosk restore. */
     private const val RETURN_TO_KIOSK_DELAY_MS = 12_000L
 
     /** Prevent BootReceiver + Splash from double-firing the UI flash. */
@@ -53,12 +56,10 @@ object TailscaleWakeHelper {
     }
 
     /**
-     * Launches Tailscale UI, then restores [MainActivity] after 12s.
+     * Launches Tailscale UI, then restores [MainActivity] once after 12s.
+     * Does not register network listeners; does not schedule further reclaim.
      *
      * Hotel flavor / missing package: invokes [onComplete] immediately.
-     *
-     * @param onComplete called on the main thread after reclaim attempt (or early exit).
-     *   Use from [android.content.BroadcastReceiver.goAsync] to finish the PendingResult.
      */
     fun wakeViaUiThenReturnToKiosk(
         context: Context,
@@ -99,15 +100,19 @@ object TailscaleWakeHelper {
         }
 
         try {
-            // Keep Watchdog from reclaiming during the short Tailscale flash.
+            // Block Watchdog during the intentional Tailscale dwell.
             KioskPolicy.markOttLaunched(app, PACKAGE_NAME)
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             app.startActivity(launchIntent)
-            Log.i(TAG, "Launched Tailscale UI → $PACKAGE_NAME; reclaim MainActivity in ${RETURN_TO_KIOSK_DELAY_MS}ms")
+            Log.i(
+                TAG,
+                "Launched Tailscale UI → $PACKAGE_NAME; one-shot MainActivity restore in " +
+                    "${RETURN_TO_KIOSK_DELAY_MS}ms (no VPN network listener)",
+            )
         } catch (t: Throwable) {
             Log.e(TAG, "Tailscale startActivity failed", t)
             try {
-                KioskPolicy.clearOttLaunchState(app)
+                KioskPolicy.clearOttLaunchState(app, suppressMs = 0L)
             } catch (_: Throwable) {
             }
             onComplete?.invoke()
@@ -117,7 +122,7 @@ object TailscaleWakeHelper {
         Handler(Looper.getMainLooper()).postDelayed(
             {
                 try {
-                    bringMainActivityToFront(app)
+                    finishInitialWakeSequence(app)
                 } finally {
                     onComplete?.invoke()
                 }
@@ -128,14 +133,17 @@ object TailscaleWakeHelper {
 
     /**
      * Backward-compatible alias used by BootReceiver / Splash.
-     * Same behavior as [wakeViaUiThenReturnToKiosk].
      */
     fun wakeConnectWithRetry(
         context: Context,
         onComplete: (() -> Unit)? = null,
     ) = wakeViaUiThenReturnToKiosk(context, onComplete)
 
-    private fun bringMainActivityToFront(context: Context) {
+    /**
+     * One-shot restore after the boot dwell. After this returns, no further
+     * Tailscale/VPN-driven startActivity reclaim is scheduled from this helper.
+     */
+    private fun finishInitialWakeSequence(context: Context) {
         try {
             val intent = Intent(context, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -144,12 +152,15 @@ object TailscaleWakeHelper {
                 addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
             }
             context.startActivity(intent)
-            Log.i(TAG, "Restored MainActivity with REORDER_TO_FRONT after Tailscale wake")
+            Log.i(TAG, "Initial Tailscale wake done — MainActivity restored once")
         } catch (t: Throwable) {
             Log.e(TAG, "Failed to bring MainActivity to front after Tailscale", t)
         } finally {
             try {
-                KioskPolicy.clearOttLaunchState(context)
+                // Re-enable normal kiosk reclaim for non-Tailscale apps.
+                // suppressMs=0: do not create a 2.5s "jump" window; Tailscale VPN
+                // UI flashes are ignored via shouldSkipKioskReclaim instead.
+                KioskPolicy.clearOttLaunchState(context, suppressMs = 0L)
             } catch (_: Throwable) {
             }
         }

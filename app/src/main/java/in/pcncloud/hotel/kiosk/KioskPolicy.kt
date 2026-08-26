@@ -19,8 +19,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
 import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
+import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.alert.AlertOverlayService
 import `in`.pcncloud.hotel.config.HotelConfig
+import `in`.pcncloud.hotel.integration.TailscaleWakeHelper
 
 /**
  * Central gate for kiosk / custom-launcher behaviour.
@@ -324,8 +326,12 @@ object KioskPolicy {
 
     /**
      * Unified gate: reclaim / Watchdog / Root-Home snap must not run.
+     *
+     * When [context] is provided on corporate builds, also skips while Tailscale
+     * VPN UI is briefly visible (Always-On connect) so we do not inject
+     * REORDER_TO_FRONT after the initial Tailscale wake sequence.
      */
-    fun shouldSkipKioskReclaim(reason: String = ""): Boolean {
+    fun shouldSkipKioskReclaim(reason: String = "", context: Context? = null): Boolean {
         if (exitingAppCleanly) {
             Log.d(TAG, "skip reclaim — exitingAppCleanly ($reason)")
             return true
@@ -338,7 +344,37 @@ object KioskPolicy {
             Log.d(TAG, "skip reclaim — suppress window ($reason)")
             return true
         }
+        if (context != null && isCorporateTailscaleVisible(context)) {
+            Log.d(TAG, "skip reclaim — Tailscale VPN UI visible ($reason)")
+            return true
+        }
         return false
+    }
+
+    /**
+     * True when corporate Tailscale is in the foreground / visible importance.
+     * Avoids post-VPN-connect reclaim glitches. Not a ConnectivityManager listener.
+     */
+    fun isCorporateTailscaleVisible(context: Context): Boolean {
+        if (!BuildConfig.IS_CORPORATE) return false
+        return try {
+            val am = context.applicationContext
+                .getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                ?: return false
+            val tailscale = TailscaleWakeHelper.PACKAGE_NAME
+            val procs = am.runningAppProcesses ?: return false
+            for (proc in procs) {
+                val name = proc.processName ?: continue
+                if (name != tailscale && !name.startsWith("$tailscale:")) continue
+                if (proc.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE) {
+                    return true
+                }
+            }
+            false
+        } catch (t: Throwable) {
+            Log.w(TAG, "isCorporateTailscaleVisible failed", t)
+            false
+        }
     }
 
     /**
@@ -507,7 +543,7 @@ object KioskPolicy {
      * Uses REORDER_TO_FRONT | SINGLE_TOP (no PendingIntent storm, no process restart).
      */
     fun bringMainActivityToFrontGracefully(context: Context): Boolean {
-        if (shouldSkipKioskReclaim("bringMainActivityToFrontGracefully")) return false
+        if (shouldSkipKioskReclaim("bringMainActivityToFrontGracefully", context)) return false
         return try {
             val appContext = context.applicationContext
             val wantHome = !isStaffAdminUiActive()
@@ -1028,7 +1064,7 @@ object KioskPolicy {
         navigateToHome: Boolean = true,
         preferImmediateOptions: Boolean = false,
     ): Boolean {
-        if (shouldSkipKioskReclaim("forceBringToFrontSafely")) return false
+        if (shouldSkipKioskReclaim("forceBringToFrontSafely", context)) return false
         val guardMs = loopGuardMs(context)
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastForceBringAtMs < guardMs) {
@@ -1088,7 +1124,7 @@ object KioskPolicy {
         navigateToHome: Boolean = true,
         bypassDuplicateGuard: Boolean = false,
     ): Boolean {
-        if (shouldSkipKioskReclaim("forceBringToFrontPhysicalTvUrgent")) return false
+        if (shouldSkipKioskReclaim("forceBringToFrontPhysicalTvUrgent", context)) return false
         if (!isKioskModeEnabled(context)) return false
         if (isDeviceOwner(context)) {
             return forceBringToFrontSafely(
@@ -1379,7 +1415,7 @@ object KioskPolicy {
      * - An existing task is already created (unless crash recovery / kiosk needs reorder)
      */
     fun shouldBringAppToFront(context: Context, allowReorderIfKiosk: Boolean = true): Boolean {
-        if (shouldSkipKioskReclaim("shouldBringAppToFront")) {
+        if (shouldSkipKioskReclaim("shouldBringAppToFront", context)) {
             return false
         }
         // Never reclaim UI while guest is in YouTube / OTT under kiosk.
@@ -1484,7 +1520,7 @@ object KioskPolicy {
         applyLoopGuard: Boolean = true,
         ignoreLifecycleBusy: Boolean = false,
     ): Boolean {
-        if (shouldSkipKioskReclaim("forceBringToFront")) return false
+        if (shouldSkipKioskReclaim("forceBringToFront", context)) return false
         if (!isKioskModeEnabled(context)) return false
         if (isExternalAppActive(context)) {
             Log.d(TAG, "forceBringToFront skipped — OTT/external session active")
