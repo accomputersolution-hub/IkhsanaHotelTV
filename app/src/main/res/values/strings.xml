@@ -60,7 +60,7 @@
     <string name="ott_sonyliv">SonyLIV</string>
     <string name="ott_spotify">Spotify</string>
     <string name="live_tv_coming_soon">Live TV channels coming soon</string>
-    <string name="onyx_iptv_not_installed">Onyx IPTV app is not installed on this TV</string>
+    <string name="live_tv_app_not_installed">Live TV App not installed</string>
     <string name="services_title">Guest Services &amp; Housekeeping</string>
     <string name="services_subtitle">Select a service — our team will assist you shortly</string>
     <string name="service_tap_to_request">Press OK to choose options</string>

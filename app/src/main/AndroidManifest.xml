@@ -28,7 +28,7 @@
 
     <!-- Required on Android 11+ so PackageManager can resolve IPTV / OTT apps -->
     <queries>
-        <package android:name="com.ektv.ott" />
+        <package android:name="com.ektv.pro" />
         <package android:name="com.google.android.youtube.tv" />
         <package android:name="com.amazon.amazonvideo.livingroom" />
         <package android:name="in.startv.hotstar" />
