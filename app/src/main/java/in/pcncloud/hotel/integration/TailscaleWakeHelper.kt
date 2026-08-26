@@ -3,24 +3,21 @@ package `in`.pcncloud.hotel.integration
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.util.Log
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
-import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
 
 /**
- * Corporate-only Tailscale VPN wake via a short UI launch when VPN is down.
+ * Corporate-only Tailscale VPN wake via a short UI launch.
  *
- * No permanent SharedPreferences block — after a restart, if the VPN is not
- * connected, Tailscale is launched again; if already connected, startup skips
- * so the guest is not interrupted.
+ * Custom TV OS blocks background broadcasts and has no Settings package, so the
+ * only reliable path on Android 9 is:
+ * 1. [PackageManager.getLaunchIntentForPackage] → start Tailscale
+ * 2. After [RETURN_TO_KIOSK_DELAY_MS], bring [MainActivity] back with
+ *    [Intent.FLAG_ACTIVITY_REORDER_TO_FRONT]
  *
  * Hotel flavor: every entry point is a no-op.
  */
@@ -33,7 +30,7 @@ object TailscaleWakeHelper {
     /** How long Tailscale stays foreground before kiosk UI is restored. */
     private const val RETURN_TO_KIOSK_DELAY_MS = 3_500L
 
-    /** Prevent BootReceiver + Splash from double-firing while VPN is still connecting. */
+    /** Prevent BootReceiver + Splash from double-firing the UI flash. */
     private const val WAKE_THROTTLE_MS = 15_000L
 
     @Volatile
@@ -56,82 +53,9 @@ object TailscaleWakeHelper {
     }
 
     /**
-     * True when a VPN transport is up (Tailscale on these TVs), or when Device Owner
-     * Always-On VPN is already pinned to [PACKAGE_NAME] and a VPN network is active.
-     */
-    fun isTailscaleVpnConnected(context: Context): Boolean {
-        return try {
-            val app = context.applicationContext
-            val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-                ?: return false
-
-            val vpnUp = hasActiveVpnTransport(cm)
-            if (!vpnUp) {
-                Log.d(TAG, "VPN transport not active")
-                return false
-            }
-
-            // Prefer confirming Always-On package is Tailscale when we are Device Owner.
-            val alwaysOnTailscale = isAlwaysOnTailscale(app)
-            if (alwaysOnTailscale) {
-                Log.d(TAG, "VPN up + Always-On package is Tailscale")
-                return true
-            }
-
-            // Non-DO / Always-On unset: any active VPN on these corporate TVs is Tailscale.
-            Log.d(TAG, "VPN transport active (treating as Tailscale connected)")
-            true
-        } catch (t: Throwable) {
-            Log.w(TAG, "isTailscaleVpnConnected check failed — treat as disconnected", t)
-            false
-        }
-    }
-
-    private fun hasActiveVpnTransport(cm: ConnectivityManager): Boolean {
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                val active = cm.activeNetwork
-                if (active != null) {
-                    val caps = cm.getNetworkCapabilities(active)
-                    if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
-                        return true
-                    }
-                }
-            }
-            for (network in cm.allNetworks) {
-                val caps = cm.getNetworkCapabilities(network) ?: continue
-                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
-                    return true
-                }
-            }
-            false
-        } catch (t: Throwable) {
-            Log.w(TAG, "hasActiveVpnTransport failed", t)
-            false
-        }
-    }
-
-    private fun isAlwaysOnTailscale(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
-        return try {
-            if (!MyDeviceAdminReceiver.isDeviceOwner(context)) return false
-            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE)
-                as? android.app.admin.DevicePolicyManager
-                ?: return false
-            val admin = MyDeviceAdminReceiver.getComponentName(context)
-            val alwaysOn = dpm.getAlwaysOnVpnPackage(admin)
-            alwaysOn == PACKAGE_NAME
-        } catch (t: Throwable) {
-            Log.w(TAG, "isAlwaysOnTailscale check failed", t)
-            false
-        }
-    }
-
-    /**
-     * If Tailscale VPN is not connected, launches Tailscale UI then restores
-     * [MainActivity] after 3.5s. If already connected, skips entirely.
+     * Launches Tailscale UI, then restores [MainActivity] after 3.5s.
      *
-     * Hotel flavor / missing package / already connected: invokes [onComplete] immediately.
+     * Hotel flavor / missing package: invokes [onComplete] immediately.
      *
      * @param onComplete called on the main thread after reclaim attempt (or early exit).
      *   Use from [android.content.BroadcastReceiver.goAsync] to finish the PendingResult.
@@ -146,26 +70,20 @@ object TailscaleWakeHelper {
         }
 
         val app = context.applicationContext
-
         if (!isInstalled(app)) {
             Log.w(TAG, "Tailscale not installed — skip UI wake")
             onComplete?.invoke()
             return
         }
 
-        if (isTailscaleVpnConnected(app)) {
-            Log.i(TAG, "Tailscale VPN already connected — skip UI launch")
-            onComplete?.invoke()
-            return
-        }
-
-        val now = SystemClock.elapsedRealtime()
+        val now = android.os.SystemClock.elapsedRealtime()
         val last = lastWakeAtElapsedMs
         if (last > 0L && now - last < WAKE_THROTTLE_MS) {
             Log.i(TAG, "Tailscale UI wake throttled (${now - last}ms)")
             onComplete?.invoke()
             return
         }
+        lastWakeAtElapsedMs = now
 
         val launchIntent = try {
             app.packageManager.getLaunchIntentForPackage(PACKAGE_NAME)
@@ -183,16 +101,9 @@ object TailscaleWakeHelper {
         try {
             // Keep Watchdog from reclaiming during the short Tailscale flash.
             KioskPolicy.markOttLaunched(app, PACKAGE_NAME)
-            launchIntent.addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_INCLUDE_STOPPED_PACKAGES,
-            )
-            lastWakeAtElapsedMs = now
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             app.startActivity(launchIntent)
-            Log.i(
-                TAG,
-                "VPN down — launched Tailscale UI → $PACKAGE_NAME; " +
-                    "reclaim MainActivity in ${RETURN_TO_KIOSK_DELAY_MS}ms",
-            )
+            Log.i(TAG, "Launched Tailscale UI → $PACKAGE_NAME; reclaim MainActivity in ${RETURN_TO_KIOSK_DELAY_MS}ms")
         } catch (t: Throwable) {
             Log.e(TAG, "Tailscale startActivity failed", t)
             try {
