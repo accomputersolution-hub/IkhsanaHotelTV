@@ -9,6 +9,7 @@ import android.content.ContextWrapper
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import `in`.pcncloud.hotel.BuildConfig
 
 /**
  * Device-owner Lock Task helpers for hotel kiosk.
@@ -16,6 +17,7 @@ import android.util.Log
  * Keeps Home/Back from escaping to the stock Android TV launcher while kiosk is ON.
  * Streaming OTT apps (YouTube, Netflix, …) are allowlisted via RTDB `allowedPackages`
  * for the current hotel. Live TV (EKTV Pro) is always in the Lock Task baseline.
+ * Corporate builds also baseline-allowlist Tailscale for the post-boot VPN UI nudge.
  */
 object KioskLockTask {
 
@@ -26,6 +28,9 @@ object KioskLockTask {
 
     /** In-room Live TV / IPTV app — must stay Lock-Task allowlisted under kiosk. */
     const val LIVE_TV_PACKAGE = "com.ektv.pro"
+
+    /** Corporate VPN client — briefly launched after boot to reconnect. */
+    const val TAILSCALE_PACKAGE = "com.tailscale.ipn"
 
     /**
      * Essential Lock Task packages always merged with the hotel launcher.
@@ -40,14 +45,21 @@ object KioskLockTask {
         MyDeviceAdminReceiver.getComponentName(context)
 
     /**
-     * Lock Task package set = hotel app + [extraPackages] (RTDB allowlist) + baseline.
+     * Lock Task package set = hotel app + [extraPackages] (RTDB allowlist) + baseline
+     * (+ Tailscale on corporate builds only).
      */
-    fun buildLockTaskPackageArray(context: Context, extraPackages: List<String> = emptyList()): Array<String> =
-        (listOf(context.packageName) + extraPackages + BASELINE_LOCK_TASK_PACKAGES)
+    fun buildLockTaskPackageArray(context: Context, extraPackages: List<String> = emptyList()): Array<String> {
+        val corporateExtras = if (BuildConfig.IS_CORPORATE) {
+            listOf(TAILSCALE_PACKAGE)
+        } else {
+            emptyList()
+        }
+        return (listOf(context.packageName) + extraPackages + BASELINE_LOCK_TASK_PACKAGES + corporateExtras)
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .distinct()
             .toTypedArray()
+    }
 
     /**
      * Registers Lock Task packages from the hotel's RTDB `allowedPackages`,

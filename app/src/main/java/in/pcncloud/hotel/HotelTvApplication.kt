@@ -30,6 +30,12 @@ class HotelTvApplication : Application(), ImageLoaderFactory {
             Log.w(TAG, "logProvisioningDiagnostics failed during Application.onCreate", e)
         }
         try {
+            // Corporate Device Owner: pin Tailscale as Always-On VPN (no-op on hotel / non-DO).
+            MyDeviceAdminReceiver.ensureAlwaysOnTailscaleVpn(this)
+        } catch (e: Exception) {
+            Log.w(TAG, "ensureAlwaysOnTailscaleVpn failed during Application.onCreate", e)
+        }
+        try {
             KioskPolicy.onProcessStart(this)
         } catch (e: Exception) {
             // Direct Boot / CE storage must never crash the process.
