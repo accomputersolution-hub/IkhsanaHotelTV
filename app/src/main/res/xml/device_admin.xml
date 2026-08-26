@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <device-admin xmlns:android="http://schemas.android.com/apk/res/android">
     <!--
-      Standard Device Admin policy declaration for Device Owner provisioning.
-      Lock Task packages / features are applied at runtime via DevicePolicyManager.
+      Device Admin policy declaration for Device Owner provisioning.
+      Required by PackageManager for dpm set-device-owner.
+      Runtime policies (Lock Task, Always-On VPN) are applied via DevicePolicyManager.
     -->
     <uses-policies>
         <limit-password />

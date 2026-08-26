@@ -140,9 +140,11 @@
         </receiver>
 
         <!--
-          Device Owner admin receiver — required for true Lock Task / Home suppression.
+          Device Owner admin receiver — required for true Lock Task / Home suppression
+          and (corporate) Always-On VPN via DevicePolicyManager.setAlwaysOnVpnPackage.
           Provision once (factory-reset TV, no Google account):
-          adb shell dpm set-device-owner in.pcncloud.hotel/in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
+          Hotel:     adb shell dpm set-device-owner in.pcncloud.hotel/in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
+          Corporate: adb shell dpm set-device-owner in.pcncloud.corporate/in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
         -->
         <receiver
             android:name="in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver"
