@@ -11,13 +11,11 @@ import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 
 /**
- * Corporate-only Tailscale VPN wake via a short UI launch.
+ * Corporate-only Tailscale VPN wake via a short UI launch — **once per install**.
  *
- * Custom TV OS blocks background broadcasts and has no Settings package, so the
- * only reliable path on Android 9 is:
- * 1. [PackageManager.getLaunchIntentForPackage] → start Tailscale
- * 2. After [RETURN_TO_KIOSK_DELAY_MS], bring [MainActivity] back with
- *    [Intent.FLAG_ACTIVITY_REORDER_TO_FRONT]
+ * Tracks completion in SharedPreferences (`kiosk_prefs` /
+ * `is_vpn_configured_or_launched`). After the first successful startActivity,
+ * BootReceiver / Splash never flash Tailscale again on later reopens.
  *
  * Hotel flavor: every entry point is a no-op.
  */
@@ -27,17 +25,35 @@ object TailscaleWakeHelper {
 
     const val PACKAGE_NAME = "com.tailscale.ipn"
 
+    /** Same prefs file used by [KioskPolicy] so kiosk state stays in one place. */
+    private const val PREFS_NAME = "kiosk_prefs"
+
+    /** Durable run-once flag — true after the first Tailscale UI launch attempt. */
+    private const val KEY_VPN_CONFIGURED_OR_LAUNCHED = "is_vpn_configured_or_launched"
+
     /** How long Tailscale stays foreground before kiosk UI is restored. */
     private const val RETURN_TO_KIOSK_DELAY_MS = 3_500L
 
-    /** Prevent BootReceiver + Splash from double-firing the UI flash. */
-    private const val WAKE_THROTTLE_MS = 15_000L
-
-    @Volatile
-    private var lastWakeAtElapsedMs: Long = 0L
-
     private val isCorporateFlavor: Boolean
         get() = BuildConfig.IS_CORPORATE
+
+    private fun prefs(context: Context) =
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    /** True once the initial Tailscale UI wake has already run on this device. */
+    fun hasAlreadyLaunchedVpn(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_VPN_CONFIGURED_OR_LAUNCHED, false)
+
+    /**
+     * Marks the run-once flag so subsequent startups skip Tailscale UI entirely.
+     * Uses [SharedPreferences.Editor.commit] so BootReceiver + Splash see it immediately.
+     */
+    fun markVpnConfiguredOrLaunched(context: Context) {
+        prefs(context).edit()
+            .putBoolean(KEY_VPN_CONFIGURED_OR_LAUNCHED, true)
+            .commit()
+        Log.i(TAG, "$KEY_VPN_CONFIGURED_OR_LAUNCHED=true — future Tailscale UI wakes skipped")
+    }
 
     fun isInstalled(context: Context): Boolean {
         if (!isCorporateFlavor) return false
@@ -53,9 +69,10 @@ object TailscaleWakeHelper {
     }
 
     /**
-     * Launches Tailscale UI, then restores [MainActivity] after 3.5s.
+     * First corporate boot/open only: launches Tailscale UI, then restores
+     * [MainActivity] after 3.5s. Later startups see the prefs flag and skip.
      *
-     * Hotel flavor / missing package: invokes [onComplete] immediately.
+     * Hotel flavor / already launched / missing package: invokes [onComplete] immediately.
      *
      * @param onComplete called on the main thread after reclaim attempt (or early exit).
      *   Use from [android.content.BroadcastReceiver.goAsync] to finish the PendingResult.
@@ -70,20 +87,18 @@ object TailscaleWakeHelper {
         }
 
         val app = context.applicationContext
-        if (!isInstalled(app)) {
-            Log.w(TAG, "Tailscale not installed — skip UI wake")
+
+        if (hasAlreadyLaunchedVpn(app)) {
+            Log.i(TAG, "Tailscale UI wake skipped — already ran once ($KEY_VPN_CONFIGURED_OR_LAUNCHED=true)")
             onComplete?.invoke()
             return
         }
 
-        val now = android.os.SystemClock.elapsedRealtime()
-        val last = lastWakeAtElapsedMs
-        if (last > 0L && now - last < WAKE_THROTTLE_MS) {
-            Log.i(TAG, "Tailscale UI wake throttled (${now - last}ms)")
+        if (!isInstalled(app)) {
+            Log.w(TAG, "Tailscale not installed — skip UI wake (flag left false for retry)")
             onComplete?.invoke()
             return
         }
-        lastWakeAtElapsedMs = now
 
         val launchIntent = try {
             app.packageManager.getLaunchIntentForPackage(PACKAGE_NAME)
@@ -93,7 +108,7 @@ object TailscaleWakeHelper {
         }
 
         if (launchIntent == null) {
-            Log.w(TAG, "No launch intent for $PACKAGE_NAME")
+            Log.w(TAG, "No launch intent for $PACKAGE_NAME — flag left false for retry")
             onComplete?.invoke()
             return
         }
@@ -102,10 +117,19 @@ object TailscaleWakeHelper {
             // Keep Watchdog from reclaiming during the short Tailscale flash.
             KioskPolicy.markOttLaunched(app, PACKAGE_NAME)
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            // Mark BEFORE startActivity so a concurrent Splash/Boot path cannot double-launch.
+            markVpnConfiguredOrLaunched(app)
             app.startActivity(launchIntent)
-            Log.i(TAG, "Launched Tailscale UI → $PACKAGE_NAME; reclaim MainActivity in ${RETURN_TO_KIOSK_DELAY_MS}ms")
+            Log.i(
+                TAG,
+                "First-run Tailscale UI → $PACKAGE_NAME; reclaim MainActivity in ${RETURN_TO_KIOSK_DELAY_MS}ms",
+            )
         } catch (t: Throwable) {
-            Log.e(TAG, "Tailscale startActivity failed", t)
+            Log.e(TAG, "Tailscale startActivity failed — clearing run-once flag for retry", t)
+            try {
+                prefs(app).edit().putBoolean(KEY_VPN_CONFIGURED_OR_LAUNCHED, false).commit()
+            } catch (_: Throwable) {
+            }
             try {
                 KioskPolicy.clearOttLaunchState(app)
             } catch (_: Throwable) {
