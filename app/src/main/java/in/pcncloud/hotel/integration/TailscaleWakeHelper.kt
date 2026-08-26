@@ -16,7 +16,7 @@ import `in`.pcncloud.hotel.kiosk.KioskPolicy
  * Custom TV OS blocks background broadcasts and has no Settings package, so the
  * only reliable path on Android 9 is:
  * 1. [PackageManager.getLaunchIntentForPackage] → start Tailscale
- * 2. After [RETURN_TO_KIOSK_DELAY_MS] (7s), bring [MainActivity] back with
+ * 2. After [RETURN_TO_KIOSK_DELAY_MS] (12s), bring [MainActivity] back with
  *    [Intent.FLAG_ACTIVITY_REORDER_TO_FRONT]
  *
  * Hotel flavor: every entry point is a no-op.
@@ -28,7 +28,7 @@ object TailscaleWakeHelper {
     const val PACKAGE_NAME = "com.tailscale.ipn"
 
     /** How long Tailscale stays foreground before kiosk UI is restored. */
-    private const val RETURN_TO_KIOSK_DELAY_MS = 7_000L
+    private const val RETURN_TO_KIOSK_DELAY_MS = 12_000L
 
     /** Prevent BootReceiver + Splash from double-firing the UI flash. */
     private const val WAKE_THROTTLE_MS = 15_000L
@@ -53,7 +53,7 @@ object TailscaleWakeHelper {
     }
 
     /**
-     * Launches Tailscale UI, then restores [MainActivity] after 7s.
+     * Launches Tailscale UI, then restores [MainActivity] after 12s.
      *
      * Hotel flavor / missing package: invokes [onComplete] immediately.
      *

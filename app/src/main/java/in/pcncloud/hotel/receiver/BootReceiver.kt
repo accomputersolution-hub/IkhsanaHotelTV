@@ -81,7 +81,7 @@ class BootReceiver : BroadcastReceiver() {
         launchUiAfterBoot(context, launchIntent, target.simpleName, action)
 
         // Corporate only: brief Tailscale UI wake, then MainActivity REORDER_TO_FRONT.
-        // Hotel flavor skips entirely. goAsync keeps the receiver alive for the 7s delay.
+        // Hotel flavor skips entirely. goAsync keeps the receiver alive for the 12s delay.
         if (BuildConfig.IS_CORPORATE) {
             val pendingResult = goAsync()
             try {
