@@ -72,11 +72,20 @@ object TailscaleWakeHelper {
             val intent = Intent(ACTION_CONNECT_VPN).apply {
                 component = ComponentName(PACKAGE_NAME, RECEIVER_CLASS)
                 setPackage(PACKAGE_NAME)
-                // Explicit component broadcast; do not require a running Tailscale UI.
-                addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
+                // Aggressive silent delivery on Android 9 when Tailscale is stopped/background:
+                // - INCLUDE_STOPPED_PACKAGES: deliver even if the app process is not running
+                // - RECEIVER_FOREGROUND: higher-priority delivery (bypass background queue delay)
+                addFlags(
+                    Intent.FLAG_INCLUDE_STOPPED_PACKAGES or
+                        Intent.FLAG_RECEIVER_FOREGROUND,
+                )
             }
             context.applicationContext.sendBroadcast(intent)
-            Log.i(TAG, "Sent silent CONNECT_VPN → $PACKAGE_NAME/$RECEIVER_CLASS")
+            Log.i(
+                TAG,
+                "Sent silent CONNECT_VPN → $PACKAGE_NAME/$RECEIVER_CLASS " +
+                    "(INCLUDE_STOPPED|RECEIVER_FOREGROUND)",
+            )
             true
         } catch (t: Throwable) {
             Log.e(TAG, "Silent Tailscale CONNECT_VPN failed", t)
