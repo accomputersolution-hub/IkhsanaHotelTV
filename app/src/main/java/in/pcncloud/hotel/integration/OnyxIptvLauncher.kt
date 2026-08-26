@@ -8,14 +8,14 @@ import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 
 /**
- * Launches the hotel Live TV / IPTV app (Onyx ESTO).
+ * Launches the hotel Live TV / IPTV app (EKTV OTT).
  * Marks [KioskPolicy.isExternalAppActive] **before** startActivity so Watchdog
  * and onUserLeaveHint do not reclaim MainActivity mid-viewing.
  */
 object OnyxIptvLauncher {
 
     private const val TAG = "OnyxIptvLauncher"
-    const val PACKAGE_NAME = "com.onnet.systems.iptv.esto"
+    const val PACKAGE_NAME = "com.ektv.ott"
 
     fun launch(context: Context) {
         try {
