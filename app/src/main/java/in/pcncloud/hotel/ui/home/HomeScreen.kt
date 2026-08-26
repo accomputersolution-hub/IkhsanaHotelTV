@@ -461,21 +461,11 @@ private fun WelcomeBanner(
     salutation: String,
     welcomeMessage: String,
 ) {
-    val isCorporate = BuildConfig.IS_CORPORATE
-    val isNightMode = LocalIsNightMode.current
     val subtitle = welcomeMessage.trim()
-    // Corporate day mode: darker type on bright wallpapers; night + hotel keep luminous white.
-    val bannerTextColor = when {
-        !isCorporate -> Color.White
-        isNightMode -> Color.White
-        else -> Color(0xFF111827)
-    }
+    // Always white so Welcome / guest name stay readable on day and night wallpapers.
+    val bannerTextColor = Color.White
     val welcomeShadow = Shadow(
-        color = if (isCorporate && !isNightMode) {
-            Color.White.copy(alpha = 0.35f)
-        } else {
-            Color.Black.copy(alpha = 0.7f)
-        },
+        color = Color.Black.copy(alpha = 0.7f),
         offset = Offset(0f, 2f),
         blurRadius = 10f,
     )
