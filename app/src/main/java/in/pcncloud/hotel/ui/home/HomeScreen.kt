@@ -71,7 +71,7 @@ import `in`.pcncloud.hotel.alert.AlertOverlayService
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.data.model.RoomFeatureFlags
-import `in`.pcncloud.hotel.integration.OnyxIptvLauncher
+import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.BaseScreen
 import `in`.pcncloud.hotel.ui.components.BroadcastAlertOverlay
@@ -86,6 +86,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.provider.Settings
+import android.widget.Toast
 import kotlinx.coroutines.delay
 import java.util.Locale
 import androidx.core.content.ContextCompat
@@ -330,7 +331,34 @@ fun HomeScreen(
                         onCardFocused = { lastFocusedCard = it },
                         onLiveTv = {
                             lastFocusedCard = HomeNavCard.LiveTv
-                            OnyxIptvLauncher.launch(context)
+                            val liveTvPackage = "com.ektv.pro"
+                            try {
+                                val pm = context.packageManager
+                                val intent = pm.getLaunchIntentForPackage(liveTvPackage)
+                                    ?: pm.getLeanbackLaunchIntentForPackage(liveTvPackage)
+                                if (intent != null) {
+                                    // Mark before startActivity so Watchdog / leave-hint skip reclaim.
+                                    KioskPolicy.markOttLaunched(context, liveTvPackage)
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(intent)
+                                } else {
+                                    Toast.makeText(
+                                        context.applicationContext,
+                                        context.getString(R.string.live_tv_app_not_installed),
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
+                            } catch (_: Exception) {
+                                try {
+                                    KioskPolicy.clearOttLaunchState(context)
+                                } catch (_: Throwable) {
+                                }
+                                Toast.makeText(
+                                    context.applicationContext,
+                                    context.getString(R.string.live_tv_app_not_installed),
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
                         },
                         onEntertainment = {
                             lastFocusedCard = HomeNavCard.Entertainment

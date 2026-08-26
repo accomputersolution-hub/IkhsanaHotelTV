@@ -15,7 +15,7 @@ import android.util.Log
  *
  * Keeps Home/Back from escaping to the stock Android TV launcher while kiosk is ON.
  * Streaming OTT apps (YouTube, Netflix, …) are allowlisted via RTDB `allowedPackages`
- * for the current hotel. Live TV (Onyx IPTV) is always in the Lock Task baseline.
+ * for the current hotel. Live TV (EKTV Pro) is always in the Lock Task baseline.
  */
 object KioskLockTask {
 
@@ -25,7 +25,7 @@ object KioskLockTask {
     const val YOUTUBE_TV_PACKAGE = "com.google.android.youtube.tv"
 
     /** In-room Live TV / IPTV app — must stay Lock-Task allowlisted under kiosk. */
-    const val LIVE_TV_PACKAGE = "com.onnet.systems.iptv.esto"
+    const val LIVE_TV_PACKAGE = "com.ektv.pro"
 
     /**
      * Essential Lock Task packages always merged with the hotel launcher.

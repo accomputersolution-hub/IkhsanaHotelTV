@@ -458,7 +458,7 @@ object KioskPolicy {
      * Validates whether an external app may be launched.
      * When Kiosk Mode is OFF → allow everything.
      * When Kiosk Mode is ON → hotel Admin `allowedPackages` **or** Lock Task baseline
-     * (Live TV / Onyx IPTV).
+     * (Live TV / EKTV Pro).
      * Never throws — a prefs / parse failure fails closed (deny) under kiosk.
      */
     fun canLaunchApp(context: Context, targetPackageName: String): Boolean {
