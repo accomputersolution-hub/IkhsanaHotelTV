@@ -80,12 +80,12 @@ class BootReceiver : BroadcastReceiver() {
         // PendingIntent launch first (BAL-safe). Watchdog after UI attempt.
         launchUiAfterBoot(context, launchIntent, target.simpleName, action)
 
-        // Corporate only: wake Tailscale VPN in the background (no Tailscale UI).
-        // Hotel flavor skips entirely. goAsync keeps the receiver alive for the retry.
+        // Corporate only: brief Tailscale UI wake, then MainActivity REORDER_TO_FRONT.
+        // Hotel flavor skips entirely. goAsync keeps the receiver alive for the 3.5s delay.
         if (BuildConfig.IS_CORPORATE) {
             val pendingResult = goAsync()
             try {
-                TailscaleWakeHelper.wakeConnectWithRetry(appContext) {
+                TailscaleWakeHelper.wakeViaUiThenReturnToKiosk(appContext) {
                     try {
                         pendingResult.finish()
                     } catch (e: Exception) {
@@ -93,7 +93,7 @@ class BootReceiver : BroadcastReceiver() {
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Tailscale silent wake after boot failed", e)
+                Log.w(TAG, "Tailscale UI wake after boot failed", e)
                 try {
                     pendingResult.finish()
                 } catch (_: Exception) {

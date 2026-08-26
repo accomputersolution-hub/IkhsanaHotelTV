@@ -92,12 +92,12 @@ class SplashActivity : AppCompatActivity() {
         splashProgress = findViewById(R.id.splash_progress)
         startedAtMs = SystemClock.elapsedRealtime()
 
-        // Corporate only: silent Tailscale CONNECT (no Tailscale UI).
+        // Corporate only: brief Tailscale UI wake, then return to MainActivity.
         if (BuildConfig.IS_CORPORATE) {
             try {
-                TailscaleWakeHelper.wakeConnectWithRetry(applicationContext)
+                TailscaleWakeHelper.wakeViaUiThenReturnToKiosk(applicationContext)
             } catch (e: Exception) {
-                Log.w(TAG, "Tailscale silent wake from Splash failed", e)
+                Log.w(TAG, "Tailscale UI wake from Splash failed", e)
             }
         }
 

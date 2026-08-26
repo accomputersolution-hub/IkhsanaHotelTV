@@ -1,6 +1,5 @@
 package `in`.pcncloud.hotel.integration
 
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -8,32 +7,34 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import `in`.pcncloud.hotel.BuildConfig
+import `in`.pcncloud.hotel.MainActivity
+import `in`.pcncloud.hotel.kiosk.KioskPolicy
 
 /**
- * Silently wakes Tailscale so its VPN can reconnect without opening any UI.
+ * Corporate-only Tailscale VPN wake via a short UI launch.
  *
- * **Corporate flavor only** — hotel builds no-op every entry point.
+ * Custom TV OS blocks background broadcasts and has no Settings package, so the
+ * only reliable path on Android 9 is:
+ * 1. [PackageManager.getLaunchIntentForPackage] → start Tailscale
+ * 2. After [RETURN_TO_KIOSK_DELAY_MS], bring [MainActivity] back with
+ *    [Intent.FLAG_ACTIVITY_REORDER_TO_FRONT]
  *
- * Official Tailscale entry point (exported):
- * - Broadcast → [RECEIVER_CLASS] / [ACTION_CONNECT_VPN]
- *
- * [IPNService] is **not** exported, so another app cannot `startService` it.
- * Launching Tailscale [MainActivity] would flash UI — intentionally avoided.
- *
- * After a cold boot, Tailscale often needs a second CONNECT a few seconds later
- * once its process / Go backend has settled (known Android Tailscale behavior).
+ * Hotel flavor: every entry point is a no-op.
  */
 object TailscaleWakeHelper {
 
     private const val TAG = "TailscaleWake"
 
     const val PACKAGE_NAME = "com.tailscale.ipn"
-    const val RECEIVER_CLASS = "com.tailscale.ipn.IPNReceiver"
-    const val ACTION_CONNECT_VPN = "com.tailscale.ipn.CONNECT_VPN"
-    const val ACTION_DISCONNECT_VPN = "com.tailscale.ipn.DISCONNECT_VPN"
 
-    /** Delay before the second CONNECT nudge (boot / cold-start reliability). */
-    private const val RETRY_DELAY_MS = 2_500L
+    /** How long Tailscale stays foreground before kiosk UI is restored. */
+    private const val RETURN_TO_KIOSK_DELAY_MS = 3_500L
+
+    /** Prevent BootReceiver + Splash from double-firing the UI flash. */
+    private const val WAKE_THROTTLE_MS = 15_000L
+
+    @Volatile
+    private var lastWakeAtElapsedMs: Long = 0L
 
     private val isCorporateFlavor: Boolean
         get() = BuildConfig.IS_CORPORATE
@@ -52,57 +53,14 @@ object TailscaleWakeHelper {
     }
 
     /**
-     * Sends one explicit CONNECT_VPN broadcast to Tailscale's exported receiver.
-     * No Activity is started — zero visual interruption from Tailscale.
+     * Launches Tailscale UI, then restores [MainActivity] after 3.5s.
      *
-     * Hotel flavor: always returns false (no-op).
+     * Hotel flavor / missing package: invokes [onComplete] immediately.
      *
-     * @return true if the broadcast was dispatched (package present / intent built).
+     * @param onComplete called on the main thread after reclaim attempt (or early exit).
+     *   Use from [android.content.BroadcastReceiver.goAsync] to finish the PendingResult.
      */
-    fun wakeConnect(context: Context): Boolean {
-        if (!isCorporateFlavor) {
-            return false
-        }
-        if (!isInstalled(context)) {
-            Log.w(TAG, "Tailscale not installed — skip silent wake")
-            return false
-        }
-
-        return try {
-            val intent = Intent(ACTION_CONNECT_VPN).apply {
-                component = ComponentName(PACKAGE_NAME, RECEIVER_CLASS)
-                setPackage(PACKAGE_NAME)
-                // Aggressive silent delivery on Android 9 when Tailscale is stopped/background:
-                // - INCLUDE_STOPPED_PACKAGES: deliver even if the app process is not running
-                // - RECEIVER_FOREGROUND: higher-priority delivery (bypass background queue delay)
-                addFlags(
-                    Intent.FLAG_INCLUDE_STOPPED_PACKAGES or
-                        Intent.FLAG_RECEIVER_FOREGROUND,
-                )
-            }
-            context.applicationContext.sendBroadcast(intent)
-            Log.i(
-                TAG,
-                "Sent silent CONNECT_VPN → $PACKAGE_NAME/$RECEIVER_CLASS " +
-                    "(INCLUDE_STOPPED|RECEIVER_FOREGROUND)",
-            )
-            true
-        } catch (t: Throwable) {
-            Log.e(TAG, "Silent Tailscale CONNECT_VPN failed", t)
-            false
-        }
-    }
-
-    /**
-     * Sends CONNECT_VPN immediately, then again after [RETRY_DELAY_MS].
-     * Safe to call from [android.content.BroadcastReceiver] when paired with [goAsync].
-     *
-     * Hotel flavor: invokes [onComplete] immediately without sending broadcasts.
-     *
-     * @param onComplete optional callback on the main thread after the retry attempt
-     *   (use to finish a receiver's [android.content.BroadcastReceiver.PendingResult]).
-     */
-    fun wakeConnectWithRetry(
+    fun wakeViaUiThenReturnToKiosk(
         context: Context,
         onComplete: (() -> Unit)? = null,
     ) {
@@ -112,8 +70,46 @@ object TailscaleWakeHelper {
         }
 
         val app = context.applicationContext
-        val first = wakeConnect(app)
-        if (!first) {
+        if (!isInstalled(app)) {
+            Log.w(TAG, "Tailscale not installed — skip UI wake")
+            onComplete?.invoke()
+            return
+        }
+
+        val now = android.os.SystemClock.elapsedRealtime()
+        val last = lastWakeAtElapsedMs
+        if (last > 0L && now - last < WAKE_THROTTLE_MS) {
+            Log.i(TAG, "Tailscale UI wake throttled (${now - last}ms)")
+            onComplete?.invoke()
+            return
+        }
+        lastWakeAtElapsedMs = now
+
+        val launchIntent = try {
+            app.packageManager.getLaunchIntentForPackage(PACKAGE_NAME)
+        } catch (t: Throwable) {
+            Log.e(TAG, "getLaunchIntentForPackage failed", t)
+            null
+        }
+
+        if (launchIntent == null) {
+            Log.w(TAG, "No launch intent for $PACKAGE_NAME")
+            onComplete?.invoke()
+            return
+        }
+
+        try {
+            // Keep Watchdog from reclaiming during the short Tailscale flash.
+            KioskPolicy.markOttLaunched(app, PACKAGE_NAME)
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            app.startActivity(launchIntent)
+            Log.i(TAG, "Launched Tailscale UI → $PACKAGE_NAME; reclaim MainActivity in ${RETURN_TO_KIOSK_DELAY_MS}ms")
+        } catch (t: Throwable) {
+            Log.e(TAG, "Tailscale startActivity failed", t)
+            try {
+                KioskPolicy.clearOttLaunchState(app)
+            } catch (_: Throwable) {
+            }
             onComplete?.invoke()
             return
         }
@@ -121,12 +117,41 @@ object TailscaleWakeHelper {
         Handler(Looper.getMainLooper()).postDelayed(
             {
                 try {
-                    wakeConnect(app)
+                    bringMainActivityToFront(app)
                 } finally {
                     onComplete?.invoke()
                 }
             },
-            RETRY_DELAY_MS,
+            RETURN_TO_KIOSK_DELAY_MS,
         )
+    }
+
+    /**
+     * Backward-compatible alias used by BootReceiver / Splash.
+     * Same behavior as [wakeViaUiThenReturnToKiosk].
+     */
+    fun wakeConnectWithRetry(
+        context: Context,
+        onComplete: (() -> Unit)? = null,
+    ) = wakeViaUiThenReturnToKiosk(context, onComplete)
+
+    private fun bringMainActivityToFront(context: Context) {
+        try {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            }
+            context.startActivity(intent)
+            Log.i(TAG, "Restored MainActivity with REORDER_TO_FRONT after Tailscale wake")
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to bring MainActivity to front after Tailscale", t)
+        } finally {
+            try {
+                KioskPolicy.clearOttLaunchState(context)
+            } catch (_: Throwable) {
+            }
+        }
     }
 }
