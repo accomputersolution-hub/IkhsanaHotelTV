@@ -92,11 +92,13 @@ class SplashActivity : AppCompatActivity() {
         splashProgress = findViewById(R.id.splash_progress)
         startedAtMs = SystemClock.elapsedRealtime()
 
-        // Silent Tailscale CONNECT (no Tailscale UI). Complements BootReceiver.
-        try {
-            TailscaleWakeHelper.wakeConnectWithRetry(applicationContext)
-        } catch (e: Exception) {
-            Log.w(TAG, "Tailscale silent wake from Splash failed", e)
+        // Corporate only: silent Tailscale CONNECT (no Tailscale UI).
+        if (BuildConfig.IS_CORPORATE) {
+            try {
+                TailscaleWakeHelper.wakeConnectWithRetry(applicationContext)
+            } catch (e: Exception) {
+                Log.w(TAG, "Tailscale silent wake from Splash failed", e)
+            }
         }
 
         // Hotel build: keep splash logo hidden until branding arrives, so the

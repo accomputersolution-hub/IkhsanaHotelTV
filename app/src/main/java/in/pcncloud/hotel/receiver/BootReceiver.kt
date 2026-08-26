@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.PairingActivity
 import `in`.pcncloud.hotel.config.HotelConfig
@@ -79,22 +80,24 @@ class BootReceiver : BroadcastReceiver() {
         // PendingIntent launch first (BAL-safe). Watchdog after UI attempt.
         launchUiAfterBoot(context, launchIntent, target.simpleName, action)
 
-        // Wake Tailscale VPN in the background (no Tailscale UI).
-        // goAsync keeps the receiver alive for the ~2.5s CONNECT retry.
-        val pendingResult = goAsync()
-        try {
-            TailscaleWakeHelper.wakeConnectWithRetry(appContext) {
+        // Corporate only: wake Tailscale VPN in the background (no Tailscale UI).
+        // Hotel flavor skips entirely. goAsync keeps the receiver alive for the retry.
+        if (BuildConfig.IS_CORPORATE) {
+            val pendingResult = goAsync()
+            try {
+                TailscaleWakeHelper.wakeConnectWithRetry(appContext) {
+                    try {
+                        pendingResult.finish()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "BootReceiver PendingResult.finish failed", e)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Tailscale silent wake after boot failed", e)
                 try {
                     pendingResult.finish()
-                } catch (e: Exception) {
-                    Log.w(TAG, "BootReceiver PendingResult.finish failed", e)
+                } catch (_: Exception) {
                 }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Tailscale silent wake after boot failed", e)
-            try {
-                pendingResult.finish()
-            } catch (_: Exception) {
             }
         }
 
