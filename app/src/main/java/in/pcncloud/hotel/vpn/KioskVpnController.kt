@@ -162,7 +162,13 @@ object KioskVpnController {
         val b = backend ?: GoBackend(app).also { backend = it }
         b.setState(kioskTunnel, Tunnel.State.UP, config)
         reconnectAttempts = 0
-        Log.i(TAG, "WireGuard tunnel UP ($TUNNEL_NAME)")
+        Log.i(
+            TAG,
+            "WireGuard tunnel UP ($TUNNEL_NAME) " +
+                "addr=${KioskVpnCredentials.CLIENT_ADDRESS} " +
+                "endpoint=${KioskVpnCredentials.ENDPOINT} " +
+                "allowed=${KioskVpnCredentials.ALLOWED_IPS}",
+        )
         KioskVpnKeepAliveService.start(app)
     }
 
