@@ -9,8 +9,6 @@ import android.content.ContextWrapper
 import android.content.Intent
 import android.os.Build
 import android.util.Log
-
-import android.util.Log
 import `in`.pcncloud.hotel.BuildConfig
 
 /**
