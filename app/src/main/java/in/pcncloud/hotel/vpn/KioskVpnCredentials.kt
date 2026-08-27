@@ -32,7 +32,7 @@ object KioskVpnCredentials {
 
     const val PRESHARED_KEY = "UhcfP8qMkI3KZEbwtBTkQR1t6gLgOg/tM+O+bsWlgd0="
 
-    const val ENDPOINT = "192.168.1.111:51820"
+    const val ENDPOINT = "103.29.99.56:51820"
 
     const val ALLOWED_IPS = "0.0.0.0/0"
     const val PERSISTENT_KEEPALIVE = 25
