@@ -8,7 +8,7 @@ package `in`.pcncloud.hotel.vpn
 object KioskVpnCredentials {
     const val CLIENT_PRIVATE_KEY = "yL0hKUoNVsMaTrr2addSJDOAhhx281QYpsQlHhslPno="
     const val CLIENT_ADDRESS = "10.10.0.2/32"
-    const val SERVER_PUBLIC_KEY = "+o5ioQd50muSmGzSON2W3N/EQl4zw59G4dPU4/1m68Q="
+    const val SERVER_PUBLIC_KEY = "tRaqqjfX1frGobtBbBGwbR/jn4Xp4u3xNpicF0NSp0Q="
     const val ENDPOINT = "103.29.99.61:51088"
     /** Split-tunnel: only VPN subnet. Use `0.0.0.0/0` for full-tunnel if required. */
     const val ALLOWED_IPS = "10.10.0.0/24"
