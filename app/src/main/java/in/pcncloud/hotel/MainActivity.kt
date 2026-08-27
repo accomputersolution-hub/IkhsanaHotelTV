@@ -16,6 +16,7 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,6 +41,7 @@ import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
 import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
+import `in`.pcncloud.hotel.vpn.KioskVpnController
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.ScreensaverOverlay
 import `in`.pcncloud.hotel.ui.components.ServiceSuspendedScreen
@@ -78,6 +80,16 @@ class MainActivity : ComponentActivity() {
      */
     @Volatile
     var nestedAdminBackHandler: (() -> Boolean)? = null
+
+    /** Corporate VPN consent — launched from onResume when VpnService.prepare is required. */
+    private val vpnPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        Log.i(TAG, "VPN prepare resultCode=${result.resultCode}")
+        if (BuildConfig.IS_CORPORATE) {
+            KioskVpnController.ensureRunning(applicationContext)
+        }
+    }
 
     private lateinit var hotelConfig: HotelConfig
     private lateinit var repository: FirestoreRepository
@@ -1596,16 +1608,31 @@ class MainActivity : ComponentActivity() {
                 intent?.getBooleanExtra(EXTRA_NAVIGATE_TO_HOME, false) == true
             ) {
                 finishReturnFromExternalApp()
-            } else if (KioskPolicy.isExternalAppActive(this)) {
-                if (KioskPolicy.isOttLaunchGracePeriod(this)) {
-                    // Brief resume during Live TV / YouTube handoff — keep flag so Watchdog
-                    // does not reclaim mid-launch.
-                    Log.d(TAG, "onResume — OTT launch grace; keep isExternalAppActive")
-                } else {
-                    // Back from YouTube / OTT / Live TV without HOME extra — resume Watchdog.
-                    Log.i(TAG, "onResume — clearing isExternalAppActive (returned from OTT)")
-                    KioskPolicy.clearExternalAppActive(this)
-                    KioskPolicy.clearOttLaunchState(this)
+            } else if (KioskPolicy.isExternalAppActive(this) ||
+                KioskPolicy.shouldProtectExternalAppSession(this)
+            ) {
+                when {
+                    KioskPolicy.isOttLaunchGracePeriod(this) ||
+                        KioskPolicy.isLastOttPackageVisible(this) ||
+                        KioskPolicy.isPackageVisible(this, KioskLockTask.LIVE_TV_PACKAGE) -> {
+                        // Spurious resume while Live TV / OTT is still visible — do NOT clear.
+                        Log.d(
+                            TAG,
+                            "onResume — OTT/Live TV still protected " +
+                                "(${KioskPolicy.getLastOttPackage(this)}); keep session",
+                        )
+                        // Re-assert durable flag so Watchdog stays quiet.
+                        KioskPolicy.markOttLaunched(
+                            this,
+                            KioskPolicy.getLastOttPackage(this)
+                                ?: KioskLockTask.LIVE_TV_PACKAGE,
+                        )
+                    }
+                    else -> {
+                        Log.i(TAG, "onResume — clearing isExternalAppActive (returned from OTT)")
+                        KioskPolicy.clearExternalAppActive(this)
+                        KioskPolicy.clearOttLaunchState(this)
+                    }
                 }
             }
 
@@ -1622,6 +1649,23 @@ class MainActivity : ComponentActivity() {
                 }
                 // Android 10 BAL exemption: overlay permission must be granted.
                 ensureOverlayPermissionForBal()
+            }
+
+            // Corporate: re-assert built-in WireGuard VPN (no external UI).
+            // Never launch VPN consent UI while Live TV / OTT is active — that steals focus.
+            if (BuildConfig.IS_CORPORATE && !KioskPolicy.isExternalAppActive(this)) {
+                try {
+                    MyDeviceAdminReceiver.ensureAlwaysOnInternalVpn(this)
+                    val prepare = KioskVpnController.preparePermissionIntent(this)
+                    if (prepare != null) {
+                        Log.w(TAG, "VPN consent required — launching prepare from MainActivity")
+                        vpnPermissionLauncher.launch(prepare)
+                    } else {
+                        KioskVpnController.ensureRunning(this)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Built-in VPN ensure from MainActivity failed", e)
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "onResume error", e)
