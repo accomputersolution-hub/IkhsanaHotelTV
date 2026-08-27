@@ -26,6 +26,7 @@ object KioskVpnCredentials {
 
     const val CLIENT_ADDRESS = "10.191.1.2/24"
     const val DNS = "8.8.8.8"
+    const val MTU = 1360
 
     /** Local VM interface public key (Android Peer.PublicKey). Exact case. */
     const val SERVER_PUBLIC_KEY = "LlKV5NZZAsI+8UxaaDuN1LZTHS1R1vG12RjnCBc0P3k="
@@ -42,6 +43,7 @@ object KioskVpnCredentials {
         appendLine("PrivateKey = $CLIENT_PRIVATE_KEY")
         appendLine("Address = $CLIENT_ADDRESS")
         appendLine("DNS = $DNS")
+        appendLine("MTU = $MTU")
         appendLine()
         appendLine("[Peer]")
         appendLine("PublicKey = $SERVER_PUBLIC_KEY")
