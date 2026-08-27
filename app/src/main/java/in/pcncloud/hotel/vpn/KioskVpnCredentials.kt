@@ -36,14 +36,12 @@ object KioskVpnCredentials {
 
     /** Full-tunnel: send all IPv4 traffic through the VPN. */
     const val ALLOWED_IPS = "0.0.0.0/0"
-    const val DNS = "8.8.8.8, 8.8.4.4"
     const val PERSISTENT_KEEPALIVE = 25
 
     fun toWireGuardConf(): String = buildString {
         appendLine("[Interface]")
         appendLine("PrivateKey = $CLIENT_PRIVATE_KEY")
         appendLine("Address = $CLIENT_ADDRESS")
-        appendLine("DNS = $DNS")
         appendLine()
         appendLine("[Peer]")
         appendLine("PublicKey = $SERVER_PUBLIC_KEY")
