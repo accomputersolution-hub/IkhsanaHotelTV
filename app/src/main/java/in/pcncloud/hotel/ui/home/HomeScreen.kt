@@ -71,7 +71,7 @@ import `in`.pcncloud.hotel.alert.AlertOverlayService
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.data.model.RoomFeatureFlags
-import `in`.pcncloud.hotel.kiosk.KioskPolicy
+import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.BaseScreen
 import `in`.pcncloud.hotel.ui.components.BroadcastAlertOverlay
@@ -331,28 +331,14 @@ fun HomeScreen(
                         onCardFocused = { lastFocusedCard = it },
                         onLiveTv = {
                             lastFocusedCard = HomeNavCard.LiveTv
-                            val liveTvPackage = "com.ektv.pro"
-                            try {
-                                val pm = context.packageManager
-                                val intent = pm.getLaunchIntentForPackage(liveTvPackage)
-                                    ?: pm.getLeanbackLaunchIntentForPackage(liveTvPackage)
-                                if (intent != null) {
-                                    // Mark before startActivity so Watchdog / leave-hint skip reclaim.
-                                    KioskPolicy.markOttLaunched(context, liveTvPackage)
-                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    context.startActivity(intent)
-                                } else {
-                                    Toast.makeText(
-                                        context.applicationContext,
-                                        context.getString(R.string.live_tv_app_not_installed),
-                                        Toast.LENGTH_LONG,
-                                    ).show()
-                                }
-                            } catch (_: Exception) {
-                                try {
-                                    KioskPolicy.clearOttLaunchState(context)
-                                } catch (_: Throwable) {
-                                }
+                            val liveTvPackage = KioskLockTask.LIVE_TV_PACKAGE
+                            // Use Lock Task launch path so EKTV stays allowlisted and
+                            // Watchdog / onUserLeaveHint will not reclaim MainActivity.
+                            val launched = KioskLockTask.launchAllowlistedPackage(
+                                context,
+                                liveTvPackage,
+                            )
+                            if (!launched) {
                                 Toast.makeText(
                                     context.applicationContext,
                                     context.getString(R.string.live_tv_app_not_installed),

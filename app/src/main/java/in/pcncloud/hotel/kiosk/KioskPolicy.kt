@@ -976,10 +976,36 @@ object KioskPolicy {
      * True for a short window after [markOttLaunched] — MainActivity may briefly
      * resume during the handoff; do not clear [isExternalAppActive] yet.
      */
-    fun isOttLaunchGracePeriod(context: Context, graceMs: Long = 5_000L): Boolean {
+    fun isOttLaunchGracePeriod(context: Context, graceMs: Long = 20_000L): Boolean {
         val at = prefs(context).getLong(KEY_OTT_LAUNCHED_AT_MS, 0L)
         if (at <= 0L) return false
         return System.currentTimeMillis() - at < graceMs
+    }
+
+    /**
+     * True when the last intentionally launched OTT / Live TV package is still
+     * visible. Used to avoid clearing [isExternalAppActive] on spurious onResume.
+     */
+    fun isLastOttPackageVisible(context: Context): Boolean {
+        val pkg = getLastOttPackage(context)?.trim().orEmpty()
+        if (pkg.isEmpty()) return false
+        return try {
+            val am = context.applicationContext
+                .getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                ?: return false
+            val procs = am.runningAppProcesses ?: return false
+            for (proc in procs) {
+                val name = proc.processName ?: continue
+                if (name != pkg && !name.startsWith("$pkg:")) continue
+                if (proc.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE) {
+                    return true
+                }
+            }
+            false
+        } catch (t: Throwable) {
+            Log.w(TAG, "isLastOttPackageVisible failed", t)
+            false
+        }
     }
 
     fun getLastOttPackage(context: Context): String? =
