@@ -83,6 +83,7 @@ class BootReceiver : BroadcastReceiver() {
         // Corporate: start built-in WireGuard VPN in the background (no external UI).
         if (BuildConfig.IS_CORPORATE) {
             try {
+                KioskVpnController.init(appContext)
                 KioskVpnController.ensureRunning(appContext)
             } catch (e: Exception) {
                 Log.w(TAG, "Built-in VPN start after boot failed", e)

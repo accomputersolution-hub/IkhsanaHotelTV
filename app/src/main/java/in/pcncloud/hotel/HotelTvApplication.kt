@@ -30,13 +30,13 @@ class HotelTvApplication : Application(), ImageLoaderFactory {
             Log.w(TAG, "logProvisioningDiagnostics failed during Application.onCreate", e)
         }
         try {
-            // Corporate Device Owner: Always-On VPN = this app (built-in WireGuard).
+            // Corporate: register Always-On callback, then start built-in VPN.
+            `in`.pcncloud.hotel.vpn.KioskVpnController.init(this)
             MyDeviceAdminReceiver.ensureAlwaysOnInternalVpn(this)
         } catch (e: Exception) {
             Log.w(TAG, "ensureAlwaysOnInternalVpn failed during Application.onCreate", e)
         }
         try {
-            // Corporate: start built-in VPN with no external UI (no-op without config).
             `in`.pcncloud.hotel.vpn.KioskVpnController.ensureRunning(this)
         } catch (e: Exception) {
             Log.w(TAG, "KioskVpnController.ensureRunning failed during Application.onCreate", e)

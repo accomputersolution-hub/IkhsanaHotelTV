@@ -8,7 +8,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -18,17 +17,13 @@ import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
 
 /**
- * App-owned [VpnService] for the corporate kiosk VPN.
+ * Foreground keep-alive for the corporate WireGuard tunnel.
  *
- * WireGuard [com.wireguard.android.backend.GoBackend] owns the TUN fd through its
- * nested [com.wireguard.android.backend.GoBackend.VpnService] (declared with the
- * `android.net.VpnService` intent-filter so Device Owner Always-On sees exactly one
- * VPN service). This service:
- * - runs as a foreground service so Android TV does not kill VPN keep-alive
- * - re-triggers [KioskVpnController] on start / reconnect / system restart
- * - does **not** register the VpnService intent-filter (avoids Always-On dual-match)
+ * Intentionally a plain [Service] (not [android.net.VpnService]): the TUN is owned by
+ * WireGuard [com.wireguard.android.backend.GoBackend.VpnService] so Always-On resolves
+ * exactly one VPN service.
  */
-class KioskVpnService : VpnService() {
+class KioskVpnService : Service() {
 
     override fun onCreate() {
         super.onCreate()
@@ -42,31 +37,21 @@ class KioskVpnService : VpnService() {
         when (intent?.action) {
             ACTION_STOP -> {
                 KioskVpnController.stop(applicationContext)
-                stopForeground(Service.STOP_FOREGROUND_REMOVE)
+                stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
             }
-            else -> {
-                // START / RECONNECT / null (system restart after process death)
-                KioskVpnController.bringTunnelUpIfPrepared(applicationContext)
-            }
+            else -> KioskVpnController.bringTunnelUpIfPrepared(applicationContext)
         }
         return START_STICKY
     }
 
-    override fun onRevoke() {
-        Log.w(TAG, "VPN permission revoked")
-        KioskVpnController.onVpnRevoked(applicationContext)
-        super.onRevoke()
-        stopSelf()
-    }
+    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
         super.onDestroy()
         Log.i(TAG, "KioskVpnService destroyed")
     }
-
-    override fun onBind(intent: Intent?): IBinder? = super.onBind(intent)
 
     private fun startAsForeground() {
         val notification = buildNotification(this)
@@ -102,21 +87,6 @@ class KioskVpnService : VpnService() {
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, "startForegroundService failed", t)
-            }
-        }
-
-        fun reconnect(context: Context) {
-            if (!BuildConfig.IS_CORPORATE) return
-            val intent = Intent(context, KioskVpnService::class.java).setAction(ACTION_RECONNECT)
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(intent)
-                } else {
-                    @Suppress("DEPRECATION")
-                    context.startService(intent)
-                }
-            } catch (t: Throwable) {
-                Log.w(TAG, "reconnect start failed", t)
             }
         }
 

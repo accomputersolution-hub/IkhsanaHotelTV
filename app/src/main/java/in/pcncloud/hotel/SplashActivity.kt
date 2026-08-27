@@ -71,7 +71,9 @@ class SplashActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         awaitingVpnPermission = false
-        if (BuildConfig.IS_CORPORATE && result.resultCode == RESULT_OK) {
+        Log.i(TAG, "VPN prepare resultCode=${result.resultCode}")
+        if (BuildConfig.IS_CORPORATE) {
+            // Always retry — Device Owner / Always-On may already authorize even if UI cancelled.
             KioskVpnController.ensureRunning(applicationContext)
         }
     }

@@ -180,20 +180,18 @@
         </service>
 
         <!--
-          Built-in kiosk VPN orchestrator (foreground keep-alive).
-          Does NOT expose android.net.VpnService — Always-On must resolve exactly one
-          VPN service (GoBackend$VpnService below).
+          Built-in kiosk VPN foreground keep-alive (NOT a VpnService).
+          TUN is owned solely by GoBackend$VpnService below.
         -->
         <service
             android:name=".vpn.KioskVpnService"
             android:enabled="true"
             android:exported="false"
             android:directBootAware="true"
-            android:permission="android.permission.BIND_VPN_SERVICE"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Built-in WireGuard VPN tunnel for corporate kiosk" />
+                android:value="Built-in WireGuard VPN keep-alive for corporate kiosk" />
         </service>
 
         <!--

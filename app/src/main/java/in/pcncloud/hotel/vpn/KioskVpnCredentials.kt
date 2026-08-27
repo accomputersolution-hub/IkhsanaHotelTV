@@ -34,7 +34,8 @@ object KioskVpnCredentials {
 
     const val ENDPOINT = "103.29.99.61:51088"
 
-    const val ALLOWED_IPS = "10.10.0.2/32"
+    /** Routes VPN-subnet traffic into the tunnel (client side). */
+    const val ALLOWED_IPS = "10.10.0.0/24"
     const val PERSISTENT_KEEPALIVE = 25
 
     fun toWireGuardConf(): String = buildString {

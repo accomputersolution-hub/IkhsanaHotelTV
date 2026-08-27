@@ -16,6 +16,7 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -79,6 +80,16 @@ class MainActivity : ComponentActivity() {
      */
     @Volatile
     var nestedAdminBackHandler: (() -> Boolean)? = null
+
+    /** Corporate VPN consent — launched from onResume when VpnService.prepare is required. */
+    private val vpnPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        Log.i(TAG, "VPN prepare resultCode=${result.resultCode}")
+        if (BuildConfig.IS_CORPORATE) {
+            KioskVpnController.ensureRunning(applicationContext)
+        }
+    }
 
     private lateinit var hotelConfig: HotelConfig
     private lateinit var repository: FirestoreRepository
@@ -1629,7 +1640,13 @@ class MainActivity : ComponentActivity() {
             if (BuildConfig.IS_CORPORATE) {
                 try {
                     MyDeviceAdminReceiver.ensureAlwaysOnInternalVpn(this)
-                    KioskVpnController.ensureRunning(this)
+                    val prepare = KioskVpnController.preparePermissionIntent(this)
+                    if (prepare != null) {
+                        Log.w(TAG, "VPN consent required — launching prepare from MainActivity")
+                        vpnPermissionLauncher.launch(prepare)
+                    } else {
+                        KioskVpnController.ensureRunning(this)
+                    }
                 } catch (e: Exception) {
                     Log.w(TAG, "Built-in VPN ensure from MainActivity failed", e)
                 }
