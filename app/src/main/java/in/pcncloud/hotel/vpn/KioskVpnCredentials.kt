@@ -39,8 +39,8 @@ object KioskVpnCredentials {
 
     const val ENDPOINT = "192.168.1.111:51820"
 
-    /** Full-tunnel: send all IPv4 traffic through the VPN. */
-    const val ALLOWED_IPS = "0.0.0.0/0"
+    /** Full-tunnel via dual /1 routes (covers all IPv4 without 0.0.0.0/0 quirks). */
+    const val ALLOWED_IPS = "0.0.0.0/1, 128.0.0.0/1"
     const val PERSISTENT_KEEPALIVE = 25
 
     fun toWireGuardConf(): String = buildString {
