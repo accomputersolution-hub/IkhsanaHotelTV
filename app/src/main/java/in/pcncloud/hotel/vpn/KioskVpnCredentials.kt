@@ -6,33 +6,38 @@ package `in`.pcncloud.hotel.vpn
  * Client keypair (must stay in sync):
  * - [CLIENT_PRIVATE_KEY] is embedded in the APK
  * - [CLIENT_PUBLIC_KEY] is derived via Curve25519 (`wg pubkey`) and MUST be
- *   configured on the PC server under `[Peer] PublicKey = ...`
+ *   configured on the PC/VM server under `[Peer] PublicKey = ...`
  *
  * Server peer (Android `[Peer]` section):
- * - [SERVER_PUBLIC_KEY] = PC interface public key
- * - [ENDPOINT] = PC listen address
+ * - [SERVER_PUBLIC_KEY] = VM interface public key
+ * - [ENDPOINT] = VM listen address
  */
 object KioskVpnCredentials {
     /** Android box private key (Interface.PrivateKey). */
-    const val CLIENT_PRIVATE_KEY = "yL0hKUoNVsMaTrr2addSJDOAhhx281QYpsQlHhslPno="
+    const val CLIENT_PRIVATE_KEY = "+PXcJMM9NqZNyPEa1zRUZULsTe1IvuS6PhU8M+b+WE0="
 
     /**
      * Public key for [CLIENT_PRIVATE_KEY] (`echo <private> | wg pubkey`).
-     * Put this exact value on the PC server peer:
+     * Put this exact value on the VM server peer:
      * ```
      * [Peer]
-     * PublicKey = 4O7ZQVjs06rHD4SUOB6gzWT/ljRmqaV10+EN6Jb1Sic=
-     * AllowedIPs = 10.10.0.2/32
+     * PublicKey = EQ22ld0aHEfWWmuqSq1zSiI5itEwyBAg8PtXJAsL6Tc=
+     * AllowedIPs = 10.191.1.2/32
      * ```
      */
-    const val CLIENT_PUBLIC_KEY = "4O7ZQVjs06rHD4SUOB6gzWT/ljRmqaV10+EN6Jb1Sic="
+    const val CLIENT_PUBLIC_KEY = "EQ22ld0aHEfWWmuqSq1zSiI5itEwyBAg8PtXJAsL6Tc="
 
-    const val CLIENT_ADDRESS = "10.10.0.2/32"
+    const val CLIENT_ADDRESS = "10.191.1.2/24"
 
-    /** PC WireGuard interface public key (Android Peer.PublicKey). */
-    const val SERVER_PUBLIC_KEY = "JvU5blzhYou9lAsbUKvwRH7x8Z3kVo3JgrCz/j6XEyc="
+    /** DNS for Interface so Firebase / external APIs resolve over the tunnel. */
+    const val DNS = "8.8.8.8"
 
-    const val ENDPOINT = "103.29.99.61:51088"
+    /** Local VM WireGuard interface public key (Android Peer.PublicKey). */
+    const val SERVER_PUBLIC_KEY = "LlKV5NZZA5I+8UxaaDuN1LZTHS1R1vGl2RjnCBC0P3k="
+
+    const val PRESHARED_KEY = "UhcfP8qMkI3KZEbwtBTkQR1t6gLgOg/tM+O+bsWlgd0="
+
+    const val ENDPOINT = "192.168.1.111:51820"
 
     /** Full-tunnel: send all IPv4 traffic through the VPN. */
     const val ALLOWED_IPS = "0.0.0.0/0"
@@ -42,9 +47,11 @@ object KioskVpnCredentials {
         appendLine("[Interface]")
         appendLine("PrivateKey = $CLIENT_PRIVATE_KEY")
         appendLine("Address = $CLIENT_ADDRESS")
+        appendLine("DNS = $DNS")
         appendLine()
         appendLine("[Peer]")
         appendLine("PublicKey = $SERVER_PUBLIC_KEY")
+        appendLine("PresharedKey = $PRESHARED_KEY")
         appendLine("AllowedIPs = $ALLOWED_IPS")
         appendLine("Endpoint = $ENDPOINT")
         appendLine("PersistentKeepalive = $PERSISTENT_KEEPALIVE")
