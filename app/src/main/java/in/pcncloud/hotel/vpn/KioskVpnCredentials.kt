@@ -35,7 +35,7 @@ object KioskVpnCredentials {
     const val ENDPOINT = "103.29.99.61:51088"
 
     /** Split-tunnel: VPN subnet + explicit host routes. */
-    const val ALLOWED_IPS = "10.10.0.0/24, 103.175.72.22/32, 103.175.73.2/32"
+    const val ALLOWED_IPS = "10.10.0.0/24, 103.175.72.22/32, 103.175.73.2/32, 103.175.73.12/32"
     const val PERSISTENT_KEEPALIVE = 25
 
     fun toWireGuardConf(): String = buildString {
