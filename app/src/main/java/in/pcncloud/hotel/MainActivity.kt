@@ -1608,22 +1608,27 @@ class MainActivity : ComponentActivity() {
                 intent?.getBooleanExtra(EXTRA_NAVIGATE_TO_HOME, false) == true
             ) {
                 finishReturnFromExternalApp()
-            } else if (KioskPolicy.isExternalAppActive(this)) {
+            } else if (KioskPolicy.isExternalAppActive(this) ||
+                KioskPolicy.shouldProtectExternalAppSession(this)
+            ) {
                 when {
-                    KioskPolicy.isOttLaunchGracePeriod(this) -> {
-                        // Brief resume during Live TV / YouTube handoff — keep flag.
-                        Log.d(TAG, "onResume — OTT launch grace; keep isExternalAppActive")
-                    }
-                    KioskPolicy.isLastOttPackageVisible(this) -> {
+                    KioskPolicy.isOttLaunchGracePeriod(this) ||
+                        KioskPolicy.isLastOttPackageVisible(this) ||
+                        KioskPolicy.isPackageVisible(this, KioskLockTask.LIVE_TV_PACKAGE) -> {
                         // Spurious resume while Live TV / OTT is still visible — do NOT clear.
                         Log.d(
                             TAG,
-                            "onResume — OTT still visible " +
-                                "(${KioskPolicy.getLastOttPackage(this)}); keep isExternalAppActive",
+                            "onResume — OTT/Live TV still protected " +
+                                "(${KioskPolicy.getLastOttPackage(this)}); keep session",
+                        )
+                        // Re-assert durable flag so Watchdog stays quiet.
+                        KioskPolicy.markOttLaunched(
+                            this,
+                            KioskPolicy.getLastOttPackage(this)
+                                ?: KioskLockTask.LIVE_TV_PACKAGE,
                         )
                     }
                     else -> {
-                        // Truly back from YouTube / OTT / Live TV — resume Watchdog.
                         Log.i(TAG, "onResume — clearing isExternalAppActive (returned from OTT)")
                         KioskPolicy.clearExternalAppActive(this)
                         KioskPolicy.clearOttLaunchState(this)

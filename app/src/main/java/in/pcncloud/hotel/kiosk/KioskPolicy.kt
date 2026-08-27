@@ -325,6 +325,10 @@ object KioskPolicy {
 
     /**
      * Unified gate: reclaim / Watchdog / Root-Home snap must not run.
+     *
+     * When [context] is provided, also skips while an intentional OTT / Live TV
+     * session is active or [KioskLockTask.LIVE_TV_PACKAGE] is still visible —
+     * Watchdog must never steal focus from EKTV Pro.
      */
     fun shouldSkipKioskReclaim(reason: String = "", context: Context? = null): Boolean {
         if (exitingAppCleanly) {
@@ -339,6 +343,22 @@ object KioskPolicy {
             Log.d(TAG, "skip reclaim — suppress window ($reason)")
             return true
         }
+        if (context != null && shouldProtectExternalAppSession(context)) {
+            Log.d(TAG, "skip reclaim — Live TV / OTT protected ($reason)")
+            return true
+        }
+        return false
+    }
+
+    /**
+     * True while guest is intentionally in Live TV / OTT, or EKTV Pro is still
+     * visible (even if the durable flag was cleared too early).
+     */
+    fun shouldProtectExternalAppSession(context: Context): Boolean {
+        if (isExternalAppActive(context)) return true
+        if (isOttLaunchGracePeriod(context)) return true
+        if (isLastOttPackageVisible(context)) return true
+        if (isPackageVisible(context, KioskLockTask.LIVE_TV_PACKAGE)) return true
         return false
     }
 
@@ -356,14 +376,19 @@ object KioskPolicy {
             clearTenantWhitelistCache(context)
             return
         }
-        val cleaned = packages.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        val cleaned = (
+            packages.map { it.trim() }.filter { it.isNotEmpty() } +
+                KioskLockTask.BASELINE_LOCK_TASK_PACKAGES
+            )
+            .toSet()
         prefs(context).edit()
             .putStringSet(KEY_ALLOWED_PACKAGES, cleaned)
             .putString(KEY_ALLOWED_PACKAGES_HOTEL_ID, normalizedHotel)
             .apply()
         Log.i(
             TAG,
-            "allowedPackages hotelId=$normalizedHotel count=${cleaned.size} → $cleaned",
+            "allowedPackages hotelId=$normalizedHotel count=${cleaned.size} " +
+                "(includes Live TV baseline) → $cleaned",
         )
     }
 
@@ -379,21 +404,27 @@ object KioskPolicy {
             hotelId ?: HotelConfig(context).getHotelId(),
         )
         if (currentHotel.isBlank()) {
-            Log.d(TAG, "getAllowedPackagesList — unpaired → emptyList()")
-            return emptyList()
+            Log.d(TAG, "getAllowedPackagesList — unpaired → baseline only")
+            return KioskLockTask.BASELINE_LOCK_TASK_PACKAGES
         }
         val cachedHotel = prefs(context).getString(KEY_ALLOWED_PACKAGES_HOTEL_ID, null)
-        if (cachedHotel.isNullOrBlank() || cachedHotel != currentHotel) {
+        val stored = if (cachedHotel.isNullOrBlank() || cachedHotel != currentHotel) {
             Log.w(
                 TAG,
                 "getAllowedPackagesList — cache miss/mismatch " +
-                    "cached=$cachedHotel current=$currentHotel → emptyList()",
+                    "cached=$cachedHotel current=$currentHotel → baseline only",
             )
-            return emptyList()
+            emptyList()
+        } else {
+            prefs(context).getStringSet(KEY_ALLOWED_PACKAGES, emptySet())
+                ?.toList()
+                .orEmpty()
         }
-        return prefs(context).getStringSet(KEY_ALLOWED_PACKAGES, emptySet())
-            ?.toList()
-            .orEmpty()
+        // Always expose Live TV (EKTV Pro) even if Admin RTDB list omitted it.
+        return (stored + KioskLockTask.BASELINE_LOCK_TASK_PACKAGES)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
     }
 
     /**
@@ -954,6 +985,13 @@ object KioskPolicy {
     fun isLastOttPackageVisible(context: Context): Boolean {
         val pkg = getLastOttPackage(context)?.trim().orEmpty()
         if (pkg.isEmpty()) return false
+        return isPackageVisible(context, pkg)
+    }
+
+    /** True when [packageName] (or a `:subprocess`) is at least VISIBLE importance. */
+    fun isPackageVisible(context: Context, packageName: String): Boolean {
+        val pkg = packageName.trim()
+        if (pkg.isEmpty()) return false
         return try {
             val am = context.applicationContext
                 .getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
@@ -968,7 +1006,7 @@ object KioskPolicy {
             }
             false
         } catch (t: Throwable) {
-            Log.w(TAG, "isLastOttPackageVisible failed", t)
+            Log.w(TAG, "isPackageVisible($pkg) failed", t)
             false
         }
     }
@@ -1409,9 +1447,9 @@ object KioskPolicy {
         if (shouldSkipKioskReclaim("shouldBringAppToFront", context)) {
             return false
         }
-        // Never reclaim UI while guest is in YouTube / OTT under kiosk.
-        if (isExternalAppActive(context)) {
-            Log.d(TAG, "shouldBringAppToFront=false (isExternalAppActive=true)")
+        // Never reclaim UI while guest is in YouTube / OTT / Live TV under kiosk.
+        if (shouldProtectExternalAppSession(context)) {
+            Log.d(TAG, "shouldBringAppToFront=false (Live TV / OTT protected)")
             return false
         }
 

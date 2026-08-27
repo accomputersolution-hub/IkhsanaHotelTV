@@ -91,9 +91,9 @@ class KioskWatchdogService : Service() {
             Log.d(TAG, "maybeBringToFront skipped — staff/exit suppress ($reason)")
             return
         }
-        // Hard gate: never steal focus from YouTube / Netflix / Live TV / etc.
-        if (KioskPolicy.isExternalAppActive(this)) {
-            Log.d(TAG, "maybeBringToFront skipped — isExternalAppActive=true ($reason)")
+        // Hard gate: never steal focus from YouTube / Netflix / Live TV (EKTV Pro).
+        if (KioskPolicy.shouldProtectExternalAppSession(this)) {
+            Log.d(TAG, "maybeBringToFront skipped — Live TV / OTT protected ($reason)")
             return
         }
         // Hard gate: never relaunch UI while kiosk is disabled.
