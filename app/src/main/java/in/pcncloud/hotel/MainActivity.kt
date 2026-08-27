@@ -1647,7 +1647,8 @@ class MainActivity : ComponentActivity() {
             }
 
             // Corporate: re-assert built-in WireGuard VPN (no external UI).
-            if (BuildConfig.IS_CORPORATE) {
+            // Never launch VPN consent UI while Live TV / OTT is active — that steals focus.
+            if (BuildConfig.IS_CORPORATE && !KioskPolicy.isExternalAppActive(this)) {
                 try {
                     MyDeviceAdminReceiver.ensureAlwaysOnInternalVpn(this)
                     val prepare = KioskVpnController.preparePermissionIntent(this)
