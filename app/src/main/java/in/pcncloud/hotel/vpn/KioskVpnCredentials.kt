@@ -30,7 +30,7 @@ object KioskVpnCredentials {
     const val CLIENT_ADDRESS = "10.10.0.2/32"
 
     /** PC WireGuard interface public key (Android Peer.PublicKey). */
-    const val SERVER_PUBLIC_KEY = "tRaqqjfX1frGobtBbBGwbR/jn4Xp4u3xNpicF0NSp0Q="
+    const val SERVER_PUBLIC_KEY = "JvU5blzhYou9lAsbUKvwRH7x8Z3kVo3JgrCz/j6XEyc="
 
     const val ENDPOINT = "103.29.99.61:51088"
 
