@@ -59,6 +59,9 @@ class SplashActivity : AppCompatActivity() {
     /** True once overlay check passed (granted, N/A, or gracefully skipped). */
     private var overlayGatePassed = false
 
+    /** True once VPN prepare finished (granted, denied, or already authorized). */
+    private var vpnGatePassed = !BuildConfig.IS_CORPORATE
+
     /** True while Settings overlay screen is open via [startActivityForResult]. */
     private var awaitingOverlayResult = false
 
@@ -70,15 +73,28 @@ class SplashActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         awaitingVpnPermission = false
+        vpnGatePassed = true
         Log.i(TAG, "VPN prepare resultCode=${result.resultCode}")
         if (BuildConfig.IS_CORPORATE) {
-            TailscaleController.onVpnPermissionGranted(applicationContext)
+            if (TailscaleController.isVpnPrepared(applicationContext)) {
+                TailscaleController.onVpnPermissionGranted(applicationContext)
+            } else {
+                Log.w(TAG, "VPN consent denied or cancelled — continuing without tunnel")
+            }
         }
+        continueStartupGates()
     }
 
     private val proceedUnpaired = Runnable { openPairing() }
     private val proceedMain = Runnable { openMain() }
-    private val forceProceedMain = Runnable {
+    private val forceProceedMain = Runnable { onSplashDataTimeout() }
+
+    private fun onSplashDataTimeout() {
+        if (awaitingVpnPermission || !vpnGatePassed) {
+            Log.w(TAG, "Splash timeout deferred — VPN consent dialog still open")
+            splashRoot().postDelayed(forceProceedMain, VPN_DEFER_MS)
+            return
+        }
         Log.w(
             TAG,
             "Splash timeout — brandingReady=$brandingReady roomReady=$roomReady " +
@@ -107,22 +123,6 @@ class SplashActivity : AppCompatActivity() {
         splashProgress = findViewById(R.id.splash_progress)
         startedAtMs = SystemClock.elapsedRealtime()
 
-        // Corporate: request VpnService.prepare from visible Activity before background login.
-        if (BuildConfig.IS_CORPORATE) {
-            try {
-                val prepare = TailscaleController.preparePermissionIntent(this)
-                if (prepare != null) {
-                    awaitingVpnPermission = true
-                    splashStatus.text = getString(R.string.splash_vpn_request)
-                    vpnPermissionLauncher.launch(prepare)
-                } else {
-                    TailscaleController.ensureRunning(applicationContext)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Tailscale VPN consent from Splash failed", e)
-            }
-        }
-
         // Hotel build: keep splash logo hidden until branding arrives, so the
         // default flower does not flash before the remote logo replaces it.
         splashLogo?.isVisible = BuildConfig.IS_CORPORATE
@@ -138,9 +138,43 @@ class SplashActivity : AppCompatActivity() {
             } else {
                 ""
             }
-        splashStatus.text = getString(R.string.splash_status_loading)
+        if (!BuildConfig.IS_CORPORATE) {
+            splashStatus.text = getString(R.string.splash_status_loading)
+        }
         splashProgress.isVisible = true
 
+        // VPN consent must finish before overlay settings or MainActivity navigation.
+        ensureVpnPermissionThenContinue()
+    }
+
+    /**
+     * First gate: VpnService.prepare from this visible Activity.
+     * Overlay + Firestore prefetch only run after [vpnGatePassed].
+     */
+    private fun ensureVpnPermissionThenContinue() {
+        if (vpnGatePassed) {
+            continueStartupGates()
+            return
+        }
+        try {
+            val prepare = TailscaleController.preparePermissionIntent(this)
+            if (prepare != null) {
+                awaitingVpnPermission = true
+                splashStatus.text = getString(R.string.splash_vpn_request)
+                vpnPermissionLauncher.launch(prepare)
+            } else {
+                vpnGatePassed = true
+                TailscaleController.ensureRunning(applicationContext)
+                continueStartupGates()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Tailscale VPN consent from Splash failed", e)
+            vpnGatePassed = true
+            continueStartupGates()
+        }
+    }
+
+    private fun continueStartupGates() {
         ensureOverlayPermissionThenInit()
     }
 
@@ -233,7 +267,7 @@ class SplashActivity : AppCompatActivity() {
     }
 
     private fun beginAppInitialization() {
-        if (hasNavigated) return
+        if (hasNavigated || !vpnGatePassed || awaitingVpnPermission) return
 
         if (!hotelConfig.isPaired()) {
             Log.i(
@@ -281,7 +315,9 @@ class SplashActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         KioskPolicy.clearUserMinimized(this)
-        if (hasNavigated || awaitingOverlayResult || !overlayGatePassed) {
+        if (hasNavigated || awaitingOverlayResult || awaitingVpnPermission ||
+            !overlayGatePassed || !vpnGatePassed
+        ) {
             return
         }
         resumePendingNavigation()
@@ -292,7 +328,8 @@ class SplashActivity : AppCompatActivity() {
         mainTransitionScheduled = false
         if (!isChangingConfigurations &&
             !isFinishing &&
-            !awaitingOverlayResult
+            !awaitingOverlayResult &&
+            !awaitingVpnPermission
         ) {
             KioskPolicy.markUserMinimized(this)
             Log.i(TAG, "onStop — cancelled pending navigation (user backgrounded)")
@@ -301,7 +338,9 @@ class SplashActivity : AppCompatActivity() {
     }
 
     private fun resumePendingNavigation() {
-        if (hasNavigated || !overlayGatePassed || awaitingOverlayResult) {
+        if (hasNavigated || !overlayGatePassed || !vpnGatePassed ||
+            awaitingOverlayResult || awaitingVpnPermission
+        ) {
             return
         }
         if (unpairedFlow) {
@@ -502,7 +541,11 @@ class SplashActivity : AppCompatActivity() {
     }
 
     private fun scheduleMain(minRemainingMs: Long = MIN_DISPLAY_MS) {
-        if (hasNavigated || mainTransitionScheduled || !overlayGatePassed) return
+        if (hasNavigated || mainTransitionScheduled || !overlayGatePassed ||
+            !vpnGatePassed || awaitingVpnPermission
+        ) {
+            return
+        }
         if (!brandingReady || !roomReady || !introCacheReady) return
         if (!KioskPolicy.canActivityNavigate(lifecycle)) {
             Log.d(TAG, "scheduleMain skipped — lifecycle=${lifecycle.currentState}")
@@ -518,7 +561,7 @@ class SplashActivity : AppCompatActivity() {
     }
 
     private fun openPairing() {
-        if (hasNavigated) return
+        if (hasNavigated || awaitingVpnPermission || !vpnGatePassed) return
         if (!KioskPolicy.canActivityNavigate(lifecycle)) {
             Log.w(TAG, "Skipping openPairing — lifecycle=${lifecycle.currentState}")
             mainTransitionScheduled = false
@@ -538,7 +581,7 @@ class SplashActivity : AppCompatActivity() {
     }
 
     private fun openMain() {
-        if (hasNavigated) return
+        if (hasNavigated || awaitingVpnPermission || !vpnGatePassed) return
         if (!KioskPolicy.canActivityNavigate(lifecycle)) {
             Log.w(TAG, "Skipping openMain — lifecycle=${lifecycle.currentState}")
             mainTransitionScheduled = false
@@ -674,6 +717,8 @@ class SplashActivity : AppCompatActivity() {
         /** API &lt; 30 TV boxes — Firestore / TLS often slower on cold boot. */
         private const val DATA_TIMEOUT_LEGACY_MS = 22_000L
         private const val OVERLAY_DENY_CONTINUE_MS = 2_500L
+        /** Re-check splash timeout while VPN consent dialog is still open. */
+        private const val VPN_DEFER_MS = 5_000L
 
         private fun dataTimeoutMs(): Long =
             if (Build.VERSION.SDK_INT < 30) DATA_TIMEOUT_LEGACY_MS else DATA_TIMEOUT_MS

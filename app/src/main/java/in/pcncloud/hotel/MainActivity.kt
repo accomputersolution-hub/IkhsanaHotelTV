@@ -82,12 +82,18 @@ class MainActivity : ComponentActivity() {
     var nestedAdminBackHandler: (() -> Boolean)? = null
 
     /** Corporate VPN consent — launched from onResume when VpnService.prepare is required. */
+    private var awaitingVpnPermission = false
+
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
+        awaitingVpnPermission = false
         Log.i(TAG, "VPN prepare resultCode=${result.resultCode}")
-        if (BuildConfig.IS_CORPORATE) {
+        if (BuildConfig.IS_CORPORATE && TailscaleController.isVpnPrepared(applicationContext)) {
             TailscaleController.onVpnPermissionGranted(applicationContext)
+            if (resolveKioskEnabled()) {
+                ensureOverlayPermissionForBal()
+            }
         }
     }
 
@@ -1636,6 +1642,30 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            var deferOverlayForVpn = false
+            // Corporate: VPN consent before overlay settings — overlay steals prepare dialog focus.
+            if (BuildConfig.IS_CORPORATE && !KioskPolicy.isExternalAppActive(this)) {
+                try {
+                    if (!TailscaleController.isVpnPrepared(this)) {
+                        deferOverlayForVpn = true
+                        if (!awaitingVpnPermission) {
+                            val prepare = TailscaleController.preparePermissionIntent(this)
+                            if (prepare != null) {
+                                awaitingVpnPermission = true
+                                Log.w(TAG, "VPN consent required — launching prepare from MainActivity")
+                                vpnPermissionLauncher.launch(prepare)
+                            }
+                        }
+                    } else {
+                        awaitingVpnPermission = false
+                        MyDeviceAdminReceiver.ensureAlwaysOnEmbeddedVpn(this)
+                        TailscaleController.ensureRunning(this)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Tailscale ensure from MainActivity failed", e)
+                }
+            }
+
             if (kioskOn) {
                 // Staff returned from Home picker after selecting this app as default.
                 if (KioskPolicy.isMyAppDefaultLauncher(this)) {
@@ -1647,23 +1677,9 @@ class MainActivity : ComponentActivity() {
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to start KioskWatchdogService", e)
                 }
-                // Android 10 BAL exemption: overlay permission must be granted.
-                ensureOverlayPermissionForBal()
-            }
-
-            // Corporate: re-assert Tailscale / Headscale VPN from visible Activity when consent needed.
-            if (BuildConfig.IS_CORPORATE && !KioskPolicy.isExternalAppActive(this)) {
-                try {
-                    MyDeviceAdminReceiver.ensureAlwaysOnEmbeddedVpn(this)
-                    val prepare = TailscaleController.preparePermissionIntent(this)
-                    if (prepare != null) {
-                        Log.w(TAG, "VPN consent required — launching prepare from MainActivity")
-                        vpnPermissionLauncher.launch(prepare)
-                    } else {
-                        TailscaleController.ensureRunning(this)
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Tailscale ensure from MainActivity failed", e)
+                // Overlay settings must not open while VPN prepare dialog is showing.
+                if (!deferOverlayForVpn && !awaitingVpnPermission) {
+                    ensureOverlayPermissionForBal()
                 }
             }
         } catch (e: Exception) {
