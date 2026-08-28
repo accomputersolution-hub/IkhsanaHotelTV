@@ -163,6 +163,10 @@ object EmbeddedTailscaleEngine {
                         EmbeddedTailscaleModels.State.Stopped,
                         EmbeddedTailscaleModels.State.Running,
                         -> onHeadlessLoginComplete(app)
+                        EmbeddedTailscaleModels.State.NeedsLogin -> {
+                            // Auth key may finish async — WantRunning stays false until login completes.
+                            Log.d(TAG, "Auth-key start: still NeedsLogin, awaiting LoginFinished notify")
+                        }
                         else -> Unit
                     }
                 }
@@ -171,10 +175,19 @@ object EmbeddedTailscaleEngine {
     }
 
     private fun onHeadlessLoginComplete(app: Context) {
-        if (loginSequenceComplete) return
+        if (loginSequenceComplete) {
+            applyWantRunningIfNeeded()
+            return
+        }
         loginSequenceComplete = true
         loginInFlight = false
-        Log.i(TAG, "Headless login complete — state=${EmbeddedTailscaleNotifier.state.value}")
+        Log.i(
+            TAG,
+            "Headless login complete — state=${EmbeddedTailscaleNotifier.state.value}; " +
+                "setting WantRunning=true",
+        )
+        // Must run before/alongside VpnService — engine stays NeedsLogin while want=false.
+        applyWantRunningIfNeeded()
         startVpnService(app)
     }
 
@@ -235,13 +248,17 @@ object EmbeddedTailscaleEngine {
 
     private fun applyWantRunningIfNeeded() {
         if (!goBackendReady || wantRunningApplied) return
+        Log.i(
+            TAG,
+            "PATCH /prefs WantRunning=true control=${EmbeddedTailscaleCredentials.CONTROL_URL}",
+        )
         localApi.editPrefs(
             EmbeddedTailscaleCredentials.CONTROL_URL,
             wantRunning = true,
             onResult = { result ->
                 result.onSuccess {
                     wantRunningApplied = true
-                    Log.i(TAG, "WantRunning=true applied after VpnService ready")
+                    Log.i(TAG, "WantRunning=true applied — engine should leave NeedsLogin")
                 }
                 result.onFailure { e ->
                     Log.e(TAG, "editPrefs WantRunning failed", e)
