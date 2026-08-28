@@ -1,0 +1,27 @@
+diff --git a/control/controlclient/direct.go b/control/controlclient/direct.go
+--- a/control/controlclient/direct.go
++++ b/control/controlclient/direct.go
+@@ -838,7 +838,10 @@ func (c *Direct) doLogin(ctx context.Context, opt LoginOpt) (regen bool, url str
+ 		return regen, opt.URL, nil, fmt.Errorf("getNoiseClient: %w", err)
+ 	}
+ 	url := fmt.Sprintf("%s/machine/register", c.serverURL)
+-	url = strings.Replace(url, "http:", "https:", 1)
++	// Plain-HTTP control planes (e.g. Headscale on LAN) must not be upgraded to HTTPS.
++	if !strings.HasPrefix(c.serverURL, "http://") {
++		url = strings.Replace(url, "http:", "https:", 1)
++	}
+ 
+ 	bodyData, err := encode(request)
+ 	if err != nil {
+@@ -1192,7 +1195,10 @@ func (c *Direct) sendMapRequest(ctx context.Context, serverURL string, serverNoise
+ 		return fmt.Errorf("getNoiseClient: %w", err)
+ 	}
+ 	url := fmt.Sprintf("%s/machine/map", serverURL)
+-	url = strings.Replace(url, "http:", "https:", 1)
++	// Plain-HTTP control planes (e.g. Headscale on LAN) must not be upgraded to HTTPS.
++	if !strings.HasPrefix(serverURL, "http://") {
++		url = strings.Replace(url, "http:", "https:", 1)
++	}
+ 
+ 	// Create a watchdog timer that breaks the connection if we don't receive a
+ 	// MapResponse from the network at least once every two minutes. The
