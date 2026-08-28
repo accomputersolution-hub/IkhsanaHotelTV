@@ -181,13 +181,14 @@ object EmbeddedTailscaleEngine {
             localApi.startWithAuthKey(
                 controlUrl = EmbeddedTailscaleCredentials.CONTROL_URL,
                 authKey = EmbeddedTailscaleCredentials.AUTH_KEY,
-                wantRunning = false,
+                wantRunning = true,
                 onResult = { startResult ->
                     startResult.onFailure { e ->
                         Log.e(TAG, "Headless auth-key start failed", e)
                         loginInFlight = false
                     }
                     startResult.onSuccess {
+                        wantRunningApplied = true
                         val state = EmbeddedTailscaleNotifier.state.value
                         Log.i(
                             TAG,

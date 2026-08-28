@@ -51,7 +51,8 @@ class EmbeddedTailscaleLocalApi(
         val masked = headscaleMaskedPrefs(controlUrl, wantRunning)
         Log.i(
             TAG,
-            "PATCH /prefs before /start — ControlURLSet=true control=$controlUrl wantRunning=$wantRunning",
+            "PATCH /prefs before /start — ControlURLSet=true WantRunningSet=true " +
+                "control=$controlUrl wantRunning=$wantRunning",
         )
         editMaskedPrefs(masked) { editResult ->
             editResult.onFailure { e ->
@@ -67,7 +68,8 @@ class EmbeddedTailscaleLocalApi(
                 val body = json.encodeToString(options).toByteArray()
                 Log.i(
                     TAG,
-                    "POST /start authKeyPrefix=${authKey.take(8)}… UpdatePrefs.ControlURL=$controlUrl",
+                    "POST /start authKeyPrefix=${authKey.take(8)}… " +
+                        "UpdatePrefs.ControlURL=$controlUrl WantRunning=$wantRunning",
                 )
                 post("start", body, onResult)
             }
