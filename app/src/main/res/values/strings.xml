@@ -168,11 +168,11 @@
     <string name="kiosk_notification_channel_desc">Optional kiosk foreground service — does not reopen the app on minimize</string>
     <string name="kiosk_notification_title">Hotel TV</string>
     <string name="kiosk_notification_text">Running in the background</string>
-    <string name="kiosk_vpn_channel">Kiosk VPN</string>
-    <string name="kiosk_vpn_channel_desc">Built-in WireGuard tunnel for corporate TVs</string>
-    <string name="kiosk_vpn_notification_title">Kiosk VPN</string>
-    <string name="kiosk_vpn_notification_text">Secure tunnel active</string>
-    <string name="kiosk_vpn_keepalive_text">Keeping VPN connected</string>
+    <string name="tailscale_vpn_channel">Tailscale VPN</string>
+    <string name="tailscale_vpn_channel_desc">Headscale tunnel for corporate TVs</string>
+    <string name="tailscale_vpn_notification_title">Tailscale VPN</string>
+    <string name="tailscale_vpn_notification_text">Secure tunnel active</string>
+    <string name="tailscale_vpn_keepalive_text">Keeping Tailscale connected</string>
     <string name="alert_overlay_channel">Guest message overlay</string>
     <string name="alert_overlay_channel_desc">Shows hotel messages over YouTube and Live TV</string>
     <string name="alert_overlay_notification_title">Hotel message</string>

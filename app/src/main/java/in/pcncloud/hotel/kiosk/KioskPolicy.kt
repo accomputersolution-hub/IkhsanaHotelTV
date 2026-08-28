@@ -378,7 +378,7 @@ object KioskPolicy {
         }
         val cleaned = (
             packages.map { it.trim() }.filter { it.isNotEmpty() } +
-                KioskLockTask.BASELINE_LOCK_TASK_PACKAGES
+                KioskLockTask.baselineLockTaskPackages()
             )
             .toSet()
         prefs(context).edit()
@@ -498,7 +498,7 @@ object KioskPolicy {
             if (!isKioskModeEnabled(context)) return true
             val target = targetPackageName.trim()
             if (target.isEmpty()) return false
-            if (target in KioskLockTask.BASELINE_LOCK_TASK_PACKAGES) return true
+            if (target in KioskLockTask.baselineLockTaskPackages()) return true
             val allowed = getAllowedPackagesList(context)
             val ok = allowed.contains(target)
             if (!ok) {

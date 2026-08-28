@@ -43,11 +43,14 @@ object KioskLockTask {
      * Lock Task package set = hotel app + [extraPackages] (RTDB allowlist) + baseline.
      */
     fun buildLockTaskPackageArray(context: Context, extraPackages: List<String> = emptyList()): Array<String> =
-        (listOf(context.packageName) + extraPackages + BASELINE_LOCK_TASK_PACKAGES)
+        (listOf(context.packageName) + extraPackages + baselineLockTaskPackages())
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .distinct()
             .toTypedArray()
+
+    /** Live TV baseline lock-task packages. */
+    fun baselineLockTaskPackages(): List<String> = BASELINE_LOCK_TASK_PACKAGES
 
     /**
      * Registers Lock Task packages from the hotel's RTDB `allowedPackages`,

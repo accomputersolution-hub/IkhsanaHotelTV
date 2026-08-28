@@ -29,7 +29,7 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
         Log.i(TAG, "Device admin enabled — applying Lock Task + Always-On VPN policy")
         ensureSelfAllowlisted(context)
         applyStrictLockTaskFeatures(context)
-        ensureAlwaysOnInternalVpn(context)
+        ensureAlwaysOnEmbeddedVpn(context)
     }
 
     override fun onDisabled(context: Context, intent: Intent) {
@@ -123,16 +123,11 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
         }
 
         /**
-         * Corporate Device Owner only: pin **this app** as Always-On VPN so the
-         * built-in [in.pcncloud.hotel.vpn.KioskVpnService] / WireGuard tunnel
-         * starts without launching any external VPN UI.
-         *
-         * Hotel flavor: no-op. Requires API 24+.
+         * Corporate Device Owner only: pin **this app** as Always-On VPN so
+         * [in.pcncloud.hotel.tailscale.embed.EmbeddedTailscaleVpnService] starts on boot.
          */
-        fun ensureAlwaysOnInternalVpn(context: Context): Boolean {
-            if (!BuildConfig.IS_CORPORATE) {
-                return false
-            }
+        fun ensureAlwaysOnEmbeddedVpn(context: Context): Boolean {
+            if (!BuildConfig.IS_CORPORATE) return false
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
                 Log.w(TAG, "setAlwaysOnVpnPackage requires API 24+ — skip")
                 return false
@@ -153,7 +148,6 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
                     return false
                 }
 
-                // lockdownEnabled=false → do not block networking if tunnel is down.
                 dpm.setAlwaysOnVpnPackage(admin, app.packageName, /* lockdownEnabled= */ false)
 
                 val active = try {
@@ -163,8 +157,8 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
                 }
                 Log.i(
                     TAG,
-                    "Always-On VPN set → package=${app.packageName} (built-in) lockdown=false " +
-                        "activePackage=$active",
+                    "Always-On VPN set → package=${app.packageName} (embedded Tailscale) " +
+                        "lockdown=false activePackage=$active",
                 )
                 true
             } catch (e: PackageManager.NameNotFoundException) {

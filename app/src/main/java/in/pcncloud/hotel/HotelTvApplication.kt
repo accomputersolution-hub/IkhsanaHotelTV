@@ -9,6 +9,7 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.SvgDecoder
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
+import `in`.pcncloud.hotel.integration.TailscaleController
 import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -30,16 +31,16 @@ class HotelTvApplication : Application(), ImageLoaderFactory {
             Log.w(TAG, "logProvisioningDiagnostics failed during Application.onCreate", e)
         }
         try {
-            // Corporate: register Always-On callback, then start built-in VPN.
-            `in`.pcncloud.hotel.vpn.KioskVpnController.init(this)
-            MyDeviceAdminReceiver.ensureAlwaysOnInternalVpn(this)
+            // Corporate Device Owner: Headscale / Tailscale VPN on boot.
+            TailscaleController.init(this)
+            MyDeviceAdminReceiver.ensureAlwaysOnEmbeddedVpn(this)
         } catch (e: Exception) {
-            Log.w(TAG, "ensureAlwaysOnInternalVpn failed during Application.onCreate", e)
+            Log.w(TAG, "Tailscale Device Owner setup failed during Application.onCreate", e)
         }
         try {
-            `in`.pcncloud.hotel.vpn.KioskVpnController.ensureRunning(this)
+            `in`.pcncloud.hotel.integration.TailscaleController.ensureRunning(this)
         } catch (e: Exception) {
-            Log.w(TAG, "KioskVpnController.ensureRunning failed during Application.onCreate", e)
+            Log.w(TAG, "TailscaleController.ensureRunning failed during Application.onCreate", e)
         }
         try {
             KioskPolicy.onProcessStart(this)
