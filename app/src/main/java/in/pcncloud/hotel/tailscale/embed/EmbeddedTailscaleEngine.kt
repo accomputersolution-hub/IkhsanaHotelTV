@@ -3,8 +3,6 @@ package `in`.pcncloud.hotel.tailscale.embed
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.util.Log
@@ -14,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import libtailscale.Libtailscale
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Singleton embedded Tailscale / Headscale engine (libtailscale in-process).
@@ -23,32 +22,25 @@ object EmbeddedTailscaleEngine {
     private const val TAG = "EmbeddedTsEngine"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var initialized = false
+    private var goBackendReady = false
     private var loginInFlight = false
+    private var loginSequenceComplete = false
+    private var wantRunningApplied = false
     private var vpnActive = false
+    private val vpnServiceStarting = AtomicBoolean(false)
 
+    private var storedAppContext: Context? = null
     private lateinit var appContext: EmbeddedTailscaleAppContext
     private lateinit var goApp: libtailscale.Application
     private lateinit var localApi: EmbeddedTailscaleLocalApi
 
+    /** Lightweight process init — does not start the Go backend (needs VPN consent first). */
     fun init(context: Context) {
         if (!BuildConfig.IS_CORPORATE) return
-        if (initialized) return
-
-        val app = context.applicationContext
-        appContext = EmbeddedTailscaleAppContext(app)
-        goApp = Libtailscale.start(
-            app.filesDir.absolutePath,
-            app.filesDir.absolutePath,
-            /* hwAttestation */ false,
-            appContext,
-        )
-        localApi = EmbeddedTailscaleLocalApi(scope, goApp)
-        EmbeddedTailscaleNotifier.setApp(goApp)
-        EmbeddedTailscaleNotifier.start(scope)
-        initialized = true
-        Log.i(TAG, "libtailscale started — control=${EmbeddedTailscaleCredentials.CONTROL_URL}")
+        storedAppContext = context.applicationContext
     }
+
+    fun isGoBackendReady(): Boolean = goBackendReady
 
     /** System VPN consent intent — non-null when user must approve via a visible Activity. */
     fun preparePermissionIntent(context: Context): Intent? =
@@ -77,27 +69,71 @@ object EmbeddedTailscaleEngine {
         ensureRunning(context)
     }
 
+    /**
+     * Keep-alive may re-assert only when the engine is idle — not while Starting/Stopping.
+     */
+    fun shouldKeepAliveReassert(): Boolean {
+        if (!goBackendReady) return storedAppContext != null
+        val state = EmbeddedTailscaleNotifier.state.value
+        return when (state) {
+            EmbeddedTailscaleModels.State.Starting,
+            EmbeddedTailscaleModels.State.Stopping,
+            EmbeddedTailscaleModels.State.Running,
+            -> false
+            else -> !vpnActive
+        }
+    }
+
     fun ensureRunning(context: Context) {
         if (!BuildConfig.IS_CORPORATE) return
-        init(context.applicationContext)
+        storedAppContext = context.applicationContext
 
         val app = context.applicationContext
         if (!isVpnPrepared(app)) {
             Log.w(TAG, "VPN consent missing — defer ensureRunning until Activity grants prepare")
             return
         }
-        if (isVpnTransportUp(app) && vpnActive) {
-            Log.i(TAG, "VPN already active")
-            EmbeddedTailscaleKeepAliveService.start(app)
-            return
+
+        initGoBackend(app)
+
+        val state = EmbeddedTailscaleNotifier.state.value
+        when (state) {
+            EmbeddedTailscaleModels.State.Starting,
+            EmbeddedTailscaleModels.State.Stopping,
+            -> {
+                Log.i(TAG, "Engine $state — skip ensureRunning (avoid shutdown/restart loop)")
+                return
+            }
+            EmbeddedTailscaleModels.State.Running -> {
+                if (vpnActive) {
+                    Log.i(TAG, "VPN already active")
+                    return
+                }
+                startVpnService(app)
+                return
+            }
+            EmbeddedTailscaleModels.State.NoState,
+            EmbeddedTailscaleModels.State.InUseOtherUser,
+            EmbeddedTailscaleModels.State.NeedsLogin,
+            EmbeddedTailscaleModels.State.NeedsMachineAuth,
+            EmbeddedTailscaleModels.State.Stopped,
+            -> Unit
         }
 
         if (loginInFlight) return
+
+        if (loginSequenceComplete) {
+            startVpnService(app)
+            applyWantRunningIfNeeded()
+            return
+        }
+
         loginInFlight = true
 
+        // WantRunning=false until VpnService is up — prevents Go Stopping loop when TUN is missing.
         val prefs = EmbeddedTailscaleModels.Prefs(
             ControlURL = EmbeddedTailscaleCredentials.CONTROL_URL,
-            WantRunning = true,
+            WantRunning = false,
         )
         val options = EmbeddedTailscaleModels.Options(
             AuthKey = EmbeddedTailscaleCredentials.AUTH_KEY,
@@ -116,10 +152,10 @@ object EmbeddedTailscaleEngine {
                         loginInFlight = false
                     }
                     loginResult.onSuccess {
-                        Log.i(TAG, "Headscale login sequence dispatched")
+                        Log.i(TAG, "Headscale login sequence dispatched (WantRunning deferred)")
                         loginInFlight = false
+                        loginSequenceComplete = true
                         startVpnService(app)
-                        EmbeddedTailscaleKeepAliveService.start(app)
                     }
                 }
             }
@@ -127,8 +163,10 @@ object EmbeddedTailscaleEngine {
     }
 
     fun isAbleToStartVpn(): Boolean {
+        if (!goBackendReady || !isVpnPrepared(storedAppContext ?: return false)) return false
         val state = EmbeddedTailscaleNotifier.state.value
-        return state.value >= EmbeddedTailscaleModels.State.Stopped.value
+        return state.value >= EmbeddedTailscaleModels.State.Stopped.value &&
+            state != EmbeddedTailscaleModels.State.Stopping
     }
 
     fun onVpnServiceCreated(service: EmbeddedTailscaleVpnService) {
@@ -138,17 +176,58 @@ object EmbeddedTailscaleEngine {
     fun onVpnActiveChanged(active: Boolean) {
         vpnActive = active
         Log.i(TAG, "vpnActive=$active state=${EmbeddedTailscaleNotifier.state.value}")
+        if (active) {
+            applyWantRunningIfNeeded()
+            storedAppContext?.let { EmbeddedTailscaleKeepAliveService.start(it) }
+        }
     }
 
     fun onVpnRevoked() {
         vpnActive = false
+        wantRunningApplied = false
         Log.w(TAG, "VpnService revoked")
     }
 
+    private fun initGoBackend(app: Context) {
+        if (goBackendReady) return
+        appContext = EmbeddedTailscaleAppContext(app)
+        goApp = Libtailscale.start(
+            app.filesDir.absolutePath,
+            app.filesDir.absolutePath,
+            /* hwAttestation */ false,
+            appContext,
+        )
+        localApi = EmbeddedTailscaleLocalApi(scope, goApp)
+        EmbeddedTailscaleNotifier.setApp(goApp)
+        EmbeddedTailscaleNotifier.start(scope)
+        goBackendReady = true
+        Log.i(TAG, "libtailscale started — control=${EmbeddedTailscaleCredentials.CONTROL_URL}")
+    }
+
+    private fun applyWantRunningIfNeeded() {
+        if (!goBackendReady || wantRunningApplied) return
+        localApi.editPrefs(
+            EmbeddedTailscaleCredentials.CONTROL_URL,
+            wantRunning = true,
+            onResult = { result ->
+                result.onSuccess {
+                    wantRunningApplied = true
+                    Log.i(TAG, "WantRunning=true applied after VpnService ready")
+                }
+                result.onFailure { e ->
+                    Log.e(TAG, "editPrefs WantRunning failed", e)
+                }
+            },
+        )
+    }
+
     private fun startVpnService(context: Context) {
-        val prepare = VpnService.prepare(context)
-        if (prepare != null) {
+        if (!isVpnPrepared(context)) {
             Log.w(TAG, "VpnService.prepare() requires user consent — launch from Activity")
+            return
+        }
+        if (!vpnServiceStarting.compareAndSet(false, true)) {
+            Log.d(TAG, "VpnService start already in flight")
             return
         }
 
@@ -170,24 +249,11 @@ object EmbeddedTailscaleEngine {
             Log.i(TAG, "Started EmbeddedTailscaleVpnService")
         } catch (t: Throwable) {
             Log.e(TAG, "Failed to start VpnService", t)
+            vpnServiceStarting.set(false)
         }
     }
 
-    private fun isVpnTransportUp(context: Context): Boolean {
-        return try {
-            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                val network = cm.activeNetwork ?: return false
-                val caps = cm.getNetworkCapabilities(network) ?: return false
-                caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
-            } else {
-                cm.allNetworks.any { n ->
-                    cm.getNetworkCapabilities(n)
-                        ?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
-                }
-            }
-        } catch (t: Throwable) {
-            false
-        }
+    fun onVpnServiceStartHandled() {
+        vpnServiceStarting.set(false)
     }
 }
