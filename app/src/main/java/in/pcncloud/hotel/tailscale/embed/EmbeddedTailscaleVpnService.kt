@@ -8,6 +8,7 @@ import android.os.Build
 import android.system.OsConstants
 import android.util.Log
 import `in`.pcncloud.hotel.MainActivity
+import `in`.pcncloud.hotel.R
 import java.util.UUID
 import libtailscale.Libtailscale
 
@@ -21,10 +22,12 @@ class EmbeddedTailscaleVpnService : VpnService(), libtailscale.IPNService {
 
     override fun onCreate() {
         super.onCreate()
+        enterForegroundImmediately()
         EmbeddedTailscaleEngine.onVpnServiceCreated(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        enterForegroundImmediately()
         EmbeddedTailscaleEngine.onVpnServiceStartHandled()
 
         when (intent?.action) {
@@ -36,18 +39,21 @@ class EmbeddedTailscaleVpnService : VpnService(), libtailscale.IPNService {
 
         if (!EmbeddedTailscaleEngine.isVpnPrepared(this)) {
             Log.w(TAG, "VpnService.prepare() not granted — stop until Activity consent")
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
 
         if (!EmbeddedTailscaleEngine.isGoBackendReady()) {
             Log.w(TAG, "Go backend not ready — stop VpnService until engine init after consent")
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
 
         if (!EmbeddedTailscaleEngine.isAbleToStartVpn()) {
             Log.w(TAG, "Engine not ready for VPN — defer requestVPN")
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -71,8 +77,16 @@ class EmbeddedTailscaleVpnService : VpnService(), libtailscale.IPNService {
             Log.w(TAG, "requestVPN skipped — prepare() not granted")
             return
         }
-        EmbeddedTailscaleKeepAliveService.showForegroundNotification(this)
+        enterForegroundImmediately()
         Libtailscale.requestVPN(this)
+    }
+
+    private fun enterForegroundImmediately() {
+        EmbeddedTailscaleKeepAliveService.promoteToForeground(
+            this,
+            R.string.tailscale_vpn_notification_text,
+            EmbeddedTailscaleKeepAliveService.VPN_SERVICE_NOTIFICATION_ID,
+        )
     }
 
     override fun onDestroy() {

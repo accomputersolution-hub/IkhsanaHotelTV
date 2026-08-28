@@ -23,8 +23,7 @@ class EmbeddedTailscaleKeepAliveService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createChannel()
-        startForeground(NOTIFICATION_ID, buildNotification())
+        promoteToForeground(this, R.string.tailscale_vpn_keepalive_text, NOTIFICATION_ID)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -43,41 +42,11 @@ class EmbeddedTailscaleKeepAliveService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun createChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            getString(R.string.tailscale_vpn_channel),
-            NotificationManager.IMPORTANCE_LOW,
-        ).apply {
-            description = getString(R.string.tailscale_vpn_channel_desc)
-            setShowBadge(false)
-        }
-        getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
-    }
-
-    private fun buildNotification(): Notification {
-        val openIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(BrandAssets.logoRes)
-            .setContentTitle(getString(R.string.tailscale_vpn_notification_title))
-            .setContentText(getString(R.string.tailscale_vpn_keepalive_text))
-            .setContentIntent(openIntent)
-            .setOngoing(true)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-    }
-
     companion object {
         private const val TAG = "EmbeddedTsKeepAlive"
         private const val CHANNEL_ID = "embedded_tailscale_vpn"
         private const val NOTIFICATION_ID = 42043
+        const val VPN_SERVICE_NOTIFICATION_ID = 42044
         const val ACTION_STOP = "in.pcncloud.hotel.embedded.KEEPALIVE_STOP"
 
         fun start(app: Context) {
@@ -94,22 +63,49 @@ class EmbeddedTailscaleKeepAliveService : Service() {
             }
         }
 
+        /** Must run within seconds of [Context.startForegroundService] — avoids RemoteServiceException. */
+        fun promoteToForeground(
+            service: Service,
+            contentTextRes: Int = R.string.tailscale_vpn_notification_text,
+            notificationId: Int = NOTIFICATION_ID,
+        ) {
+            ensureNotificationChannel(service)
+            service.startForeground(notificationId, buildNotification(service, contentTextRes))
+        }
+
         fun showForegroundNotification(service: Service) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val channel = NotificationChannel(
-                    CHANNEL_ID,
-                    service.getString(R.string.tailscale_vpn_channel),
-                    NotificationManager.IMPORTANCE_LOW,
-                )
-                service.getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
+            promoteToForeground(service)
+        }
+
+        private fun ensureNotificationChannel(service: Service) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                service.getString(R.string.tailscale_vpn_channel),
+                NotificationManager.IMPORTANCE_LOW,
+            ).apply {
+                description = service.getString(R.string.tailscale_vpn_channel_desc)
+                setShowBadge(false)
             }
-            val notification = NotificationCompat.Builder(service, CHANNEL_ID)
+            service.getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
+        }
+
+        private fun buildNotification(service: Service, contentTextRes: Int): Notification {
+            val openIntent = PendingIntent.getActivity(
+                service,
+                0,
+                Intent(service, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            return NotificationCompat.Builder(service, CHANNEL_ID)
                 .setSmallIcon(BrandAssets.logoRes)
                 .setContentTitle(service.getString(R.string.tailscale_vpn_notification_title))
-                .setContentText(service.getString(R.string.tailscale_vpn_notification_text))
+                .setContentText(service.getString(contentTextRes))
+                .setContentIntent(openIntent)
                 .setOngoing(true)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build()
-            service.startForeground(NOTIFICATION_ID, notification)
         }
     }
 }
