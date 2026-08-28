@@ -26,6 +26,7 @@ object EmbeddedTailscaleModels {
     data class Prefs(
         var ControlURL: String = "",
         var WantRunning: Boolean = false,
+        var LoggedOut: Boolean = false,
         var CorpDNS: Boolean = false,
         var RouteAll: Boolean = false,
     )

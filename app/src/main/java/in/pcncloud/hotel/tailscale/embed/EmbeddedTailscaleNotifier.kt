@@ -123,9 +123,15 @@ object EmbeddedTailscaleNotifier {
     private fun logNotify(notify: EmbeddedTailscaleModels.Notify) {
         val prefs = notify.Prefs
         if (prefs != null) {
+            val control = prefs.ControlURL
+            val controlLog = if (control.isBlank()) {
+                "empty (stored pref; see GET /prefs / POST /start)"
+            } else {
+                control.take(48)
+            }
             Log.d(
                 TAG,
-                "notify Prefs control=${prefs.ControlURL.take(48)} wantRunning=${prefs.WantRunning}",
+                "notify Prefs control=$controlLog wantRunning=${prefs.WantRunning}",
             )
         }
         notify.BrowseToURL?.let { url ->

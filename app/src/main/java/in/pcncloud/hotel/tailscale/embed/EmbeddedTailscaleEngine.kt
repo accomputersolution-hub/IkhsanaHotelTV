@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import libtailscale.Libtailscale
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -25,6 +26,7 @@ object EmbeddedTailscaleEngine {
     private const val LOGIN_WATCHDOG_MS = 8_000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val prefsJson = Json { ignoreUnknownKeys = true }
     private var goBackendReady = false
     private var loginInFlight = false
     private var loginSequenceComplete = false
@@ -182,6 +184,7 @@ object EmbeddedTailscaleEngine {
                             TAG,
                             "Auth-key start accepted — state=$state watching=${EmbeddedTailscaleNotifier.isWatching()}",
                         )
+                        verifyControlUrlPersisted("auth-key start")
                         loginInFlight = false
                         when (state) {
                             EmbeddedTailscaleModels.State.Stopped,
@@ -346,26 +349,79 @@ object EmbeddedTailscaleEngine {
             Log.d(TAG, "applyWantRunning skipped — already applied")
             return
         }
-        Log.i(
-            TAG,
-            "PATCH /prefs WantRunning=true control=${EmbeddedTailscaleCredentials.CONTROL_URL}",
-        )
-        localApi.editPrefs(
-            EmbeddedTailscaleCredentials.CONTROL_URL,
+        Log.i(TAG, "PATCH /prefs WantRunning=true")
+        localApi.editWantRunning(
             wantRunning = true,
             onResult = { result ->
-                result.onSuccess {
+                result.onSuccess { prefsBody ->
                     wantRunningApplied = true
+                    logStoredControlUrl("WantRunning patch", prefsBody)
                     Log.i(
                         TAG,
                         "WantRunning=true applied — state=${EmbeddedTailscaleNotifier.state.value}",
                     )
+                    verifyControlUrlPersisted("WantRunning patch")
                 }
                 result.onFailure { e ->
                     Log.e(TAG, "PATCH /prefs WantRunning failed", e)
                 }
             },
         )
+    }
+
+    /**
+     * ControlURL is owned by POST /start UpdatePrefs. GET/PATCH /prefs may show ControlURL ""
+     * even when Headscale is active — that is the stored pref field, not the live control client URL.
+     */
+    private fun verifyControlUrlPersisted(source: String) {
+        if (!goBackendReady) return
+        val expected = EmbeddedTailscaleCredentials.CONTROL_URL
+        localApi.fetchPrefs { result ->
+            result.onSuccess { body ->
+                logStoredControlUrl(source, body)
+                val stored = decodeStoredControlUrl(body)
+                if (stored.isBlank() || stored != expected) {
+                    Log.w(
+                        TAG,
+                        "ControlURL not persisted ($source stored=${stored.ifBlank { "empty" }}) — " +
+                            "PATCH ControlURLSet expected=$expected",
+                    )
+                    localApi.editControlUrl(expected) { patchResult ->
+                        patchResult.onSuccess { patchBody ->
+                            logStoredControlUrl("ControlURL reassert", patchBody)
+                        }
+                        patchResult.onFailure { e ->
+                            Log.e(TAG, "PATCH ControlURL reassert failed", e)
+                        }
+                    }
+                }
+            }
+            result.onFailure { e ->
+                Log.w(TAG, "GET /prefs failed during ControlURL verify ($source)", e)
+            }
+        }
+    }
+
+    private fun decodeStoredControlUrl(prefsBody: String): String =
+        runCatching {
+            prefsJson.decodeFromString<EmbeddedTailscaleModels.Prefs>(prefsBody).ControlURL
+        }.getOrDefault("")
+
+    private fun logStoredControlUrl(source: String, prefsBody: String) {
+        val stored = decodeStoredControlUrl(prefsBody)
+        val expected = EmbeddedTailscaleCredentials.CONTROL_URL
+        when {
+            stored.isBlank() ->
+                Log.i(
+                    TAG,
+                    "GET /prefs ($source) stored ControlURL empty — " +
+                        "runtime uses ControlURLOrDefault; configured=$expected",
+                )
+            stored != expected ->
+                Log.w(TAG, "GET /prefs ($source) stored ControlURL=$stored expected=$expected")
+            else ->
+                Log.i(TAG, "GET /prefs ($source) stored ControlURL=$stored")
+        }
     }
 
     private fun startVpnService(context: Context) {
