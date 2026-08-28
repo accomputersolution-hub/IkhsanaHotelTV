@@ -1,23 +1,60 @@
+diff --git a/libtailscale/interfaces.go b/libtailscale/interfaces.go
+--- a/libtailscale/interfaces.go
++++ b/libtailscale/interfaces.go
+@@ -86,6 +86,11 @@ type AppContext interface {
+ 	// GetUserCACertsPEM returns PEM-encoded user-installed CA certificates
+ 	// from the Android KeyStore, or empty bytes if none are installed.
+ 	GetUserCACertsPEM() ([]byte, error)
++
++	// GetEmbeddedControlURL returns a control plane URL injected by the host app
++	// (e.g. Headscale). Empty string means use Tailscale default coordination server.
++	GetEmbeddedControlURL() (string, error)
+ }
+ 
+ // IPNService corresponds to our IPNService in Java.
+diff --git a/libtailscale/backend.go b/libtailscale/backend.go
 --- a/libtailscale/backend.go
 +++ b/libtailscale/backend.go
-@@ -378,7 +378,17 @@ func (a *App) newBackend(dataDir string, appCtx AppContext, store *stateStore,
+@@ -378,7 +378,7 @@ func (a *App) newBackend(dataDir string, appCtx AppContext, store *stateStore,
  	b.engine = engine
  	b.backend = lb
  	b.sys = sys
  	go func() {
 -		err := lb.Start(ipn.Options{})
-+		opts := ipn.Options{}
-+		if controlURL, err := a.appCtx.DecryptFromPref(customLoginServerPrefKey); err == nil && controlURL != "" {
-+			log.Printf("libtailscale: LocalBackend.Start with ControlURL=%s (from %s pref)", controlURL, customLoginServerPrefKey)
-+			opts.UpdatePrefs = &ipn.Prefs{
-+				ControlURL:  controlURL,
-+				WantRunning: false,
-+				LoggedOut:   false,
-+			}
-+		} else {
-+			log.Printf("libtailscale: LocalBackend.Start with default ControlURL (no %s pref)", customLoginServerPrefKey)
-+		}
-+		err := lb.Start(opts)
++		err := lb.Start(headscaleStartOptions(a.appCtx))
  		if err != nil {
  			log.Printf("Failed to start LocalBackend, panicking: %s", err)
  			panic(err)
+@@ -400,6 +400,32 @@ func (a *App) watchFileOpsChanges() {
+ 	}
+ }
+ 
++// headscaleStartOptions builds ipn.Options for the first LocalBackend.Start call.
++// ControlURL must be in UpdatePrefs here — post-start LocalAPI edits are not reliable.
++func headscaleStartOptions(appCtx AppContext) ipn.Options {
++	opts := ipn.Options{}
++	controlURL, source := embeddedControlURLFromAppCtx(appCtx)
++	if controlURL == "" {
++		log.Printf("libtailscale: LocalBackend.Start with default ControlURL (no embedded URL)")
++		return opts
++	}
++	log.Printf("libtailscale: LocalBackend.Start with ControlURL=%s (from %s)", controlURL, source)
++	opts.UpdatePrefs = &ipn.Prefs{
++		ControlURL:  controlURL,
++		WantRunning: false,
++		LoggedOut:   false,
++	}
++	return opts
++}
++
++func embeddedControlURLFromAppCtx(appCtx AppContext) (string, string) {
++	if url, err := appCtx.GetEmbeddedControlURL(); err == nil && url != "" {
++		return url, "AppContext.GetEmbeddedControlURL"
++	}
++	if url, err := appCtx.DecryptFromPref(customLoginServerPrefKey); err == nil && url != "" {
++		return url, customLoginServerPrefKey + " pref"
++	}
++	return "", ""
++}
++
+ func (b *backend) isConfigNonNilAndDifferent(rcfg *router.Config, dcfg *dns.OSConfig) bool {
