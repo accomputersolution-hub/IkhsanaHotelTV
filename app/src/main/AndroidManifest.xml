@@ -49,6 +49,7 @@
         </intent>
     </queries>
 
+    <!-- Headscale control plane is plain HTTP; usesCleartextTraffic required for embedded libtailscale. -->
     <application
         android:name=".HotelTvApplication"
         android:allowBackup="true"
@@ -56,7 +57,6 @@
         android:icon="@drawable/pcn_logo"
         android:label="${appName}"
         android:supportsRtl="true"
-        <!-- Headscale control plane is plain HTTP; required for embedded libtailscale cleartext. -->
         android:usesCleartextTraffic="true"
         android:directBootAware="true"
         android:theme="@style/Theme.PcnCloudTv"
