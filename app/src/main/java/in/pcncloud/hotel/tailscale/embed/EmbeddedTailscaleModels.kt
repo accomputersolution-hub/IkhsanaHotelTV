@@ -31,10 +31,24 @@ object EmbeddedTailscaleModels {
         var RouteAll: Boolean = false,
     )
 
+    /**
+     * Partial prefs for PATCH /prefs and POST /start UpdatePrefs JSON.
+     * Set flags (e.g. [ControlURLSet]) must be true for the daemon to apply custom Headscale URL.
+     */
+    @Serializable
+    data class MaskedPrefs(
+        var ControlURL: String? = null,
+        var ControlURLSet: Boolean? = null,
+        var WantRunning: Boolean? = null,
+        var WantRunningSet: Boolean? = null,
+        var LoggedOut: Boolean? = null,
+        var LoggedOutSet: Boolean? = null,
+    )
+
     @Serializable
     data class Options(
         var AuthKey: String? = null,
-        var UpdatePrefs: Prefs? = null,
+        var UpdatePrefs: MaskedPrefs? = null,
     )
 
     @Serializable

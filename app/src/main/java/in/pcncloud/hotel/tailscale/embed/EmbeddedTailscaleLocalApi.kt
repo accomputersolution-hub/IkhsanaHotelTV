@@ -18,18 +18,13 @@ class EmbeddedTailscaleLocalApi(
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
-    }
-
-    fun start(
-        options: EmbeddedTailscaleModels.Options,
-        onResult: (Result<Unit>) -> Unit,
-    ) {
-        post("start", json.encodeToString(options).toByteArray(), onResult)
+        explicitNulls = false
     }
 
     /**
-     * Headless Headscale login — AuthKey is consumed by POST /start (not login-interactive).
-     * ControlURL must be set here (UpdatePrefs); EditPrefs does not restart the control client.
+     * Headless Headscale login — matches tailscale-android order:
+     * 1. PATCH /prefs with MaskedPrefs (ControlURLSet + ControlURL)
+     * 2. POST /start with UpdatePrefs including ControlURLSet and AuthKey
      */
     fun startWithAuthKey(
         controlUrl: String,
@@ -37,57 +32,66 @@ class EmbeddedTailscaleLocalApi(
         wantRunning: Boolean,
         onResult: (Result<Unit>) -> Unit,
     ) {
-        val options = EmbeddedTailscaleModels.Options(
-            AuthKey = authKey,
-            UpdatePrefs = EmbeddedTailscaleModels.Prefs(
-                ControlURL = controlUrl,
-                WantRunning = wantRunning,
-                LoggedOut = false,
-            ),
-        )
-        val body = json.encodeToString(options).toByteArray()
+        val masked = headscaleMaskedPrefs(controlUrl, wantRunning)
         Log.i(
             TAG,
-            "POST /start authKeyPrefix=${authKey.take(8)}… control=$controlUrl wantRunning=$wantRunning",
+            "PATCH /prefs before /start — control=$controlUrl ControlURLSet=true wantRunning=$wantRunning",
         )
-        post("start", body, onResult)
+        editMaskedPrefs(masked) { editResult ->
+            editResult.onFailure { e ->
+                Log.e(TAG, "PATCH /prefs (pre-start ControlURL) failed", e)
+                onResult(Result.failure(e))
+            }
+            editResult.onSuccess { prefsBody ->
+                Log.i(TAG, "PATCH /prefs (pre-start) OK — stored prefs: ${prefsBody.take(200)}")
+                val startBody = buildStartBody(authKey, controlUrl, wantRunning)
+                Log.i(
+                    TAG,
+                    "POST /start authKeyPrefix=${authKey.take(8)}… control=$controlUrl " +
+                        "UpdatePrefs.ControlURLSet=true",
+                )
+                post("start", startBody, onResult)
+            }
+        }
+    }
+
+    fun editMaskedPrefs(
+        masked: EmbeddedTailscaleModels.MaskedPrefs,
+        onResult: (Result<String>) -> Unit,
+    ) {
+        val body = json.encodeToString(masked).toByteArray()
+        Log.d(TAG, "PATCH /prefs masked body=${sanitizeForLog(body.decodeToString())}")
+        patch("prefs", body, onResult)
     }
 
     /**
      * Patch only WantRunning — do not include ControlURL (tailscale-android pattern).
-     * ControlURL is established via POST /start UpdatePrefs; blank ControlURL in the PATCH
-     * response is normal stored-pref serialization and does not mean Headscale was cleared.
      */
     fun editWantRunning(
         wantRunning: Boolean,
         onResult: (Result<String>) -> Unit,
     ) {
-        val body = """
-            {
-              "WantRunning": $wantRunning,
-              "WantRunningSet": true
-            }
-        """.trimIndent()
+        val masked = EmbeddedTailscaleModels.MaskedPrefs(
+            WantRunning = wantRunning,
+            WantRunningSet = true,
+        )
         Log.i(TAG, "PATCH /prefs WantRunning=$wantRunning (ControlURL unchanged)")
-        patch("prefs", body.toByteArray(), onResult)
+        editMaskedPrefs(masked, onResult)
     }
 
     /**
-     * Persist ControlURL to the profile when GET /prefs shows it missing or wrong.
-     * Note: Tailscale may not restart controlclient on EditPrefs ControlURL alone.
+     * Persist ControlURL when GET /prefs shows it missing or wrong.
      */
     fun editControlUrl(
         controlUrl: String,
         onResult: (Result<String>) -> Unit,
     ) {
-        val body = """
-            {
-              "ControlURL": "$controlUrl",
-              "ControlURLSet": true
-            }
-        """.trimIndent()
-        Log.i(TAG, "PATCH /prefs ControlURL=$controlUrl")
-        patch("prefs", body.toByteArray(), onResult)
+        val masked = EmbeddedTailscaleModels.MaskedPrefs(
+            ControlURL = controlUrl,
+            ControlURLSet = true,
+        )
+        Log.i(TAG, "PATCH /prefs ControlURL=$controlUrl ControlURLSet=true")
+        editMaskedPrefs(masked, onResult)
     }
 
     fun fetchPrefs(onResult: (Result<String>) -> Unit) {
@@ -97,6 +101,35 @@ class EmbeddedTailscaleLocalApi(
     /** Poll engine status when IPN notifications are delayed or missed. */
     fun fetchStatus(onResult: (Result<String>) -> Unit) {
         get("status", onResult)
+    }
+
+    private fun headscaleMaskedPrefs(
+        controlUrl: String,
+        wantRunning: Boolean,
+    ): EmbeddedTailscaleModels.MaskedPrefs =
+        EmbeddedTailscaleModels.MaskedPrefs(
+            ControlURL = controlUrl,
+            ControlURLSet = true,
+            WantRunning = wantRunning,
+            WantRunningSet = true,
+            LoggedOut = false,
+            LoggedOutSet = true,
+        )
+
+    /**
+     * POST /start body with explicit ControlURLSet on UpdatePrefs so the embedded daemon
+     * applies the Headscale control URL instead of defaulting to Tailscale Cloud.
+     */
+    private fun buildStartBody(
+        authKey: String,
+        controlUrl: String,
+        wantRunning: Boolean,
+    ): ByteArray {
+        val options = EmbeddedTailscaleModels.Options(
+            AuthKey = authKey,
+            UpdatePrefs = headscaleMaskedPrefs(controlUrl, wantRunning),
+        )
+        return json.encodeToString(options).toByteArray()
     }
 
     private fun get(path: String, onResult: (Result<String>) -> Unit) {

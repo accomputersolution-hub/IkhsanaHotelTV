@@ -165,7 +165,8 @@ object EmbeddedTailscaleEngine {
 
             Log.i(
                 TAG,
-                "Headless login — POST /start AuthKey=${EmbeddedTailscaleCredentials.AUTH_KEY.take(8)}… " +
+                "Headless login — PATCH /prefs ControlURLSet then POST /start " +
+                    "AuthKey=${EmbeddedTailscaleCredentials.AUTH_KEY.take(8)}… " +
                     "control=${EmbeddedTailscaleCredentials.CONTROL_URL}",
             )
 
