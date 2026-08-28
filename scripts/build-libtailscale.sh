@@ -38,6 +38,19 @@ fi
 
 cd "$SRC_DIR"
 
+PATCH_FILE="$ROOT/scripts/patches/libtailscale-headscale-initial-controlurl.patch"
+if [[ -f "$PATCH_FILE" ]]; then
+  echo "Applying libtailscale patch: $PATCH_FILE"
+  patch -p1 --forward -d "$SRC_DIR" < "$PATCH_FILE" || {
+    if grep -q "LocalBackend.Start with ControlURL" "$SRC_DIR/libtailscale/backend.go"; then
+      echo "Patch already applied."
+    else
+      echo "ERROR: failed to apply $PATCH_FILE" >&2
+      exit 1
+    fi
+  }
+fi
+
 echo "Installing Android SDK packages (platform, NDK, build-tools) ..."
 make androidsdk
 

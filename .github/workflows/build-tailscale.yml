@@ -15,6 +15,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/build-libtailscale.sh'
+      - 'scripts/patches/**'
       - '.github/workflows/build-tailscale.yml'
   schedule:
     # Weekly refresh against tailscale-android main (Monday 06:00 UTC)
@@ -58,7 +59,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .tailscale-android-src
-          key: tailscale-android-src-${{ env.TAILSCALE_ANDROID_REF }}-${{ hashFiles('scripts/build-libtailscale.sh') }}
+          key: tailscale-android-src-${{ env.TAILSCALE_ANDROID_REF }}-${{ hashFiles('scripts/build-libtailscale.sh', 'scripts/patches/**') }}
           restore-keys: |
             tailscale-android-src-${{ env.TAILSCALE_ANDROID_REF }}-
             tailscale-android-src-

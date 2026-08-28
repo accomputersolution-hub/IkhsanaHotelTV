@@ -22,25 +22,10 @@ class EmbeddedTailscaleLocalApi(
     }
 
     /**
-     * libtailscale calls LocalBackend.Start(empty Options) during Libtailscale.start().
-     * Re-run POST /start with Headscale ControlURL in UpdatePrefs before auth-key login.
-     */
-    fun bootstrapControlUrlViaStart(
-        controlUrl: String,
-        onResult: (Result<Unit>) -> Unit,
-    ) {
-        val prefs = headscalePrefs(controlUrl, wantRunning = false)
-        val body = json.encodeToString(
-            EmbeddedTailscaleModels.Options(UpdatePrefs = prefs),
-        ).toByteArray()
-        Log.i(TAG, "POST /start bootstrap UpdatePrefs.ControlURL=$controlUrl")
-        post("start", body, onResult)
-    }
-
-    /**
      * Headless Headscale login — tailscale-android order:
      * 1. PATCH /prefs MaskedPrefs (ControlURLSet)
-     * 2. POST /start with UpdatePrefs [Prefs] + AuthKey (control client reads URL here)
+     * 2. POST /start with UpdatePrefs [Prefs] + AuthKey
+     * ControlURL must already be seeded before Libtailscale.start() (patched libtailscale).
      */
     fun startWithAuthKey(
         controlUrl: String,

@@ -7,7 +7,6 @@ import android.net.VpnService
 import android.os.Build
 import android.util.Log
 import `in`.pcncloud.hotel.BuildConfig
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,7 +35,6 @@ object EmbeddedTailscaleEngine {
     private var vpnActive = false
     private var loginWatchdogGeneration = 0
     private val vpnServiceStarting = AtomicBoolean(false)
-    private val controlUrlBootstrapDone = CompletableDeferred<Unit>()
 
     private var storedAppContext: Context? = null
     private lateinit var appContext: EmbeddedTailscaleAppContext
@@ -168,15 +166,10 @@ object EmbeddedTailscaleEngine {
 
             Log.i(
                 TAG,
-                "Headless login — await ControlURL bootstrap, then PATCH+POST /start " +
-                    "AuthKey=${EmbeddedTailscaleCredentials.AUTH_KEY.take(8)}… " +
+                "Headless login — PATCH+POST /start with AuthKey " +
+                    "${EmbeddedTailscaleCredentials.AUTH_KEY.take(8)}… " +
                     "control=${EmbeddedTailscaleCredentials.CONTROL_URL}",
             )
-
-            if (!controlUrlBootstrapDone.isCompleted) {
-                Log.i(TAG, "Waiting for POST /start ControlURL bootstrap after Libtailscale.start()")
-            }
-            controlUrlBootstrapDone.await()
 
             localApi.startWithAuthKey(
                 controlUrl = EmbeddedTailscaleCredentials.CONTROL_URL,
@@ -334,6 +327,8 @@ object EmbeddedTailscaleEngine {
     private fun initGoBackend(app: Context) {
         if (goBackendReady) return
         appContext = EmbeddedTailscaleAppContext(app)
+        // Patched libtailscale reads this pref during LocalBackend.Start — before any LocalAPI call.
+        appContext.writeHeadscaleControlUrlForEngineStart(EmbeddedTailscaleCredentials.CONTROL_URL)
         goApp = Libtailscale.start(
             app.filesDir.absolutePath,
             app.filesDir.absolutePath,
@@ -347,36 +342,11 @@ object EmbeddedTailscaleEngine {
         }
         EmbeddedTailscaleNotifier.start(scope)
         goBackendReady = true
-        Log.i(TAG, "libtailscale started — control=${EmbeddedTailscaleCredentials.CONTROL_URL}")
-        seedHeadscaleControlUrlAtEngineStart()
-    }
-
-    /**
-     * libtailscale already invoked LocalBackend.Start(empty Options) during Libtailscale.start().
-     * PATCH /prefs alone does not re-point the control client — POST /start UpdatePrefs is required.
-     */
-    private fun seedHeadscaleControlUrlAtEngineStart() {
-        scope.launch(Dispatchers.IO) {
-            localApi.bootstrapControlUrlViaStart(EmbeddedTailscaleCredentials.CONTROL_URL) { result ->
-                result.onSuccess {
-                    Log.i(
-                        TAG,
-                        "ControlURL seeded via POST /start UpdatePrefs " +
-                            EmbeddedTailscaleCredentials.CONTROL_URL,
-                    )
-                }
-                result.onFailure { e ->
-                    Log.e(
-                        TAG,
-                        "ControlURL bootstrap POST /start failed — Headscale may not receive traffic",
-                        e,
-                    )
-                }
-                if (!controlUrlBootstrapDone.isCompleted) {
-                    controlUrlBootstrapDone.complete(Unit)
-                }
-            }
-        }
+        Log.i(
+            TAG,
+            "libtailscale started — ControlURL seeded for engine init: " +
+                EmbeddedTailscaleCredentials.CONTROL_URL,
+        )
     }
 
     private fun applyWantRunningIfNeeded() {
@@ -409,8 +379,8 @@ object EmbeddedTailscaleEngine {
     }
 
     /**
-     * GET /prefs stored ControlURL is often "" until the control plane first responds.
-     * The live control client URL comes from POST /start UpdatePrefs (and bootstrap seed).
+     * GET /prefs often returns ControlURL "" — live URL is set at engine init (patched libtailscale)
+     * and reinforced via POST /start UpdatePrefs on auth-key login.
      */
     private fun verifyControlUrlPersisted(source: String) {
         if (!goBackendReady) return
@@ -457,7 +427,7 @@ object EmbeddedTailscaleEngine {
                 Log.i(
                     TAG,
                     "GET /prefs ($source) stored ControlURL empty — " +
-                        "if POST /start UpdatePrefs succeeded, control client uses $expected",
+                        "engine init + POST /start use $expected",
                 )
             stored != expected ->
                 Log.w(TAG, "GET /prefs ($source) stored ControlURL=$stored expected=$expected")

@@ -23,6 +23,12 @@ class EmbeddedTailscaleAppContext(
     private val tag = "EmbeddedTsAppCtx"
     private val prefsName = "embedded_tailscale_secret_prefs"
 
+    /**
+     * Key read by patched libtailscale at LocalBackend.Start() (customLoginServerPrefKey).
+     * Must be written before [libtailscale.Libtailscale.start].
+     */
+    private const val PREF_CUSTOM_LOGIN_SERVER = "customloginserver"
+
     override fun log(tag: String, logLine: String) {
         Log.d(tag, logLine)
     }
@@ -102,6 +108,15 @@ class EmbeddedTailscaleAppContext(
     override fun bindSocketToNetwork(fd: Int): Boolean = false
 
     override fun getUserCACertsPEM(): ByteArray = ByteArray(0)
+
+    /**
+     * Seeds Headscale control URL for libtailscale's first LocalBackend.Start(ipn.Options).
+     * Post-start LocalAPI PATCH cannot reliably change ControlURL in this libtailscale build.
+     */
+    fun writeHeadscaleControlUrlForEngineStart(controlUrl: String) {
+        encryptedPrefs().edit().putString(PREF_CUSTOM_LOGIN_SERVER, controlUrl).commit()
+        Log.i(tag, "Seeded $PREF_CUSTOM_LOGIN_SERVER=$controlUrl (before Libtailscale.start)")
+    }
 
     private fun encryptedPrefs(): android.content.SharedPreferences {
         val key = MasterKey.Builder(context)
