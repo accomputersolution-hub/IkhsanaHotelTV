@@ -33,7 +33,7 @@ class EmbeddedTailscaleKeepAliveService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (BuildConfig.IS_CORPORATE) {
+        if (BuildConfig.IS_CORPORATE && EmbeddedTailscaleEngine.isVpnPrepared(this)) {
             EmbeddedTailscaleEngine.ensureRunning(this)
         }
         return START_STICKY

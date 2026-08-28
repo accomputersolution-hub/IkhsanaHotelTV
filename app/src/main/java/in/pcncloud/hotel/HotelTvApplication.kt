@@ -38,11 +38,6 @@ class HotelTvApplication : Application(), ImageLoaderFactory {
             Log.w(TAG, "Tailscale Device Owner setup failed during Application.onCreate", e)
         }
         try {
-            `in`.pcncloud.hotel.integration.TailscaleController.ensureRunning(this)
-        } catch (e: Exception) {
-            Log.w(TAG, "TailscaleController.ensureRunning failed during Application.onCreate", e)
-        }
-        try {
             KioskPolicy.onProcessStart(this)
         } catch (e: Exception) {
             // Direct Boot / CE storage must never crash the process.

@@ -12,6 +12,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.isVisible
 import `in`.pcncloud.hotel.config.HotelConfig
@@ -61,6 +62,20 @@ class SplashActivity : AppCompatActivity() {
     /** True while Settings overlay screen is open via [startActivityForResult]. */
     private var awaitingOverlayResult = false
 
+    /** True while the system VPN consent activity is open. */
+    private var awaitingVpnPermission = false
+
+    /** One-shot VPN consent (Device Owner Always-On may already authorize). */
+    private val vpnPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        awaitingVpnPermission = false
+        Log.i(TAG, "VPN prepare resultCode=${result.resultCode}")
+        if (BuildConfig.IS_CORPORATE) {
+            TailscaleController.onVpnPermissionGranted(applicationContext)
+        }
+    }
+
     private val proceedUnpaired = Runnable { openPairing() }
     private val proceedMain = Runnable { openMain() }
     private val forceProceedMain = Runnable {
@@ -92,12 +107,19 @@ class SplashActivity : AppCompatActivity() {
         splashProgress = findViewById(R.id.splash_progress)
         startedAtMs = SystemClock.elapsedRealtime()
 
-        // Corporate: nudge Tailscale / Headscale VPN on cold start (Tailscale owns VpnService).
+        // Corporate: request VpnService.prepare from visible Activity before background login.
         if (BuildConfig.IS_CORPORATE) {
             try {
-                TailscaleController.ensureRunning(applicationContext)
+                val prepare = TailscaleController.preparePermissionIntent(this)
+                if (prepare != null) {
+                    awaitingVpnPermission = true
+                    splashStatus.text = getString(R.string.splash_vpn_request)
+                    vpnPermissionLauncher.launch(prepare)
+                } else {
+                    TailscaleController.ensureRunning(applicationContext)
+                }
             } catch (e: Exception) {
-                Log.w(TAG, "Tailscale start from Splash failed", e)
+                Log.w(TAG, "Tailscale VPN consent from Splash failed", e)
             }
         }
 

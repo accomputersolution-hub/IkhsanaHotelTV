@@ -81,6 +81,16 @@ class MainActivity : ComponentActivity() {
     @Volatile
     var nestedAdminBackHandler: (() -> Boolean)? = null
 
+    /** Corporate VPN consent — launched from onResume when VpnService.prepare is required. */
+    private val vpnPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        Log.i(TAG, "VPN prepare resultCode=${result.resultCode}")
+        if (BuildConfig.IS_CORPORATE) {
+            TailscaleController.onVpnPermissionGranted(applicationContext)
+        }
+    }
+
     private lateinit var hotelConfig: HotelConfig
     private lateinit var repository: FirestoreRepository
     private val syncListeners = mutableListOf<ListenerRegistration>()
@@ -1641,11 +1651,17 @@ class MainActivity : ComponentActivity() {
                 ensureOverlayPermissionForBal()
             }
 
-            // Corporate: re-assert Tailscale / Headscale VPN (no in-app VpnService).
+            // Corporate: re-assert Tailscale / Headscale VPN from visible Activity when consent needed.
             if (BuildConfig.IS_CORPORATE && !KioskPolicy.isExternalAppActive(this)) {
                 try {
                     MyDeviceAdminReceiver.ensureAlwaysOnEmbeddedVpn(this)
-                    TailscaleController.ensureRunning(this)
+                    val prepare = TailscaleController.preparePermissionIntent(this)
+                    if (prepare != null) {
+                        Log.w(TAG, "VPN consent required — launching prepare from MainActivity")
+                        vpnPermissionLauncher.launch(prepare)
+                    } else {
+                        TailscaleController.ensureRunning(this)
+                    }
                 } catch (e: Exception) {
                     Log.w(TAG, "Tailscale ensure from MainActivity failed", e)
                 }

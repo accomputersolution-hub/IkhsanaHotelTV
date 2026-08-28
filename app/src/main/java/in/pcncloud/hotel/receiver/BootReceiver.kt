@@ -80,13 +80,12 @@ class BootReceiver : BroadcastReceiver() {
         // PendingIntent launch first (BAL-safe). Watchdog after UI attempt.
         launchUiAfterBoot(context, launchIntent, target.simpleName, action)
 
-        // Corporate: start Tailscale VPN in the background after boot.
+        // Corporate: init libtailscale only — VPN consent must come from Splash/Main Activity.
         if (BuildConfig.IS_CORPORATE) {
             try {
                 TailscaleController.init(appContext)
-                TailscaleController.ensureRunning(appContext)
             } catch (e: Exception) {
-                Log.w(TAG, "Tailscale start after boot failed", e)
+                Log.w(TAG, "Tailscale init after boot failed", e)
             }
         }
 

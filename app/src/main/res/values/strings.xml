@@ -164,6 +164,7 @@
     <string name="splash_overlay_granted">Overlay permission granted</string>
     <string name="splash_overlay_denied">Overlay permission not enabled — continuing…</string>
     <string name="splash_overlay_denied_toast">Display over other apps was not enabled. Some background features may be limited.</string>
+    <string name="splash_vpn_request">Allow VPN connection to continue…</string>
     <string name="kiosk_notification_channel">Hotel TV keep-alive</string>
     <string name="kiosk_notification_channel_desc">Optional kiosk foreground service — does not reopen the app on minimize</string>
     <string name="kiosk_notification_title">Hotel TV</string>

@@ -50,11 +50,42 @@ object EmbeddedTailscaleEngine {
         Log.i(TAG, "libtailscale started — control=${EmbeddedTailscaleCredentials.CONTROL_URL}")
     }
 
+    /** System VPN consent intent — non-null when user must approve via a visible Activity. */
+    fun preparePermissionIntent(context: Context): Intent? =
+        try {
+            VpnService.prepare(context.applicationContext)
+        } catch (t: Throwable) {
+            Log.e(TAG, "VpnService.prepare failed", t)
+            null
+        }
+
+    fun isVpnPrepared(context: Context): Boolean =
+        try {
+            VpnService.prepare(context.applicationContext) == null
+        } catch (t: Throwable) {
+            Log.e(TAG, "isVpnPrepared failed", t)
+            false
+        }
+
+    /** After Activity VPN consent succeeds, continue login + VpnService start. */
+    fun onVpnPermissionGranted(context: Context) {
+        if (!BuildConfig.IS_CORPORATE) return
+        if (!isVpnPrepared(context)) {
+            Log.w(TAG, "onVpnPermissionGranted but consent still missing")
+            return
+        }
+        ensureRunning(context)
+    }
+
     fun ensureRunning(context: Context) {
         if (!BuildConfig.IS_CORPORATE) return
         init(context.applicationContext)
 
         val app = context.applicationContext
+        if (!isVpnPrepared(app)) {
+            Log.w(TAG, "VPN consent missing — defer ensureRunning until Activity grants prepare")
+            return
+        }
         if (isVpnTransportUp(app) && vpnActive) {
             Log.i(TAG, "VPN already active")
             EmbeddedTailscaleKeepAliveService.start(app)
