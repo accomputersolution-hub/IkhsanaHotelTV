@@ -20,6 +20,10 @@ object EmbeddedTailscaleNotifier {
     private val _state = MutableStateFlow(EmbeddedTailscaleModels.State.NoState)
     val state: StateFlow<EmbeddedTailscaleModels.State> = _state
 
+    private var initialStateReceived = false
+
+    fun hasInitialState(): Boolean = initialStateReceived
+
     private lateinit var app: libtailscale.Application
     private var manager: libtailscale.NotificationManager? = null
 
@@ -37,7 +41,10 @@ object EmbeddedTailscaleNotifier {
                     val notify = decoder.decodeFromStream<EmbeddedTailscaleModels.Notify>(
                         notification.inputStream(),
                     )
-                    notify.State?.let { _state.value = EmbeddedTailscaleModels.State.fromInt(it) }
+                    notify.State?.let {
+                        initialStateReceived = true
+                        _state.value = EmbeddedTailscaleModels.State.fromInt(it)
+                    }
                     notify.ErrMessage?.let { Log.w(TAG, "ipn error: $it") }
                 } catch (t: Throwable) {
                     Log.w(TAG, "notify decode failed", t)

@@ -1,5 +1,6 @@
 package `in`.pcncloud.hotel
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -212,10 +213,21 @@ class SplashActivity : AppCompatActivity() {
             Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
             Uri.parse("package:$packageName"),
         )
-        return try {
+        if (intent.resolveActivity(packageManager) == null) {
+            Log.w(TAG, "ACTION_MANAGE_OVERLAY_PERMISSION not supported on this device (Android TV)")
+            overlayGatePassed = true
+            beginAppInitialization()
+            return
+        }
+        try {
             awaitingOverlayResult = true
             @Suppress("DEPRECATION")
             startActivityForResult(intent, REQUEST_OVERLAY_PERMISSION)
+        } catch (e: ActivityNotFoundException) {
+            Log.w(TAG, "Overlay settings activity not found — continuing without overlay", e)
+            awaitingOverlayResult = false
+            overlayGatePassed = true
+            beginAppInitialization()
         } catch (e: Exception) {
             Log.e(TAG, "Unable to open ACTION_MANAGE_OVERLAY_PERMISSION", e)
             awaitingOverlayResult = false

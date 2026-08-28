@@ -1,6 +1,7 @@
 package `in`.pcncloud.hotel
 
 import android.app.admin.DevicePolicyManager
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -713,13 +714,18 @@ class MainActivity : ComponentActivity() {
             TAG,
             "SYSTEM_ALERT_WINDOW missing — required for Android 10+ HOME reclaim BAL exemption",
         )
+        val intent = Intent(
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            Uri.parse("package:$packageName"),
+        )
+        if (intent.resolveActivity(packageManager) == null) {
+            Log.w(TAG, "ACTION_MANAGE_OVERLAY_PERMISSION not supported on this device (Android TV)")
+            return
+        }
         try {
-            startActivity(
-                Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName"),
-                ),
-            )
+            startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            Log.w(TAG, "Overlay settings activity not found on this device", e)
         } catch (e: Exception) {
             Log.w(TAG, "Unable to open overlay permission settings", e)
         }

@@ -162,11 +162,19 @@ object EmbeddedTailscaleEngine {
         }
     }
 
-    fun isAbleToStartVpn(): Boolean {
-        if (!goBackendReady || !isVpnPrepared(storedAppContext ?: return false)) return false
-        val state = EmbeddedTailscaleNotifier.state.value
-        return state.value >= EmbeddedTailscaleModels.State.Stopped.value &&
-            state != EmbeddedTailscaleModels.State.Stopping
+    fun isAbleToStartVpn(): Boolean = isReadyForRequestVpn()
+
+    /** Go notifier + login complete and engine in a stable state for TUN bring-up. */
+    fun isReadyForRequestVpn(): Boolean {
+        if (!goBackendReady || !loginSequenceComplete) return false
+        if (!EmbeddedTailscaleNotifier.hasInitialState()) return false
+        if (!isVpnPrepared(storedAppContext ?: return false)) return false
+        return when (EmbeddedTailscaleNotifier.state.value) {
+            EmbeddedTailscaleModels.State.Stopped,
+            EmbeddedTailscaleModels.State.Running,
+            -> true
+            else -> false
+        }
     }
 
     fun onVpnServiceCreated(service: EmbeddedTailscaleVpnService) {
