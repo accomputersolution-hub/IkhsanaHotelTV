@@ -41,8 +41,11 @@ cd "$SRC_DIR"
 PATCH_FILE="$ROOT/scripts/patches/libtailscale-headscale-initial-controlurl.patch"
 if [[ -f "$PATCH_FILE" ]]; then
   echo "Applying libtailscale patch: $PATCH_FILE"
+  # Reset patched files so re-runs apply cleanly (partial applies break gomobile bind).
+  git -C "$SRC_DIR" checkout HEAD -- libtailscale/interfaces.go libtailscale/backend.go 2>/dev/null || true
+  rm -f "$SRC_DIR/libtailscale/interfaces.go.rej" "$SRC_DIR/libtailscale/backend.go.rej"
   patch -p1 --forward -d "$SRC_DIR" < "$PATCH_FILE" || {
-    if grep -q "LocalBackend.Start with ControlURL" "$SRC_DIR/libtailscale/backend.go"; then
+    if grep -q "headscaleAssumeNetworkUpForEmbeddedControl" "$SRC_DIR/libtailscale/backend.go"; then
       echo "Patch already applied."
     else
       echo "ERROR: failed to apply $PATCH_FILE" >&2
