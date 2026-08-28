@@ -22,9 +22,25 @@ class EmbeddedTailscaleLocalApi(
     }
 
     /**
-     * Headless Headscale login — matches tailscale-android order:
-     * 1. PATCH /prefs with MaskedPrefs (ControlURLSet + ControlURL)
-     * 2. POST /start with UpdatePrefs including ControlURLSet and AuthKey
+     * libtailscale calls LocalBackend.Start(empty Options) during Libtailscale.start().
+     * Re-run POST /start with Headscale ControlURL in UpdatePrefs before auth-key login.
+     */
+    fun bootstrapControlUrlViaStart(
+        controlUrl: String,
+        onResult: (Result<Unit>) -> Unit,
+    ) {
+        val prefs = headscalePrefs(controlUrl, wantRunning = false)
+        val body = json.encodeToString(
+            EmbeddedTailscaleModels.Options(UpdatePrefs = prefs),
+        ).toByteArray()
+        Log.i(TAG, "POST /start bootstrap UpdatePrefs.ControlURL=$controlUrl")
+        post("start", body, onResult)
+    }
+
+    /**
+     * Headless Headscale login — tailscale-android order:
+     * 1. PATCH /prefs MaskedPrefs (ControlURLSet)
+     * 2. POST /start with UpdatePrefs [Prefs] + AuthKey (control client reads URL here)
      */
     fun startWithAuthKey(
         controlUrl: String,
@@ -35,7 +51,7 @@ class EmbeddedTailscaleLocalApi(
         val masked = headscaleMaskedPrefs(controlUrl, wantRunning)
         Log.i(
             TAG,
-            "PATCH /prefs before /start — control=$controlUrl ControlURLSet=true wantRunning=$wantRunning",
+            "PATCH /prefs before /start — ControlURLSet=true control=$controlUrl wantRunning=$wantRunning",
         )
         editMaskedPrefs(masked) { editResult ->
             editResult.onFailure { e ->
@@ -43,14 +59,17 @@ class EmbeddedTailscaleLocalApi(
                 onResult(Result.failure(e))
             }
             editResult.onSuccess { prefsBody ->
-                Log.i(TAG, "PATCH /prefs (pre-start) OK — stored prefs: ${prefsBody.take(200)}")
-                val startBody = buildStartBody(authKey, controlUrl, wantRunning)
+                Log.i(TAG, "PATCH /prefs (pre-start) OK — response: ${prefsBody.take(200)}")
+                val options = EmbeddedTailscaleModels.Options(
+                    AuthKey = authKey,
+                    UpdatePrefs = headscalePrefs(controlUrl, wantRunning),
+                )
+                val body = json.encodeToString(options).toByteArray()
                 Log.i(
                     TAG,
-                    "POST /start authKeyPrefix=${authKey.take(8)}… control=$controlUrl " +
-                        "UpdatePrefs.ControlURLSet=true",
+                    "POST /start authKeyPrefix=${authKey.take(8)}… UpdatePrefs.ControlURL=$controlUrl",
                 )
-                post("start", startBody, onResult)
+                post("start", body, onResult)
             }
         }
     }
@@ -64,9 +83,6 @@ class EmbeddedTailscaleLocalApi(
         patch("prefs", body, onResult)
     }
 
-    /**
-     * Patch only WantRunning — do not include ControlURL (tailscale-android pattern).
-     */
     fun editWantRunning(
         wantRunning: Boolean,
         onResult: (Result<String>) -> Unit,
@@ -79,9 +95,6 @@ class EmbeddedTailscaleLocalApi(
         editMaskedPrefs(masked, onResult)
     }
 
-    /**
-     * Persist ControlURL when GET /prefs shows it missing or wrong.
-     */
     fun editControlUrl(
         controlUrl: String,
         onResult: (Result<String>) -> Unit,
@@ -98,10 +111,16 @@ class EmbeddedTailscaleLocalApi(
         get("prefs", onResult)
     }
 
-    /** Poll engine status when IPN notifications are delayed or missed. */
     fun fetchStatus(onResult: (Result<String>) -> Unit) {
         get("status", onResult)
     }
+
+    private fun headscalePrefs(controlUrl: String, wantRunning: Boolean): EmbeddedTailscaleModels.Prefs =
+        EmbeddedTailscaleModels.Prefs(
+            ControlURL = controlUrl,
+            WantRunning = wantRunning,
+            LoggedOut = false,
+        )
 
     private fun headscaleMaskedPrefs(
         controlUrl: String,
@@ -115,22 +134,6 @@ class EmbeddedTailscaleLocalApi(
             LoggedOut = false,
             LoggedOutSet = true,
         )
-
-    /**
-     * POST /start body with explicit ControlURLSet on UpdatePrefs so the embedded daemon
-     * applies the Headscale control URL instead of defaulting to Tailscale Cloud.
-     */
-    private fun buildStartBody(
-        authKey: String,
-        controlUrl: String,
-        wantRunning: Boolean,
-    ): ByteArray {
-        val options = EmbeddedTailscaleModels.Options(
-            AuthKey = authKey,
-            UpdatePrefs = headscaleMaskedPrefs(controlUrl, wantRunning),
-        )
-        return json.encodeToString(options).toByteArray()
-    }
 
     private fun get(path: String, onResult: (Result<String>) -> Unit) {
         invoke("GET", path, null, onResult)
@@ -151,9 +154,7 @@ class EmbeddedTailscaleLocalApi(
         onResult: (Result<Unit>) -> Unit,
     ) {
         invoke(method, path, body) { result ->
-            onResult(
-                result.map { Unit },
-            )
+            onResult(result.map { Unit })
         }
     }
 

@@ -31,10 +31,7 @@ object EmbeddedTailscaleModels {
         var RouteAll: Boolean = false,
     )
 
-    /**
-     * Partial prefs for PATCH /prefs and POST /start UpdatePrefs JSON.
-     * Set flags (e.g. [ControlURLSet]) must be true for the daemon to apply custom Headscale URL.
-     */
+    /** Partial prefs for PATCH /prefs — ControlURLSet must be true to apply Headscale URL. */
     @Serializable
     data class MaskedPrefs(
         var ControlURL: String? = null,
@@ -45,10 +42,14 @@ object EmbeddedTailscaleModels {
         var LoggedOutSet: Boolean? = null,
     )
 
+    /**
+     * POST /localapi/v0/start body — UpdatePrefs is [Prefs] (Go ipn.Options), not MaskedPrefs.
+     * ControlURL is applied when passed here; PATCH alone does not restart the control client.
+     */
     @Serializable
     data class Options(
         var AuthKey: String? = null,
-        var UpdatePrefs: MaskedPrefs? = null,
+        var UpdatePrefs: Prefs? = null,
     )
 
     @Serializable
