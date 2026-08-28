@@ -42,5 +42,7 @@ object EmbeddedTailscaleModels {
         val ErrMessage: String? = null,
         /** Present (often as `{}`) when headless / interactive login completes. */
         val LoginFinished: JsonElement? = null,
+        val Prefs: Prefs? = null,
+        val BrowseToURL: String? = null,
     )
 }
