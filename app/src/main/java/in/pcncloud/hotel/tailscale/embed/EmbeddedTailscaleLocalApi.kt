@@ -22,12 +22,10 @@ class EmbeddedTailscaleLocalApi(
     }
 
     /**
-     * Headless Headscale login — matches tailscale-android [IpnViewModel.login]:
-     * 1. PATCH /prefs MaskedPrefs (ControlURLSet, LoggedOut=false for auth key)
-     * 2. POST /start with UpdatePrefs [Prefs] + AuthKey
-     * 3. POST /login-interactive (required for auth-key login — not only interactive OAuth)
-     *
-     * ControlURL must already be seeded before Libtailscale.start() (patched libtailscale).
+     * Headless Headscale login — matches [IntegrationLoginWorker.login]:
+     * 1. PATCH /prefs — ControlURL + LoggedOut=false only (no WantRunning in PATCH)
+     * 2. POST /start — UpdatePrefs with ControlURL + WantRunning + AuthKey
+     * 3. POST /login-interactive — required for auth-key register
      */
     fun startWithAuthKey(
         controlUrl: String,
@@ -35,22 +33,22 @@ class EmbeddedTailscaleLocalApi(
         wantRunning: Boolean,
         onResult: (Result<Unit>) -> Unit,
     ) {
-        val masked = headscaleMaskedPrefs(controlUrl, wantRunning)
+        val masked = authKeyMaskedPrefs(controlUrl)
         Log.i(
             TAG,
-            "PATCH /prefs before /start — ControlURLSet=true WantRunningSet=true " +
-                "control=$controlUrl wantRunning=$wantRunning",
+            "PATCH /prefs before /start — ControlURLSet LoggedOut=false control=$controlUrl",
         )
         editMaskedPrefs(masked) { editResult ->
             editResult.onFailure { e ->
-                Log.e(TAG, "PATCH /prefs (pre-start ControlURL) failed", e)
+                Log.e(TAG, "PATCH /prefs (pre-start) failed", e)
                 onResult(Result.failure(e))
             }
             editResult.onSuccess { prefsBody ->
                 Log.i(TAG, "PATCH /prefs (pre-start) OK — response: ${prefsBody.take(200)}")
+                val updatePrefs = mergeUpdatePrefs(prefsBody, controlUrl, wantRunning)
                 val options = EmbeddedTailscaleModels.Options(
                     AuthKey = authKey,
-                    UpdatePrefs = headscalePrefs(controlUrl, wantRunning),
+                    UpdatePrefs = updatePrefs,
                 )
                 val body = json.encodeToString(options).toByteArray()
                 Log.i(
@@ -64,7 +62,7 @@ class EmbeddedTailscaleLocalApi(
                         onResult(Result.failure(e))
                     }
                     startResult.onSuccess {
-                        Log.i(TAG, "POST /start OK — POST /login-interactive (auth-key consume)")
+                        Log.i(TAG, "POST /start OK — POST /login-interactive (auth-key register)")
                         startLoginInteractive(onResult)
                     }
                 }
@@ -72,9 +70,7 @@ class EmbeddedTailscaleLocalApi(
         }
     }
 
-    /**
-     * Required after POST /start for both interactive and auth-key login (tailscale-android).
-     */
+    /** Required after POST /start for auth-key and interactive login (tailscale-android). */
     fun startLoginInteractive(onResult: (Result<Unit>) -> Unit) {
         Log.i(TAG, "POST /login-interactive")
         post("login-interactive", null, onResult)
@@ -121,25 +117,31 @@ class EmbeddedTailscaleLocalApi(
         get("status", onResult)
     }
 
-    private fun headscalePrefs(controlUrl: String, wantRunning: Boolean): EmbeddedTailscaleModels.Prefs =
-        EmbeddedTailscaleModels.Prefs(
-            ControlURL = controlUrl,
-            WantRunning = wantRunning,
-            LoggedOut = false,
-        )
-
-    private fun headscaleMaskedPrefs(
-        controlUrl: String,
-        wantRunning: Boolean,
-    ): EmbeddedTailscaleModels.MaskedPrefs =
+    private fun authKeyMaskedPrefs(controlUrl: String): EmbeddedTailscaleModels.MaskedPrefs =
         EmbeddedTailscaleModels.MaskedPrefs(
             ControlURL = controlUrl,
             ControlURLSet = true,
-            WantRunning = wantRunning,
-            WantRunningSet = true,
             LoggedOut = false,
             LoggedOutSet = true,
         )
+
+    /** PATCH response may omit ControlURL; always reinforce URL + WantRunning for POST /start. */
+    private fun mergeUpdatePrefs(
+        prefsBody: String,
+        controlUrl: String,
+        wantRunning: Boolean,
+    ): EmbeddedTailscaleModels.Prefs {
+        val parsed = runCatching {
+            json.decodeFromString<EmbeddedTailscaleModels.Prefs>(prefsBody)
+        }.getOrDefault(EmbeddedTailscaleModels.Prefs())
+        return EmbeddedTailscaleModels.Prefs(
+            ControlURL = controlUrl.ifBlank { parsed.ControlURL },
+            WantRunning = wantRunning,
+            LoggedOut = false,
+            CorpDNS = parsed.CorpDNS,
+            RouteAll = parsed.RouteAll,
+        )
+    }
 
     private fun get(path: String, onResult: (Result<String>) -> Unit) {
         invoke("GET", path, null, onResult)

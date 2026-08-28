@@ -23,7 +23,8 @@ object EmbeddedTailscaleEngine {
 
     private const val TAG = "EmbeddedTsEngine"
     private const val WATCH_READY_TIMEOUT_MS = 15_000L
-    private const val LOGIN_WATCHDOG_MS = 8_000L
+    private const val LOGIN_WATCHDOG_MS = 30_000L
+    private const val IPN_INITIAL_STATE_TIMEOUT_MS = 15_000L
     private val CONTROL_URL_JSON_REGEX = Regex(""""ControlURL"\s*:\s*"([^"]*)"""")
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -159,12 +160,17 @@ object EmbeddedTailscaleEngine {
                     "IPN bus not watching after ${WATCH_READY_TIMEOUT_MS}ms — " +
                         "LoginFinished events may be missed",
                 )
-            } else {
-                Log.i(
-                    TAG,
-                    "IPN bus ready state=${EmbeddedTailscaleNotifier.state.value} " +
-                        "initial=${EmbeddedTailscaleNotifier.hasInitialState()}",
-                )
+            }
+            val initialReady = EmbeddedTailscaleNotifier.awaitInitialState(IPN_INITIAL_STATE_TIMEOUT_MS)
+            val state = EmbeddedTailscaleNotifier.state.value
+            Log.i(
+                TAG,
+                "IPN bus ready state=$state initial=$initialReady " +
+                    "watching=${EmbeddedTailscaleNotifier.isWatching()}",
+            )
+            if (!initialReady) {
+                Log.w(TAG, "IPN InitialState not received — deferring login 2s")
+                delay(2_000L)
             }
 
             Log.i(
@@ -188,9 +194,10 @@ object EmbeddedTailscaleEngine {
                         val state = EmbeddedTailscaleNotifier.state.value
                         Log.i(
                             TAG,
-                            "Auth-key login chain OK (start + login-interactive) — " +
-                                "state=$state watching=${EmbeddedTailscaleNotifier.isWatching()}",
+                            "Auth-key login chain OK — state=$state " +
+                                "watching=${EmbeddedTailscaleNotifier.isWatching()}",
                         )
+                        logLoginDiagnostics("auth-key chain")
                         verifyControlUrlPersisted("auth-key start")
                         loginInFlight = false
                         when (state) {
@@ -201,21 +208,28 @@ object EmbeddedTailscaleEngine {
                             EmbeddedTailscaleModels.State.NeedsLogin -> {
                                 Log.i(
                                     TAG,
-                                    "Auth-key start: NeedsLogin — awaiting LoginFinished / state change",
+                                    "Register in progress (NeedsLogin) — " +
+                                        "watchdog ${LOGIN_WATCHDOG_MS}ms; " +
+                                        "grep logcat EmbeddedTsGo for control/register errors",
                                 )
                                 scheduleLoginCompletionWatchdog(app)
                             }
-                            else -> {
-                                Log.w(
-                                    TAG,
-                                    "Auth-key start: unexpected state=$state — scheduling watchdog",
-                                )
-                                scheduleLoginCompletionWatchdog(app)
-                            }
+                            else -> scheduleLoginCompletionWatchdog(app)
                         }
                     }
                 },
             )
+        }
+    }
+
+    private fun logLoginDiagnostics(source: String) {
+        localApi.fetchStatus { statusResult ->
+            statusResult.onSuccess { body ->
+                Log.i(TAG, "GET /status ($source): ${body.take(800)}")
+            }
+            statusResult.onFailure { e ->
+                Log.w(TAG, "GET /status failed ($source)", e)
+            }
         }
     }
 

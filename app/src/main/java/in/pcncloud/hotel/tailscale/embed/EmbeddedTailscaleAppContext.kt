@@ -24,6 +24,8 @@ class EmbeddedTailscaleAppContext(
     private val prefsName = "embedded_tailscale_secret_prefs"
 
     companion object {
+        /** Logcat tag for libtailscale Go log.Printf / control client output. */
+        const val GO_LOG_TAG = "EmbeddedTsGo"
         /**
          * Key read by patched libtailscale at LocalBackend.Start() (customLoginServerPrefKey).
          * Must be written before [libtailscale.Libtailscale.start].
@@ -32,7 +34,11 @@ class EmbeddedTailscaleAppContext(
     }
 
     override fun log(tag: String, logLine: String) {
-        Log.d(tag, logLine)
+        // Go runtime logs (control client, register errors) — use fixed tag for logcat.
+        val line = logLine.trimEnd()
+        if (line.isNotEmpty()) {
+            Log.i(GO_LOG_TAG, line)
+        }
     }
 
     override fun encryptToPref(key: String?, value: String?) {

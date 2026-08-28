@@ -47,6 +47,15 @@ object EmbeddedTailscaleNotifier {
         } != null && watching.get()
     }
 
+    suspend fun awaitInitialState(timeoutMs: Long = 15_000L): Boolean {
+        if (initialStateReceived) return true
+        return withTimeoutOrNull(timeoutMs) {
+            while (!initialStateReceived) {
+                delay(100)
+            }
+        } != null && initialStateReceived
+    }
+
     private lateinit var app: libtailscale.Application
     private var manager: libtailscale.NotificationManager? = null
 
