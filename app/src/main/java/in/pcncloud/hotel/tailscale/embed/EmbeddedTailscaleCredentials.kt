@@ -5,7 +5,7 @@ package `in`.pcncloud.hotel.tailscale.embed
  */
 object EmbeddedTailscaleCredentials {
     const val CONTROL_URL = "http://192.168.1.111:8080"
-    const val AUTH_KEY = "098c0e3f9b3d1eb000e6f736995a659e1ec8f735cbca200a"
+    const val AUTH_KEY = "7005b51edf34ada8b0b54d72e25a6a1417fea63af17ae8ac"
 
     /** Only this app's traffic is routed through the Tailscale TUN (per-app VPN). */
     const val SPLIT_TUNNEL_PACKAGE = "com.ektv.pro"
