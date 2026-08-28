@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.system.OsConstants
 import android.util.Log
 import `in`.pcncloud.hotel.MainActivity
@@ -18,7 +20,12 @@ import libtailscale.Libtailscale
 class EmbeddedTailscaleVpnService : VpnService(), libtailscale.IPNService {
 
     private val serviceId = UUID.randomUUID().toString()
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var closed = false
+    private var vpnRequestIssued = false
+    private var vpnRetryCount = 0
+
+    private val vpnRetryRunnable = Runnable { attemptRequestVpnWhenReady() }
 
     override fun onCreate() {
         super.onCreate()
@@ -39,45 +46,67 @@ class EmbeddedTailscaleVpnService : VpnService(), libtailscale.IPNService {
 
         if (!EmbeddedTailscaleEngine.isVpnPrepared(this)) {
             Log.w(TAG, "VpnService.prepare() not granted — stop until Activity consent")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            stopForegroundAndSelf()
             return START_NOT_STICKY
+        }
+
+        scheduleRequestVpnWhenReady()
+        return START_STICKY
+    }
+
+    private fun scheduleRequestVpnWhenReady() {
+        vpnRetryCount = 0
+        vpnRequestIssued = false
+        mainHandler.removeCallbacks(vpnRetryRunnable)
+        mainHandler.post(vpnRetryRunnable)
+    }
+
+    private fun attemptRequestVpnWhenReady() {
+        if (closed) return
+
+        if (!EmbeddedTailscaleEngine.isVpnPrepared(this)) {
+            Log.w(TAG, "VPN consent revoked — stopping VpnService")
+            stopForegroundAndSelf()
+            return
         }
 
         if (!EmbeddedTailscaleEngine.isGoBackendReady()) {
-            Log.w(TAG, "Go backend not ready — stop VpnService until engine init after consent")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return START_NOT_STICKY
+            retryOrTimeout("Go backend not ready")
+            return
         }
 
-        if (!EmbeddedTailscaleEngine.isAbleToStartVpn()) {
-            Log.w(TAG, "Engine not ready for VPN — defer requestVPN")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return START_NOT_STICKY
+        if (!EmbeddedTailscaleEngine.isReadyForRequestVpn()) {
+            retryOrTimeout(
+                "Go engine not ready for VPN (state=${EmbeddedTailscaleNotifier.state.value})",
+            )
+            return
         }
 
-        when (intent?.action) {
-            ACTION_START_VPN, "android.net.VpnService" -> {
-                requestVpnTunnel()
-                return START_STICKY
-            }
-        }
+        if (vpnRequestIssued) return
+        vpnRequestIssued = true
+        requestVpnTunnel()
+    }
 
-        if (EmbeddedTailscaleEngine.isAbleToStartVpn()) {
-            requestVpnTunnel()
-            return START_STICKY
+    private fun retryOrTimeout(reason: String) {
+        if (vpnRetryCount >= MAX_VPN_RETRY_ATTEMPTS) {
+            Log.e(TAG, "Timed out waiting for Go engine — $reason")
+            stopForegroundAndSelf()
+            return
         }
-        return START_NOT_STICKY
+        vpnRetryCount++
+        Log.d(TAG, "$reason — retry $vpnRetryCount/$MAX_VPN_RETRY_ATTEMPTS")
+        mainHandler.postDelayed(vpnRetryRunnable, VPN_RETRY_MS)
     }
 
     private fun requestVpnTunnel() {
-        if (!EmbeddedTailscaleEngine.isVpnPrepared(this)) {
-            Log.w(TAG, "requestVPN skipped — prepare() not granted")
+        if (!EmbeddedTailscaleEngine.isReadyForRequestVpn()) {
+            Log.w(TAG, "requestVPN skipped — engine not ready")
+            vpnRequestIssued = false
+            scheduleRequestVpnWhenReady()
             return
         }
         enterForegroundImmediately()
+        Log.i(TAG, "Calling Libtailscale.requestVPN (state=${EmbeddedTailscaleNotifier.state.value})")
         Libtailscale.requestVPN(this)
     }
 
@@ -89,7 +118,14 @@ class EmbeddedTailscaleVpnService : VpnService(), libtailscale.IPNService {
         )
     }
 
+    private fun stopForegroundAndSelf() {
+        mainHandler.removeCallbacks(vpnRetryRunnable)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
     override fun onDestroy() {
+        mainHandler.removeCallbacks(vpnRetryRunnable)
         close()
         super.onDestroy()
     }
@@ -139,6 +175,7 @@ class EmbeddedTailscaleVpnService : VpnService(), libtailscale.IPNService {
     override fun close() {
         if (closed) return
         closed = true
+        mainHandler.removeCallbacks(vpnRetryRunnable)
         if (EmbeddedTailscaleEngine.isGoBackendReady()) {
             disconnectVPN()
             Libtailscale.serviceDisconnect(this)
@@ -155,6 +192,8 @@ class EmbeddedTailscaleVpnService : VpnService(), libtailscale.IPNService {
 
     companion object {
         private const val TAG = "EmbeddedTsVpnService"
+        private const val VPN_RETRY_MS = 500L
+        private const val MAX_VPN_RETRY_ATTEMPTS = 120
         const val ACTION_START_VPN = "in.pcncloud.hotel.embedded.START_VPN"
         const val ACTION_STOP = "in.pcncloud.hotel.embedded.STOP_VPN"
     }
