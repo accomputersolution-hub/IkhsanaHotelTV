@@ -23,8 +23,23 @@ class EmbeddedTailscaleLocalApi(
         post("start", json.encodeToString(options).toByteArray(), onResult)
     }
 
-    fun startLoginInteractive(onResult: (Result<Unit>) -> Unit) {
-        post("login-interactive", null, onResult)
+    /**
+     * Headless Headscale login — AuthKey is consumed by POST /start (not login-interactive).
+     */
+    fun startWithAuthKey(
+        controlUrl: String,
+        authKey: String,
+        wantRunning: Boolean,
+        onResult: (Result<Unit>) -> Unit,
+    ) {
+        val options = EmbeddedTailscaleModels.Options(
+            AuthKey = authKey,
+            UpdatePrefs = EmbeddedTailscaleModels.Prefs(
+                ControlURL = controlUrl,
+                WantRunning = wantRunning,
+            ),
+        )
+        post("start", json.encodeToString(options).toByteArray(), onResult)
     }
 
     fun editPrefs(
