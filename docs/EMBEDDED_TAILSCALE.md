@@ -25,7 +25,20 @@ No separate `com.tailscale.ipn` app is required.
 
 ---
 
-## Step 1 — Prerequisites
+## CI build (no local Windows build)
+
+GitHub Actions workflow **`.github/workflows/build-tailscale.yml`** builds `libtailscale.aar` on Ubuntu and commits it to the repo.
+
+**Manual run:** GitHub → Actions → **Build libtailscale AAR** → **Run workflow**  
+Optional input: `tailscale_android_ref` (default `main`).
+
+Also runs on pushes to `main` that change the build script, and weekly (Monday 06:00 UTC).
+
+After the workflow completes, pull `main` (or your branch) — `app/libs/libtailscale.aar` will be present for Android Studio on Windows without installing Go or NDK.
+
+---
+
+## Step 1 — Prerequisites (local build only)
 
 | Tool | Version |
 |------|---------|
