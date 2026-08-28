@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
-import android.os.SystemClock
 import android.system.OsConstants
 import android.util.Log
 import `in`.pcncloud.hotel.MainActivity
@@ -18,7 +17,7 @@ import libtailscale.Libtailscale
 class EmbeddedTailscaleVpnService : VpnService(), libtailscale.IPNService {
 
     private val serviceId = UUID.randomUUID().toString()
-  private var closed = false
+    private var closed = false
 
     override fun onCreate() {
         super.onCreate()
@@ -26,23 +25,54 @@ class EmbeddedTailscaleVpnService : VpnService(), libtailscale.IPNService {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        EmbeddedTailscaleEngine.onVpnServiceStartHandled()
+
         when (intent?.action) {
             ACTION_STOP -> {
                 close()
                 return START_NOT_STICKY
             }
+        }
+
+        if (!EmbeddedTailscaleEngine.isVpnPrepared(this)) {
+            Log.w(TAG, "VpnService.prepare() not granted — stop until Activity consent")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        if (!EmbeddedTailscaleEngine.isGoBackendReady()) {
+            Log.w(TAG, "Go backend not ready — stop VpnService until engine init after consent")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        if (!EmbeddedTailscaleEngine.isAbleToStartVpn()) {
+            Log.w(TAG, "Engine not ready for VPN — defer requestVPN")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        when (intent?.action) {
             ACTION_START_VPN, "android.net.VpnService" -> {
-                EmbeddedTailscaleKeepAliveService.showForegroundNotification(this)
-                Libtailscale.requestVPN(this)
+                requestVpnTunnel()
                 return START_STICKY
             }
         }
+
         if (EmbeddedTailscaleEngine.isAbleToStartVpn()) {
-            EmbeddedTailscaleKeepAliveService.showForegroundNotification(this)
-            Libtailscale.requestVPN(this)
+            requestVpnTunnel()
             return START_STICKY
         }
         return START_NOT_STICKY
+    }
+
+    private fun requestVpnTunnel() {
+        if (!EmbeddedTailscaleEngine.isVpnPrepared(this)) {
+            Log.w(TAG, "requestVPN skipped — prepare() not granted")
+            return
+        }
+        EmbeddedTailscaleKeepAliveService.showForegroundNotification(this)
+        Libtailscale.requestVPN(this)
     }
 
     override fun onDestroy() {
@@ -95,8 +125,13 @@ class EmbeddedTailscaleVpnService : VpnService(), libtailscale.IPNService {
     override fun close() {
         if (closed) return
         closed = true
-        disconnectVPN()
-        Libtailscale.serviceDisconnect(this)
+        if (EmbeddedTailscaleEngine.isGoBackendReady()) {
+            disconnectVPN()
+            Libtailscale.serviceDisconnect(this)
+        } else {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
     }
 
     override fun disconnectVPN() {
