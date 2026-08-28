@@ -27,6 +27,10 @@ object EmbeddedTailscaleNotifier {
     private lateinit var app: libtailscale.Application
     private var manager: libtailscale.NotificationManager? = null
 
+    /** Invoked when Headscale auth-key login completes or state leaves NeedsLogin. */
+    @Volatile
+    var onHeadlessLoginComplete: (() -> Unit)? = null
+
     fun setApp(application: libtailscale.Application) {
         app = application
     }
@@ -41,9 +45,21 @@ object EmbeddedTailscaleNotifier {
                     val notify = decoder.decodeFromStream<EmbeddedTailscaleModels.Notify>(
                         notification.inputStream(),
                     )
-                    notify.State?.let {
+                    notify.State?.let { stateInt ->
                         initialStateReceived = true
-                        _state.value = EmbeddedTailscaleModels.State.fromInt(it)
+                        val previous = _state.value
+                        val newState = EmbeddedTailscaleModels.State.fromInt(stateInt)
+                        _state.value = newState
+                        if (previous == EmbeddedTailscaleModels.State.NeedsLogin &&
+                            (newState == EmbeddedTailscaleModels.State.Stopped ||
+                                newState == EmbeddedTailscaleModels.State.Running)
+                        ) {
+                            onHeadlessLoginComplete?.invoke()
+                        }
+                    }
+                    if (notify.LoginFinished != null) {
+                        Log.i(TAG, "LoginFinished notification received")
+                        onHeadlessLoginComplete?.invoke()
                     }
                     notify.ErrMessage?.let { Log.w(TAG, "ipn error: $it") }
                 } catch (t: Throwable) {

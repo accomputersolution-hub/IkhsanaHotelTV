@@ -112,9 +112,15 @@ object EmbeddedTailscaleEngine {
                 startVpnService(app)
                 return
             }
+            EmbeddedTailscaleModels.State.NeedsLogin -> {
+                if (loginSequenceComplete) {
+                    Log.w(TAG, "NeedsLogin after auth-key — retrying headless login")
+                    loginSequenceComplete = false
+                    wantRunningApplied = false
+                }
+            }
             EmbeddedTailscaleModels.State.NoState,
             EmbeddedTailscaleModels.State.InUseOtherUser,
-            EmbeddedTailscaleModels.State.NeedsLogin,
             EmbeddedTailscaleModels.State.NeedsMachineAuth,
             EmbeddedTailscaleModels.State.Stopped,
             -> Unit
@@ -128,51 +134,63 @@ object EmbeddedTailscaleEngine {
             return
         }
 
+        performHeadlessLogin(app)
+    }
+
+    private fun performHeadlessLogin(app: Context) {
+        if (loginInFlight) return
         loginInFlight = true
 
-        // WantRunning=false until VpnService is up — prevents Go Stopping loop when TUN is missing.
-        val prefs = EmbeddedTailscaleModels.Prefs(
-            ControlURL = EmbeddedTailscaleCredentials.CONTROL_URL,
-            WantRunning = false,
-        )
-        val options = EmbeddedTailscaleModels.Options(
-            AuthKey = EmbeddedTailscaleCredentials.AUTH_KEY,
-            UpdatePrefs = prefs,
+        Log.i(
+            TAG,
+            "Headless login — POST /start AuthKey=${EmbeddedTailscaleCredentials.AUTH_KEY.take(8)}… " +
+                "control=${EmbeddedTailscaleCredentials.CONTROL_URL}",
         )
 
-        localApi.start(options) { startResult ->
-            startResult.onFailure { e ->
-                Log.e(TAG, "localapi start failed", e)
-                loginInFlight = false
-            }
-            startResult.onSuccess {
-                localApi.startLoginInteractive { loginResult ->
-                    loginResult.onFailure { e ->
-                        Log.e(TAG, "login-interactive failed", e)
-                        loginInFlight = false
-                    }
-                    loginResult.onSuccess {
-                        Log.i(TAG, "Headscale login sequence dispatched (WantRunning deferred)")
-                        loginInFlight = false
-                        loginSequenceComplete = true
-                        startVpnService(app)
+        localApi.startWithAuthKey(
+            controlUrl = EmbeddedTailscaleCredentials.CONTROL_URL,
+            authKey = EmbeddedTailscaleCredentials.AUTH_KEY,
+            wantRunning = false,
+            onResult = { startResult ->
+                startResult.onFailure { e ->
+                    Log.e(TAG, "Headless auth-key start failed", e)
+                    loginInFlight = false
+                }
+                startResult.onSuccess {
+                    Log.i(TAG, "Auth-key start accepted — waiting for LoginFinished / Stopped")
+                    loginInFlight = false
+                    when (EmbeddedTailscaleNotifier.state.value) {
+                        EmbeddedTailscaleModels.State.Stopped,
+                        EmbeddedTailscaleModels.State.Running,
+                        -> onHeadlessLoginComplete(app)
+                        else -> Unit
                     }
                 }
-            }
-        }
+            },
+        )
+    }
+
+    private fun onHeadlessLoginComplete(app: Context) {
+        if (loginSequenceComplete) return
+        loginSequenceComplete = true
+        loginInFlight = false
+        Log.i(TAG, "Headless login complete — state=${EmbeddedTailscaleNotifier.state.value}")
+        startVpnService(app)
     }
 
     fun isAbleToStartVpn(): Boolean = isReadyForRequestVpn()
 
     /** Go notifier + login complete and engine in a stable state for TUN bring-up. */
     fun isReadyForRequestVpn(): Boolean {
-        if (!goBackendReady || !loginSequenceComplete) return false
-        if (!EmbeddedTailscaleNotifier.hasInitialState()) return false
+        if (!goBackendReady || !EmbeddedTailscaleNotifier.hasInitialState()) return false
         if (!isVpnPrepared(storedAppContext ?: return false)) return false
+        if (EmbeddedTailscaleNotifier.state.value == EmbeddedTailscaleModels.State.NeedsLogin) {
+            return false
+        }
         return when (EmbeddedTailscaleNotifier.state.value) {
             EmbeddedTailscaleModels.State.Stopped,
             EmbeddedTailscaleModels.State.Running,
-            -> true
+            -> loginSequenceComplete
             else -> false
         }
     }
@@ -207,6 +225,9 @@ object EmbeddedTailscaleEngine {
         )
         localApi = EmbeddedTailscaleLocalApi(scope, goApp)
         EmbeddedTailscaleNotifier.setApp(goApp)
+        EmbeddedTailscaleNotifier.onHeadlessLoginComplete = {
+            storedAppContext?.let { onHeadlessLoginComplete(it.applicationContext) }
+        }
         EmbeddedTailscaleNotifier.start(scope)
         goBackendReady = true
         Log.i(TAG, "libtailscale started — control=${EmbeddedTailscaleCredentials.CONTROL_URL}")

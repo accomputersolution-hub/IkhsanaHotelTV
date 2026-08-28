@@ -1,6 +1,7 @@
 package `in`.pcncloud.hotel.tailscale.embed
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 /** Minimal ipn types for LocalAPI JSON — mirrors tailscale-android ui.model.Ipn. */
 object EmbeddedTailscaleModels {
@@ -39,5 +40,7 @@ object EmbeddedTailscaleModels {
     data class Notify(
         val State: Int? = null,
         val ErrMessage: String? = null,
+        /** Present (often as `{}`) when headless / interactive login completes. */
+        val LoginFinished: JsonElement? = null,
     )
 }
