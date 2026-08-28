@@ -25,6 +25,7 @@ object EmbeddedTailscaleEngine {
     private const val TAG = "EmbeddedTsEngine"
     private const val WATCH_READY_TIMEOUT_MS = 15_000L
     private const val LOGIN_WATCHDOG_MS = 8_000L
+    private val CONTROL_URL_JSON_REGEX = Regex(""""ControlURL"\s*:\s*"([^"]*)"""")
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val prefsJson = Json { ignoreUnknownKeys = true }
@@ -498,9 +499,5 @@ object EmbeddedTailscaleEngine {
 
     fun onVpnServiceStartHandled() {
         vpnServiceStarting.set(false)
-    }
-
-    companion object {
-        private val CONTROL_URL_JSON_REGEX = Regex(""""ControlURL"\s*:\s*"([^"]*)"""")
     }
 }
