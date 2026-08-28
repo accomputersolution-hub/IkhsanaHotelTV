@@ -23,11 +23,13 @@ class EmbeddedTailscaleAppContext(
     private val tag = "EmbeddedTsAppCtx"
     private val prefsName = "embedded_tailscale_secret_prefs"
 
-    /**
-     * Key read by patched libtailscale at LocalBackend.Start() (customLoginServerPrefKey).
-     * Must be written before [libtailscale.Libtailscale.start].
-     */
-    private const val PREF_CUSTOM_LOGIN_SERVER = "customloginserver"
+    companion object {
+        /**
+         * Key read by patched libtailscale at LocalBackend.Start() (customLoginServerPrefKey).
+         * Must be written before [libtailscale.Libtailscale.start].
+         */
+        private const val PREF_CUSTOM_LOGIN_SERVER = "customloginserver"
+    }
 
     override fun log(tag: String, logLine: String) {
         Log.d(tag, logLine)
