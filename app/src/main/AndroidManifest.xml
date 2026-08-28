@@ -31,6 +31,7 @@
     <!-- Required on Android 11+ so PackageManager can resolve IPTV / OTT apps -->
     <queries>
         <package android:name="com.ektv.pro" />
+        <package android:name="com.tailscale.ipn" />
         <package android:name="com.google.android.youtube.tv" />
         <package android:name="com.amazon.amazonvideo.livingroom" />
         <package android:name="in.startv.hotstar" />
@@ -180,47 +181,17 @@
         </service>
 
         <!--
-          Built-in kiosk VPN foreground keep-alive (NOT a VpnService).
-          TUN is owned solely by GoBackend$VpnService below.
+          Corporate Tailscale VPN keep-alive (Tailscale app owns the VpnService TUN).
         -->
         <service
-            android:name=".vpn.KioskVpnService"
+            android:name=".integration.TailscaleKeepAliveService"
             android:enabled="true"
             android:exported="false"
             android:directBootAware="true"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Built-in WireGuard VPN keep-alive for corporate kiosk" />
-        </service>
-
-        <!--
-          Sole android.net.VpnService for this package (WireGuard GoBackend TUN).
-          Device Owner Always-On VPN targets this package and starts this service.
-        -->
-        <service
-            android:name="com.wireguard.android.backend.GoBackend$VpnService"
-            android:exported="false"
-            android:directBootAware="true"
-            android:permission="android.permission.BIND_VPN_SERVICE"
-            android:foregroundServiceType="specialUse">
-            <intent-filter>
-                <action android:name="android.net.VpnService" />
-            </intent-filter>
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="WireGuard userspace TUN for corporate kiosk" />
-        </service>
-
-        <service
-            android:name=".vpn.KioskVpnKeepAliveService"
-            android:enabled="true"
-            android:exported="false"
-            android:directBootAware="true"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Re-assert built-in WireGuard tunnel after boot / process death" />
+                android:value="Re-assert Tailscale VPN after boot / process death" />
         </service>
 
         <!--

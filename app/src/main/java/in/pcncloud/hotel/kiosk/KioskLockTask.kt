@@ -9,6 +9,7 @@ import android.content.ContextWrapper
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import `in`.pcncloud.hotel.BuildConfig
 
 /**
  * Device-owner Lock Task helpers for hotel kiosk.
@@ -43,11 +44,16 @@ object KioskLockTask {
      * Lock Task package set = hotel app + [extraPackages] (RTDB allowlist) + baseline.
      */
     fun buildLockTaskPackageArray(context: Context, extraPackages: List<String> = emptyList()): Array<String> =
-        (listOf(context.packageName) + extraPackages + BASELINE_LOCK_TASK_PACKAGES)
+        (listOf(context.packageName) + extraPackages + baselineLockTaskPackages())
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .distinct()
             .toTypedArray()
+
+    /** Live TV baseline + corporate Tailscale for brief VPN UI wake under Lock Task. */
+    fun baselineLockTaskPackages(): List<String> =
+        BASELINE_LOCK_TASK_PACKAGES +
+            if (BuildConfig.IS_CORPORATE) listOf(MyDeviceAdminReceiver.TAILSCALE_VPN_PACKAGE) else emptyList()
 
     /**
      * Registers Lock Task packages from the hotel's RTDB `allowedPackages`,

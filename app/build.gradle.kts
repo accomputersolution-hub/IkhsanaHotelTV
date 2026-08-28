@@ -80,7 +80,6 @@ android {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
-    implementation("com.wireguard.android:tunnel:1.0.20250531")
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(platform(libs.firebase.bom))

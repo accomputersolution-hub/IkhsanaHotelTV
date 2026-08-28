@@ -41,7 +41,7 @@ import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
 import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
-import `in`.pcncloud.hotel.vpn.KioskVpnController
+import `in`.pcncloud.hotel.integration.TailscaleController
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.ScreensaverOverlay
 import `in`.pcncloud.hotel.ui.components.ServiceSuspendedScreen
@@ -80,16 +80,6 @@ class MainActivity : ComponentActivity() {
      */
     @Volatile
     var nestedAdminBackHandler: (() -> Boolean)? = null
-
-    /** Corporate VPN consent — launched from onResume when VpnService.prepare is required. */
-    private val vpnPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        Log.i(TAG, "VPN prepare resultCode=${result.resultCode}")
-        if (BuildConfig.IS_CORPORATE) {
-            KioskVpnController.ensureRunning(applicationContext)
-        }
-    }
 
     private lateinit var hotelConfig: HotelConfig
     private lateinit var repository: FirestoreRepository
@@ -1651,20 +1641,14 @@ class MainActivity : ComponentActivity() {
                 ensureOverlayPermissionForBal()
             }
 
-            // Corporate: re-assert built-in WireGuard VPN (no external UI).
-            // Never launch VPN consent UI while Live TV / OTT is active — that steals focus.
+            // Corporate: re-assert Tailscale / Headscale VPN (no in-app VpnService).
             if (BuildConfig.IS_CORPORATE && !KioskPolicy.isExternalAppActive(this)) {
                 try {
-                    MyDeviceAdminReceiver.ensureAlwaysOnInternalVpn(this)
-                    val prepare = KioskVpnController.preparePermissionIntent(this)
-                    if (prepare != null) {
-                        Log.w(TAG, "VPN consent required — launching prepare from MainActivity")
-                        vpnPermissionLauncher.launch(prepare)
-                    } else {
-                        KioskVpnController.ensureRunning(this)
-                    }
+                    MyDeviceAdminReceiver.applyTailscaleManagedConfig(this)
+                    MyDeviceAdminReceiver.ensureAlwaysOnTailscaleVpn(this)
+                    TailscaleController.ensureRunning(this)
                 } catch (e: Exception) {
-                    Log.w(TAG, "Built-in VPN ensure from MainActivity failed", e)
+                    Log.w(TAG, "Tailscale ensure from MainActivity failed", e)
                 }
             }
         } catch (e: Exception) {

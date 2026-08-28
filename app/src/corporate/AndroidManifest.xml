@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Corporate flavor: no external Tailscale package query required. -->
+    <!-- Corporate flavor: query Tailscale for silent VPN wake + install checks. -->
+    <queries>
+        <package android:name="com.tailscale.ipn" />
+    </queries>
 </manifest>

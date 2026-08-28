@@ -14,7 +14,7 @@ import `in`.pcncloud.hotel.PairingActivity
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
-import `in`.pcncloud.hotel.vpn.KioskVpnController
+import `in`.pcncloud.hotel.integration.TailscaleController
 
 /**
  * Auto-starts the hotel UI after device restart.
@@ -80,13 +80,13 @@ class BootReceiver : BroadcastReceiver() {
         // PendingIntent launch first (BAL-safe). Watchdog after UI attempt.
         launchUiAfterBoot(context, launchIntent, target.simpleName, action)
 
-        // Corporate: start built-in WireGuard VPN in the background (no external UI).
+        // Corporate: start Tailscale VPN in the background after boot.
         if (BuildConfig.IS_CORPORATE) {
             try {
-                KioskVpnController.init(appContext)
-                KioskVpnController.ensureRunning(appContext)
+                TailscaleController.init(appContext)
+                TailscaleController.ensureRunning(appContext)
             } catch (e: Exception) {
-                Log.w(TAG, "Built-in VPN start after boot failed", e)
+                Log.w(TAG, "Tailscale start after boot failed", e)
             }
         }
 
