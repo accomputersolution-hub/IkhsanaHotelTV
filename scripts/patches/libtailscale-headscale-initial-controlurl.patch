@@ -1,7 +1,7 @@
 diff --git a/libtailscale/interfaces.go b/libtailscale/interfaces.go
 --- a/libtailscale/interfaces.go
 +++ b/libtailscale/interfaces.go
-@@ -86,6 +86,11 @@ type AppContext interface {
+@@ -86,6 +86,10 @@ type AppContext interface {
  	// GetUserCACertsPEM returns PEM-encoded user-installed CA certificates
  	// from the Android KeyStore, or empty bytes if none are installed.
  	GetUserCACertsPEM() ([]byte, error)
@@ -15,7 +15,16 @@ diff --git a/libtailscale/interfaces.go b/libtailscale/interfaces.go
 diff --git a/libtailscale/backend.go b/libtailscale/backend.go
 --- a/libtailscale/backend.go
 +++ b/libtailscale/backend.go
-@@ -378,7 +378,7 @@ func (a *App) newBackend(dataDir string, appCtx AppContext, store *stateStore,
+@@ -73,6 +73,8 @@ func start(dataDir, directFileRoot string, hwAttestationPref bool, appCtx AppCon
+ 		}
+ 	}()
+ 
++	headscaleAssumeNetworkUpForEmbeddedControl(appCtx)
++
+ 	initLogging(appCtx)
+ 	// Set XDG_CACHE_HOME to make os.UserCacheDir work.
+ 	if _, exists := os.LookupEnv("XDG_CACHE_HOME"); !exists {
+@@ -378,7 +380,7 @@ func (a *App) newBackend(dataDir string, appCtx AppContext, store *stateStore,
  	b.engine = engine
  	b.backend = lb
  	b.sys = sys
@@ -55,6 +64,19 @@ diff --git a/libtailscale/backend.go b/libtailscale/backend.go
 +		return url, customLoginServerPrefKey + " pref"
 +	}
 +	return "", ""
++}
++
++// headscaleAssumeNetworkUpForEmbeddedControl sets TS_ASSUME_NETWORK_UP_FOR_TEST when the
++// host app provides a non-default control URL. On Android TV, netmon may report no
++// interface before VPN is up; shouldPauseControlClient then keeps the control client
++// paused and client.Login() never reaches Headscale (authRoutine: awaiting unpause).
++func headscaleAssumeNetworkUpForEmbeddedControl(appCtx AppContext) {
++	controlURL, source := embeddedControlURLFromAppCtx(appCtx)
++	if controlURL == "" {
++		return
++	}
++	os.Setenv("TS_ASSUME_NETWORK_UP_FOR_TEST", "1")
++	log.Printf("libtailscale: embedded ControlURL=%s (%s); TS_ASSUME_NETWORK_UP_FOR_TEST=1", controlURL, source)
 +}
 +
  func (b *backend) isConfigNonNilAndDifferent(rcfg *router.Config, dcfg *dns.OSConfig) bool {

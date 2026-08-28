@@ -208,9 +208,9 @@ object EmbeddedTailscaleEngine {
                             EmbeddedTailscaleModels.State.NeedsLogin -> {
                                 Log.i(
                                     TAG,
-                                    "Register in progress (NeedsLogin) — " +
-                                        "watchdog ${LOGIN_WATCHDOG_MS}ms; " +
-                                        "grep logcat EmbeddedTsGo for control/register errors",
+                                    "Register in progress (NeedsLogin) — watchdog ${LOGIN_WATCHDOG_MS}ms; " +
+                                        "EmbeddedTsGo: expect control:RegisterReq / doLogin; " +
+                                        "if only authRoutine: awaiting unpause → rebuild libtailscale.aar",
                                 )
                                 scheduleLoginCompletionWatchdog(app)
                             }
@@ -281,9 +281,20 @@ object EmbeddedTailscaleEngine {
             val state = EmbeddedTailscaleNotifier.state.value
             Log.w(TAG, "Login watchdog retry — state=$state")
             if (state == EmbeddedTailscaleModels.State.NeedsLogin && !loginSequenceComplete) {
-                Log.w(TAG, "Retrying headless login after watchdog")
-                loginInFlight = false
-                performHeadlessLogin(app)
+                Log.w(
+                    TAG,
+                    "Login watchdog retry — POST /login-interactive only (skip POST /start Shutdown loop)",
+                )
+                localApi.startLoginInteractive { retryResult ->
+                    retryResult.onFailure { e ->
+                        Log.w(TAG, "login-interactive retry failed — full headless login", e)
+                        loginInFlight = false
+                        performHeadlessLogin(app)
+                    }
+                    retryResult.onSuccess {
+                        scheduleLoginCompletionWatchdog(app, delayMs = LOGIN_WATCHDOG_MS * 2)
+                    }
+                }
             }
         }
     }
