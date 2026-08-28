@@ -148,6 +148,9 @@ object EmbeddedTailscaleEngine {
         if (loginInFlight) return
         loginInFlight = true
 
+        // Match tailscale-android startForegroundForLogin — keeps network alive during auth.
+        EmbeddedTailscaleKeepAliveService.start(app)
+
         scope.launch(Dispatchers.IO) {
             val watching = EmbeddedTailscaleNotifier.awaitWatching(WATCH_READY_TIMEOUT_MS)
             if (!watching) {
@@ -185,7 +188,8 @@ object EmbeddedTailscaleEngine {
                         val state = EmbeddedTailscaleNotifier.state.value
                         Log.i(
                             TAG,
-                            "Auth-key start accepted — state=$state watching=${EmbeddedTailscaleNotifier.isWatching()}",
+                            "Auth-key login chain OK (start + login-interactive) — " +
+                                "state=$state watching=${EmbeddedTailscaleNotifier.isWatching()}",
                         )
                         verifyControlUrlPersisted("auth-key start")
                         loginInFlight = false
@@ -384,27 +388,8 @@ object EmbeddedTailscaleEngine {
      */
     private fun verifyControlUrlPersisted(source: String) {
         if (!goBackendReady) return
-        val expected = EmbeddedTailscaleCredentials.CONTROL_URL
         localApi.fetchPrefs { result ->
-            result.onSuccess { body ->
-                logStoredControlUrl(source, body)
-                val stored = decodeStoredControlUrl(body)
-                if (stored.isBlank() || stored != expected) {
-                    Log.w(
-                        TAG,
-                        "ControlURL not persisted ($source stored=${stored.ifBlank { "empty" }}) — " +
-                            "PATCH ControlURLSet expected=$expected",
-                    )
-                    localApi.editControlUrl(expected) { patchResult ->
-                        patchResult.onSuccess { patchBody ->
-                            logStoredControlUrl("ControlURL reassert", patchBody)
-                        }
-                        patchResult.onFailure { e ->
-                            Log.e(TAG, "PATCH ControlURL reassert failed", e)
-                        }
-                    }
-                }
-            }
+            result.onSuccess { body -> logStoredControlUrl(source, body) }
             result.onFailure { e ->
                 Log.w(TAG, "GET /prefs failed during ControlURL verify ($source)", e)
             }

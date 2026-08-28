@@ -22,9 +22,11 @@ class EmbeddedTailscaleLocalApi(
     }
 
     /**
-     * Headless Headscale login — tailscale-android order:
-     * 1. PATCH /prefs MaskedPrefs (ControlURLSet)
+     * Headless Headscale login — matches tailscale-android [IpnViewModel.login]:
+     * 1. PATCH /prefs MaskedPrefs (ControlURLSet, LoggedOut=false for auth key)
      * 2. POST /start with UpdatePrefs [Prefs] + AuthKey
+     * 3. POST /login-interactive (required for auth-key login — not only interactive OAuth)
+     *
      * ControlURL must already be seeded before Libtailscale.start() (patched libtailscale).
      */
     fun startWithAuthKey(
@@ -56,9 +58,26 @@ class EmbeddedTailscaleLocalApi(
                     "POST /start authKeyPrefix=${authKey.take(8)}… " +
                         "UpdatePrefs.ControlURL=$controlUrl WantRunning=$wantRunning",
                 )
-                post("start", body, onResult)
+                post("start", body) { startResult ->
+                    startResult.onFailure { e ->
+                        Log.e(TAG, "POST /start failed", e)
+                        onResult(Result.failure(e))
+                    }
+                    startResult.onSuccess {
+                        Log.i(TAG, "POST /start OK — POST /login-interactive (auth-key consume)")
+                        startLoginInteractive(onResult)
+                    }
+                }
             }
         }
+    }
+
+    /**
+     * Required after POST /start for both interactive and auth-key login (tailscale-android).
+     */
+    fun startLoginInteractive(onResult: (Result<Unit>) -> Unit) {
+        Log.i(TAG, "POST /login-interactive")
+        post("login-interactive", null, onResult)
     }
 
     fun editMaskedPrefs(
