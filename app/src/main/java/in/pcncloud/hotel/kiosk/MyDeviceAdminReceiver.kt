@@ -7,10 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import android.os.Bundle
 import android.util.Log
 import `in`.pcncloud.hotel.BuildConfig
-import `in`.pcncloud.hotel.integration.TailscaleCredentials
 
 /**
  * Device-owner / device-admin component required for [DevicePolicyManager]
@@ -31,8 +29,7 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
         Log.i(TAG, "Device admin enabled — applying Lock Task + Always-On VPN policy")
         ensureSelfAllowlisted(context)
         applyStrictLockTaskFeatures(context)
-        ensureAlwaysOnTailscaleVpn(context)
-        applyTailscaleManagedConfig(context)
+        ensureAlwaysOnEmbeddedVpn(context)
     }
 
     override fun onDisabled(context: Context, intent: Intent) {
@@ -50,9 +47,6 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
 
     companion object {
         private const val TAG = "MyDeviceAdminReceiver"
-
-        /** Tailscale Android package — corporate Always-On VPN target. */
-        const val TAILSCALE_VPN_PACKAGE = "com.tailscale.ipn"
 
         /** Exact component string for hotel `adb shell dpm set-device-owner`. */
         const val DEVICE_OWNER_COMPONENT =
@@ -129,55 +123,11 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
         }
 
         /**
-         * Corporate Device Owner only: push Headscale LoginURL + AuthKey managed
-         * configuration into the Tailscale Android app for silent auto-login.
+         * Corporate Device Owner only: pin **this app** as Always-On VPN so
+         * [in.pcncloud.hotel.tailscale.embed.EmbeddedTailscaleVpnService] starts on boot.
          */
-        fun applyTailscaleManagedConfig(context: Context): Boolean {
+        fun ensureAlwaysOnEmbeddedVpn(context: Context): Boolean {
             if (!BuildConfig.IS_CORPORATE) return false
-
-            return try {
-                val app = context.applicationContext
-                val dpm =
-                    app.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                val admin = getComponentName(app)
-
-                if (!dpm.isDeviceOwnerApp(app.packageName)) {
-                    Log.w(TAG, "Not Device Owner — cannot setApplicationRestrictions(Tailscale)")
-                    return false
-                }
-
-                if (!isPackageInstalled(app.packageManager, TAILSCALE_VPN_PACKAGE)) {
-                    Log.w(TAG, "Tailscale not installed — skip managed config")
-                    return false
-                }
-
-                val restrictions = Bundle().apply {
-                    putString("LoginURL", TailscaleCredentials.CONTROL_URL)
-                    putString("AuthKey", TailscaleCredentials.AUTH_KEY)
-                    putString("OnboardingFlow", "hide")
-                    putBoolean("ForceEnabled", true)
-                }
-                dpm.setApplicationRestrictions(admin, TAILSCALE_VPN_PACKAGE, restrictions)
-                Log.i(
-                    TAG,
-                    "Tailscale managed config applied → LoginURL=${TailscaleCredentials.CONTROL_URL} " +
-                        "authKeyLen=${TailscaleCredentials.AUTH_KEY.length}",
-                )
-                true
-            } catch (e: Exception) {
-                Log.e(TAG, "applyTailscaleManagedConfig failed", e)
-                false
-            }
-        }
-
-        /**
-         * Corporate Device Owner only: pin Tailscale as Always-On VPN.
-         * Hotel flavor: no-op. Requires API 24+.
-         */
-        fun ensureAlwaysOnTailscaleVpn(context: Context): Boolean {
-            if (!BuildConfig.IS_CORPORATE) {
-                return false
-            }
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
                 Log.w(TAG, "setAlwaysOnVpnPackage requires API 24+ — skip")
                 return false
@@ -192,18 +142,13 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
                 if (!dpm.isDeviceOwnerApp(app.packageName)) {
                     Log.w(
                         TAG,
-                        "Not Device Owner — cannot setAlwaysOnVpnPackage($TAILSCALE_VPN_PACKAGE). " +
+                        "Not Device Owner — cannot setAlwaysOnVpnPackage(self). " +
                             "Provision with: adb shell dpm set-device-owner ${deviceOwnerAdbComponent(app)}",
                     )
                     return false
                 }
 
-                if (!isPackageInstalled(app.packageManager, TAILSCALE_VPN_PACKAGE)) {
-                    Log.w(TAG, "Tailscale ($TAILSCALE_VPN_PACKAGE) not installed — skip Always-On VPN")
-                    return false
-                }
-
-                dpm.setAlwaysOnVpnPackage(admin, TAILSCALE_VPN_PACKAGE, /* lockdownEnabled= */ false)
+                dpm.setAlwaysOnVpnPackage(admin, app.packageName, /* lockdownEnabled= */ false)
 
                 val active = try {
                     dpm.getAlwaysOnVpnPackage(admin)
@@ -212,11 +157,12 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
                 }
                 Log.i(
                     TAG,
-                    "Always-On VPN set → package=$TAILSCALE_VPN_PACKAGE lockdown=false activePackage=$active",
+                    "Always-On VPN set → package=${app.packageName} (embedded Tailscale) " +
+                        "lockdown=false activePackage=$active",
                 )
                 true
             } catch (e: PackageManager.NameNotFoundException) {
-                Log.w(TAG, "setAlwaysOnVpnPackage failed — Tailscale missing?", e)
+                Log.w(TAG, "setAlwaysOnVpnPackage failed — VpnService missing?", e)
                 false
             } catch (e: SecurityException) {
                 Log.e(TAG, "setAlwaysOnVpnPackage SecurityException — not Device Owner?", e)

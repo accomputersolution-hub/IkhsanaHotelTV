@@ -1644,8 +1644,7 @@ class MainActivity : ComponentActivity() {
             // Corporate: re-assert Tailscale / Headscale VPN (no in-app VpnService).
             if (BuildConfig.IS_CORPORATE && !KioskPolicy.isExternalAppActive(this)) {
                 try {
-                    MyDeviceAdminReceiver.applyTailscaleManagedConfig(this)
-                    MyDeviceAdminReceiver.ensureAlwaysOnTailscaleVpn(this)
+                    MyDeviceAdminReceiver.ensureAlwaysOnEmbeddedVpn(this)
                     TailscaleController.ensureRunning(this)
                 } catch (e: Exception) {
                     Log.w(TAG, "Tailscale ensure from MainActivity failed", e)

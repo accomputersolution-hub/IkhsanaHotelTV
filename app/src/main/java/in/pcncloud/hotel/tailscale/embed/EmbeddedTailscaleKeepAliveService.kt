@@ -1,10 +1,11 @@
-package `in`.pcncloud.hotel.integration
+package `in`.pcncloud.hotel.tailscale.embed
 
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
@@ -12,18 +13,17 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.MainActivity
-import `in`.pcncloud.hotel.ui.home.BrandAssets
 import `in`.pcncloud.hotel.R
+import `in`.pcncloud.hotel.ui.home.BrandAssets
 
 /**
- * Lightweight corporate keep-alive that periodically re-asserts Tailscale VPN
- * after boot or process death on Android TV.
+ * Keeps embedded Tailscale engine warm and re-runs [EmbeddedTailscaleEngine.ensureRunning] after boot.
  */
-class TailscaleKeepAliveService : Service() {
+class EmbeddedTailscaleKeepAliveService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
+        createChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
     }
 
@@ -33,16 +33,15 @@ class TailscaleKeepAliveService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-
         if (BuildConfig.IS_CORPORATE) {
-            TailscaleController.ensureRunning(this)
+            EmbeddedTailscaleEngine.ensureRunning(this)
         }
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun createNotificationChannel() {
+    private fun createChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val channel = NotificationChannel(
             CHANNEL_ID,
@@ -74,15 +73,15 @@ class TailscaleKeepAliveService : Service() {
     }
 
     companion object {
-        private const val TAG = "TailscaleKeepAlive"
-        private const val CHANNEL_ID = "tailscale_vpn"
-        private const val NOTIFICATION_ID = 42042
-        const val ACTION_STOP = "in.pcncloud.hotel.tailscale.KEEPALIVE_STOP"
+        private const val TAG = "EmbeddedTsKeepAlive"
+        private const val CHANNEL_ID = "embedded_tailscale_vpn"
+        private const val NOTIFICATION_ID = 42043
+        const val ACTION_STOP = "in.pcncloud.hotel.embedded.KEEPALIVE_STOP"
 
-        fun start(app: android.content.Context) {
+        fun start(app: Context) {
             if (!BuildConfig.IS_CORPORATE) return
             try {
-                val intent = Intent(app, TailscaleKeepAliveService::class.java)
+                val intent = Intent(app, EmbeddedTailscaleKeepAliveService::class.java)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     app.startForegroundService(intent)
                 } else {
@@ -93,12 +92,22 @@ class TailscaleKeepAliveService : Service() {
             }
         }
 
-        fun stop(app: android.content.Context) {
-            try {
-                app.stopService(Intent(app, TailscaleKeepAliveService::class.java))
-            } catch (t: Throwable) {
-                Log.w(TAG, "stop failed", t)
+        fun showForegroundNotification(service: Service) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    CHANNEL_ID,
+                    service.getString(R.string.tailscale_vpn_channel),
+                    NotificationManager.IMPORTANCE_LOW,
+                )
+                service.getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
             }
+            val notification = NotificationCompat.Builder(service, CHANNEL_ID)
+                .setSmallIcon(BrandAssets.logoRes)
+                .setContentTitle(service.getString(R.string.tailscale_vpn_notification_title))
+                .setContentText(service.getString(R.string.tailscale_vpn_notification_text))
+                .setOngoing(true)
+                .build()
+            service.startForeground(NOTIFICATION_ID, notification)
         }
     }
 }

@@ -13,3 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+.tailscale-android-src/
+app/libs/libtailscale.aar

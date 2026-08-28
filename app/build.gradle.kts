@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.google.services)
 }
 
@@ -49,6 +50,7 @@ android {
         create("corporate") {
             dimension = "client"
             applicationId = "in.pcncloud.corporate"
+            minSdk = 26 // libtailscale / gomobile bind uses -androidapi 26
             manifestPlaceholders["appName"] = "L&T Training Hub"
             buildConfigField("boolean", "IS_CORPORATE", "true")
         }
@@ -78,7 +80,19 @@ android {
     }
 }
 
+val libTailscaleAar = file("libs/libtailscale.aar")
+
 dependencies {
+    if (libTailscaleAar.exists()) {
+        "corporateImplementation"(files(libTailscaleAar))
+    } else {
+        logger.warn(
+            "app/libs/libtailscale.aar missing — corporate VPN will not link. " +
+                "Run: ./scripts/build-libtailscale.sh",
+        )
+    }
+    "corporateImplementation"("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
+    "corporateImplementation"("androidx.security:security-crypto:1.1.0-alpha06")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 
     implementation(platform(libs.androidx.compose.bom))
