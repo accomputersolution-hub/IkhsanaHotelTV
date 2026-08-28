@@ -10,6 +10,7 @@ import `in`.pcncloud.hotel.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import libtailscale.Libtailscale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -20,6 +21,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 object EmbeddedTailscaleEngine {
 
     private const val TAG = "EmbeddedTsEngine"
+    private const val WATCH_READY_TIMEOUT_MS = 15_000L
+    private const val LOGIN_WATCHDOG_MS = 8_000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var goBackendReady = false
@@ -27,6 +30,7 @@ object EmbeddedTailscaleEngine {
     private var loginSequenceComplete = false
     private var wantRunningApplied = false
     private var vpnActive = false
+    private var loginWatchdogGeneration = 0
     private val vpnServiceStarting = AtomicBoolean(false)
 
     private var storedAppContext: Context? = null
@@ -141,41 +145,129 @@ object EmbeddedTailscaleEngine {
         if (loginInFlight) return
         loginInFlight = true
 
-        Log.i(
-            TAG,
-            "Headless login — POST /start AuthKey=${EmbeddedTailscaleCredentials.AUTH_KEY.take(8)}… " +
-                "control=${EmbeddedTailscaleCredentials.CONTROL_URL}",
-        )
+        scope.launch(Dispatchers.IO) {
+            val watching = EmbeddedTailscaleNotifier.awaitWatching(WATCH_READY_TIMEOUT_MS)
+            if (!watching) {
+                Log.e(
+                    TAG,
+                    "IPN bus not watching after ${WATCH_READY_TIMEOUT_MS}ms — " +
+                        "LoginFinished events may be missed",
+                )
+            } else {
+                Log.i(
+                    TAG,
+                    "IPN bus ready state=${EmbeddedTailscaleNotifier.state.value} " +
+                        "initial=${EmbeddedTailscaleNotifier.hasInitialState()}",
+                )
+            }
 
-        localApi.startWithAuthKey(
-            controlUrl = EmbeddedTailscaleCredentials.CONTROL_URL,
-            authKey = EmbeddedTailscaleCredentials.AUTH_KEY,
-            wantRunning = false,
-            onResult = { startResult ->
-                startResult.onFailure { e ->
-                    Log.e(TAG, "Headless auth-key start failed", e)
-                    loginInFlight = false
-                }
-                startResult.onSuccess {
-                    Log.i(TAG, "Auth-key start accepted — waiting for LoginFinished / Stopped")
-                    loginInFlight = false
-                    when (EmbeddedTailscaleNotifier.state.value) {
-                        EmbeddedTailscaleModels.State.Stopped,
-                        EmbeddedTailscaleModels.State.Running,
-                        -> onHeadlessLoginComplete(app)
-                        EmbeddedTailscaleModels.State.NeedsLogin -> {
-                            // Auth key may finish async — WantRunning stays false until login completes.
-                            Log.d(TAG, "Auth-key start: still NeedsLogin, awaiting LoginFinished notify")
-                        }
-                        else -> Unit
+            Log.i(
+                TAG,
+                "Headless login — POST /start AuthKey=${EmbeddedTailscaleCredentials.AUTH_KEY.take(8)}… " +
+                    "control=${EmbeddedTailscaleCredentials.CONTROL_URL}",
+            )
+
+            localApi.startWithAuthKey(
+                controlUrl = EmbeddedTailscaleCredentials.CONTROL_URL,
+                authKey = EmbeddedTailscaleCredentials.AUTH_KEY,
+                wantRunning = false,
+                onResult = { startResult ->
+                    startResult.onFailure { e ->
+                        Log.e(TAG, "Headless auth-key start failed", e)
+                        loginInFlight = false
                     }
+                    startResult.onSuccess {
+                        val state = EmbeddedTailscaleNotifier.state.value
+                        Log.i(
+                            TAG,
+                            "Auth-key start accepted — state=$state watching=${EmbeddedTailscaleNotifier.isWatching()}",
+                        )
+                        loginInFlight = false
+                        when (state) {
+                            EmbeddedTailscaleModels.State.Stopped,
+                            EmbeddedTailscaleModels.State.Running,
+                            EmbeddedTailscaleModels.State.Starting,
+                            -> onHeadlessLoginComplete(app)
+                            EmbeddedTailscaleModels.State.NeedsLogin -> {
+                                Log.i(
+                                    TAG,
+                                    "Auth-key start: NeedsLogin — awaiting LoginFinished / state change",
+                                )
+                                scheduleLoginCompletionWatchdog(app)
+                            }
+                            else -> {
+                                Log.w(
+                                    TAG,
+                                    "Auth-key start: unexpected state=$state — scheduling watchdog",
+                                )
+                                scheduleLoginCompletionWatchdog(app)
+                            }
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    private fun scheduleLoginCompletionWatchdog(app: Context) {
+        val generation = ++loginWatchdogGeneration
+        scope.launch(Dispatchers.IO) {
+            delay(LOGIN_WATCHDOG_MS)
+            if (generation != loginWatchdogGeneration || loginSequenceComplete) return@launch
+
+            val state = EmbeddedTailscaleNotifier.state.value
+            Log.w(
+                TAG,
+                "Login watchdog (${LOGIN_WATCHDOG_MS}ms) — state=$state " +
+                    "wantApplied=$wantRunningApplied loginComplete=$loginSequenceComplete",
+            )
+
+            localApi.fetchStatus { statusResult ->
+                statusResult.onSuccess { body ->
+                    Log.i(TAG, "GET /status snapshot: ${body.take(400)}")
                 }
-            },
-        )
+                statusResult.onFailure { e ->
+                    Log.w(TAG, "GET /status failed during login watchdog", e)
+                }
+            }
+
+            when (state) {
+                EmbeddedTailscaleModels.State.Stopped,
+                EmbeddedTailscaleModels.State.Running,
+                EmbeddedTailscaleModels.State.Starting,
+                -> onHeadlessLoginComplete(app)
+                EmbeddedTailscaleModels.State.NeedsLogin -> {
+                    Log.w(
+                        TAG,
+                        "Still NeedsLogin — applying WantRunning=true (callback may have been missed)",
+                    )
+                    applyWantRunningIfNeeded()
+                    scheduleLoginCompletionWatchdog(app, delayMs = LOGIN_WATCHDOG_MS * 2)
+                }
+                else -> scheduleLoginCompletionWatchdog(app, delayMs = LOGIN_WATCHDOG_MS)
+            }
+        }
+    }
+
+    private fun scheduleLoginCompletionWatchdog(app: Context, delayMs: Long = LOGIN_WATCHDOG_MS) {
+        val generation = ++loginWatchdogGeneration
+        scope.launch(Dispatchers.IO) {
+            delay(delayMs)
+            if (generation != loginWatchdogGeneration || loginSequenceComplete) return@launch
+            val state = EmbeddedTailscaleNotifier.state.value
+            Log.w(TAG, "Login watchdog retry — state=$state")
+            if (state == EmbeddedTailscaleModels.State.NeedsLogin && !loginSequenceComplete) {
+                Log.w(TAG, "Retrying headless login after watchdog")
+                loginInFlight = false
+                performHeadlessLogin(app)
+            }
+        }
     }
 
     private fun onHeadlessLoginComplete(app: Context) {
+        loginWatchdogGeneration++
         if (loginSequenceComplete) {
+            Log.d(TAG, "onHeadlessLoginComplete (already complete) — re-apply WantRunning")
             applyWantRunningIfNeeded()
             return
         }
@@ -183,10 +275,9 @@ object EmbeddedTailscaleEngine {
         loginInFlight = false
         Log.i(
             TAG,
-            "Headless login complete — state=${EmbeddedTailscaleNotifier.state.value}; " +
+            "onHeadlessLoginComplete — state=${EmbeddedTailscaleNotifier.state.value}; " +
                 "setting WantRunning=true",
         )
-        // Must run before/alongside VpnService — engine stays NeedsLogin while want=false.
         applyWantRunningIfNeeded()
         startVpnService(app)
     }
@@ -247,7 +338,14 @@ object EmbeddedTailscaleEngine {
     }
 
     private fun applyWantRunningIfNeeded() {
-        if (!goBackendReady || wantRunningApplied) return
+        if (!goBackendReady) {
+            Log.w(TAG, "applyWantRunning skipped — Go backend not ready")
+            return
+        }
+        if (wantRunningApplied) {
+            Log.d(TAG, "applyWantRunning skipped — already applied")
+            return
+        }
         Log.i(
             TAG,
             "PATCH /prefs WantRunning=true control=${EmbeddedTailscaleCredentials.CONTROL_URL}",
@@ -258,10 +356,13 @@ object EmbeddedTailscaleEngine {
             onResult = { result ->
                 result.onSuccess {
                     wantRunningApplied = true
-                    Log.i(TAG, "WantRunning=true applied — engine should leave NeedsLogin")
+                    Log.i(
+                        TAG,
+                        "WantRunning=true applied — state=${EmbeddedTailscaleNotifier.state.value}",
+                    )
                 }
                 result.onFailure { e ->
-                    Log.e(TAG, "editPrefs WantRunning failed", e)
+                    Log.e(TAG, "PATCH /prefs WantRunning failed", e)
                 }
             },
         )
