@@ -14,6 +14,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import libtailscale.Libtailscale
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -173,6 +175,8 @@ object EmbeddedTailscaleEngine {
                 delay(2_000L)
             }
 
+            probeHeadscaleReachability()
+
             Log.i(
                 TAG,
                 "Headless login — LoggedOut reset then PATCH+POST /start with AuthKey " +
@@ -229,6 +233,41 @@ object EmbeddedTailscaleEngine {
             statusResult.onFailure { e ->
                 Log.w(TAG, "GET /status failed ($source)", e)
             }
+        }
+    }
+
+    /**
+     * Best-effort TCP/TLS probe of the Headscale control URL from the Android
+     * network stack (OkHttp/HttpURLConnection path respects networkSecurityConfig).
+     * Does not block login on failure — logs whether ngrok is reachable at all.
+     */
+    private fun probeHeadscaleReachability() {
+        val base = EmbeddedTailscaleCredentials.CONTROL_URL.trimEnd('/')
+        val keyUrl = "$base/key?v=109"
+        var conn: HttpURLConnection? = null
+        try {
+            conn = (URL(keyUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10_000
+                readTimeout = 10_000
+                instanceFollowRedirects = true
+                requestMethod = "GET"
+                // Free ngrok interstitial bypass for non-browser clients.
+                setRequestProperty("ngrok-skip-browser-warning", "true")
+                setRequestProperty("User-Agent", "IkhsanaHotelTV-HeadscaleProbe/1.0")
+            }
+            val code = conn.responseCode
+            val body = runCatching {
+                (if (code in 200..299) conn.inputStream else conn.errorStream)
+                    ?.bufferedReader()
+                    ?.readText()
+                    ?.take(200)
+                    .orEmpty()
+            }.getOrDefault("")
+            Log.i(TAG, "Headscale probe GET $keyUrl → HTTP $code body=${body.replace('\n', ' ')}")
+        } catch (t: Throwable) {
+            Log.e(TAG, "Headscale probe FAILED for $keyUrl — TV cannot reach control plane", t)
+        } finally {
+            conn?.disconnect()
         }
     }
 

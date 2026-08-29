@@ -115,10 +115,37 @@ class EmbeddedTailscaleAppContext(
 
     override fun bindSocketToNetwork(fd: Int): Boolean = false
 
-    override fun getUserCACertsPEM(): ByteArray = ByteArray(0)
+    /**
+     * PEM-encoded user-installed CAs from [AndroidCAStore] for libtailscale ExtraRootCAs.
+     * Empty when none are installed — system CAs still apply inside Go.
+     */
+    override fun getUserCACertsPEM(): ByteArray {
+        return try {
+            val ks = java.security.KeyStore.getInstance("AndroidCAStore")
+            ks.load(null)
+            val sb = StringBuilder()
+            val encoder = android.util.Base64.NO_WRAP
+            for (alias in ks.aliases()) {
+                if (!alias.startsWith("user:")) continue
+                val cert = ks.getCertificate(alias) ?: continue
+                val pem = android.util.Base64.encodeToString(cert.encoded, encoder)
+                sb.append("-----BEGIN CERTIFICATE-----\n")
+                pem.chunked(64).forEach { sb.append(it).append('\n') }
+                sb.append("-----END CERTIFICATE-----\n")
+            }
+            val bytes = sb.toString().toByteArray(Charsets.UTF_8)
+            if (bytes.isNotEmpty()) {
+                Log.i(tag, "getUserCACertsPEM — ${bytes.size} bytes of user CA PEM")
+            }
+            bytes
+        } catch (t: Throwable) {
+            Log.w(tag, "getUserCACertsPEM failed", t)
+            ByteArray(0)
+        }
+    }
 
     /**
-     * Backup path: encrypted pref read by patched libtailscale at LocalBackend.Start().
+     * Backup path: encrypted pref read by libtailscale / LocalAPI ControlURL flow.
      * Call before [libtailscale.Libtailscale.start].
      */
     fun writeHeadscaleControlUrlForEngineStart(controlUrl: String) {
