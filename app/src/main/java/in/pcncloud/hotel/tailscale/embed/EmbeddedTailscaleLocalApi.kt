@@ -130,12 +130,6 @@ class EmbeddedTailscaleLocalApi(
         }
     }
 
-    /** Required after POST /start for auth-key and interactive login (tailscale-android). */
-    fun startLoginInteractive(onResult: (Result<Unit>) -> Unit) {
-        Log.i(TAG, "POST /login-interactive")
-        post("login-interactive", null, onResult)
-    }
-
     fun editMaskedPrefs(
         masked: EmbeddedTailscaleModels.MaskedPrefs,
         onResult: (Result<String>) -> Unit,

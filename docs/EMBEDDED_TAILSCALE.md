@@ -15,7 +15,7 @@ No separate `com.tailscale.ipn` app is required.
 │  └────────┬────────┘   └──────────────────────────────┘ │
 │           │ libtailscale.aar (gomobile)                 │
 │           ▼                                             │
-│     Headscale https://824c8c16d1209f.lhr.life               │
+│     Headscale https://estimate-unscrew-antidote.ngrok-free.dev │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -132,7 +132,7 @@ localApi.start(
     Options(
         AuthKey = "…",
         UpdatePrefs = Prefs(
-            ControlURL = "https://824c8c16d1209f.lhr.life",
+            ControlURL = "https://estimate-unscrew-antidote.ngrok-free.dev",
             WantRunning = true,
         ),
     ),
@@ -184,7 +184,7 @@ First boot may still need **one** `VpnService.prepare()` consent unless Always-O
 | `Missing libtailscale.aar` | Run `scripts/build-libtailscale.sh` |
 | `gomobile bind` fails | Install NDK 23.x; check `ANDROID_SDK_ROOT` |
 | Stuck `NeedsLogin`, logcat `control: authRoutine: awaiting unpause` | Ensure VPN consent granted; TV has network before login. With HTTPS Headscale, use a valid TLS URL (no custom Go patches). |
-| `not-in-map-poll` / coordination server unreachable | Confirm TV can reach Headscale (`https://824c8c16d1209f.lhr.life`); rotate auth key if expired |
+| `not-in-map-poll` / coordination server unreachable | Confirm TV can reach Headscale (`https://estimate-unscrew-antidote.ngrok-free.dev`); rotate auth key if expired |
 | Headscale TLS errors on `https://` URL | Use plain `http://` for LAN Headscale, or install CA for self-signed HTTPS |
 | Live TV not on VPN | Confirm `com.ektv.pro` installed; check `addAllowedApplication` logs |
 | Auth key rejected | Rotate key in Headscale; update `EmbeddedTailscaleCredentials` |
