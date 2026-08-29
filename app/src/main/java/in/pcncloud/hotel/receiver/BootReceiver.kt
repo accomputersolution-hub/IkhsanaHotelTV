@@ -8,13 +8,11 @@ import android.content.Intent
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
-import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.PairingActivity
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
-import `in`.pcncloud.hotel.integration.TailscaleController
 
 /**
  * Auto-starts the hotel UI after device restart.
@@ -79,15 +77,6 @@ class BootReceiver : BroadcastReceiver() {
 
         // PendingIntent launch first (BAL-safe). Watchdog after UI attempt.
         launchUiAfterBoot(context, launchIntent, target.simpleName, action)
-
-        // Corporate: init libtailscale only — VPN consent must come from Splash/Main Activity.
-        if (BuildConfig.IS_CORPORATE) {
-            try {
-                TailscaleController.init(appContext)
-            } catch (e: Exception) {
-                Log.w(TAG, "Tailscale init after boot failed", e)
-            }
-        }
 
         if (hotelConfig.isPaired() && isKioskActive) {
             try {

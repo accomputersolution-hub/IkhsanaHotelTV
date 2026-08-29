@@ -8,11 +8,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
-import `in`.pcncloud.hotel.BuildConfig
 
 /**
  * Device-owner / device-admin component required for [DevicePolicyManager]
- * Lock Task APIs (`setLockTaskPackages`, `setLockTaskFeatures`) and Always-On VPN.
+ * Lock Task APIs (`setLockTaskPackages`, `setLockTaskFeatures`).
  *
  * Provision TVs once via ADB (factory-reset device, no accounts):
  * ```
@@ -26,10 +25,9 @@ import `in`.pcncloud.hotel.BuildConfig
 class MyDeviceAdminReceiver : DeviceAdminReceiver() {
 
     override fun onEnabled(context: Context, intent: Intent) {
-        Log.i(TAG, "Device admin enabled — applying Lock Task + Always-On VPN policy")
+        Log.i(TAG, "Device admin enabled — applying Lock Task policy")
         ensureSelfAllowlisted(context)
         applyStrictLockTaskFeatures(context)
-        ensureAlwaysOnEmbeddedVpn(context)
     }
 
     override fun onDisabled(context: Context, intent: Intent) {
@@ -118,57 +116,6 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
                 dpm.isDeviceOwnerApp(context.packageName)
             } catch (e: Exception) {
                 Log.w(TAG, "isDeviceOwner check failed", e)
-                false
-            }
-        }
-
-        /**
-         * Corporate Device Owner only: pin **this app** as Always-On VPN so
-         * [in.pcncloud.hotel.tailscale.embed.EmbeddedTailscaleVpnService] starts on boot.
-         */
-        fun ensureAlwaysOnEmbeddedVpn(context: Context): Boolean {
-            if (!BuildConfig.IS_CORPORATE) return false
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-                Log.w(TAG, "setAlwaysOnVpnPackage requires API 24+ — skip")
-                return false
-            }
-
-            return try {
-                val app = context.applicationContext
-                val dpm =
-                    app.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                val admin = getComponentName(app)
-
-                if (!dpm.isDeviceOwnerApp(app.packageName)) {
-                    Log.w(
-                        TAG,
-                        "Not Device Owner — cannot setAlwaysOnVpnPackage(self). " +
-                            "Provision with: adb shell dpm set-device-owner ${deviceOwnerAdbComponent(app)}",
-                    )
-                    return false
-                }
-
-                dpm.setAlwaysOnVpnPackage(admin, app.packageName, /* lockdownEnabled= */ false)
-
-                val active = try {
-                    dpm.getAlwaysOnVpnPackage(admin)
-                } catch (_: Throwable) {
-                    null
-                }
-                Log.i(
-                    TAG,
-                    "Always-On VPN set → package=${app.packageName} (embedded Tailscale) " +
-                        "lockdown=false activePackage=$active",
-                )
-                true
-            } catch (e: PackageManager.NameNotFoundException) {
-                Log.w(TAG, "setAlwaysOnVpnPackage failed — VpnService missing?", e)
-                false
-            } catch (e: SecurityException) {
-                Log.e(TAG, "setAlwaysOnVpnPackage SecurityException — not Device Owner?", e)
-                false
-            } catch (e: Exception) {
-                Log.e(TAG, "setAlwaysOnVpnPackage failed", e)
                 false
             }
         }
