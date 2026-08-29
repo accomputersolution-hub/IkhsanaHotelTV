@@ -187,18 +187,20 @@ object EmbeddedTailscaleEngine {
             localApi.startWithAuthKey(
                 controlUrl = EmbeddedTailscaleCredentials.CONTROL_URL,
                 authKey = EmbeddedTailscaleCredentials.AUTH_KEY,
-                wantRunning = true,
+                // WantRunning=false until Headscale register completes — keeps control
+                // traffic on the physical network (no TUN) during bootstrap.
+                wantRunning = false,
                 onResult = { startResult ->
                     startResult.onFailure { e ->
                         Log.e(TAG, "Headless auth-key start failed", e)
                         loginInFlight = false
                     }
                     startResult.onSuccess {
-                        wantRunningApplied = true
+                        wantRunningApplied = false
                         val state = EmbeddedTailscaleNotifier.state.value
                         Log.i(
                             TAG,
-                            "Auth-key login chain OK — state=$state " +
+                            "Auth-key login chain OK (WantRunning deferred) — state=$state " +
                                 "watching=${EmbeddedTailscaleNotifier.isWatching()}",
                         )
                         logLoginDiagnostics("auth-key chain")

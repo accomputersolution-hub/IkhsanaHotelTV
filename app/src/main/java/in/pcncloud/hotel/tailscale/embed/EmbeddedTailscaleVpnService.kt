@@ -2,7 +2,6 @@ package `in`.pcncloud.hotel.tailscale.embed
 
 import android.app.PendingIntent
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
@@ -15,7 +14,8 @@ import java.util.UUID
 import libtailscale.Libtailscale
 
 /**
- * In-process Tailscale TUN owner. Per-app split tunnel: only [EmbeddedTailscaleCredentials.SPLIT_TUNNEL_PACKAGE].
+ * In-process Tailscale TUN owner. Full-tunnel: all app traffic uses the VPN;
+ * Headscale control sockets still use [protect] so registration stays on physical net.
  */
 class EmbeddedTailscaleVpnService : VpnService(), libtailscale.IPNService {
 
@@ -142,7 +142,15 @@ class EmbeddedTailscaleVpnService : VpnService(), libtailscale.IPNService {
         EmbeddedTailscaleEngine.onVpnActiveChanged(active)
     }
 
-    override fun protect(fd: Int): Boolean = super.protect(fd)
+    override fun protect(fd: Int): Boolean {
+        val ok = super.protect(fd)
+        if (!ok) {
+            Log.w(TAG, "VpnService.protect($fd) FAILED — control socket may loop into TUN")
+        } else {
+            Log.d(TAG, "VpnService.protect($fd) OK — socket uses physical network")
+        }
+        return ok
+    }
 
     override fun newBuilder(): libtailscale.VPNServiceBuilder {
         val builder = Builder()
@@ -160,14 +168,12 @@ class EmbeddedTailscaleVpnService : VpnService(), libtailscale.IPNService {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             builder.setMetered(false)
         }
+        // Prefer physical networks for sockets that are protect()'d (control plane).
         builder.setUnderlyingNetworks(null)
 
-        try {
-            builder.addAllowedApplication(EmbeddedTailscaleCredentials.SPLIT_TUNNEL_PACKAGE)
-            Log.i(TAG, "Per-app VPN → only ${EmbeddedTailscaleCredentials.SPLIT_TUNNEL_PACKAGE}")
-        } catch (e: PackageManager.NameNotFoundException) {
-            Log.e(TAG, "Split-tunnel package missing: ${EmbeddedTailscaleCredentials.SPLIT_TUNNEL_PACKAGE}", e)
-        }
+        // Full tunnel: do NOT call addAllowedApplication — every app uses the TUN.
+        // Headscale/ngrok sockets must call protect(fd) (libtailscale → IPNService.protect).
+        Log.i(TAG, "Full-tunnel VPN — all packages routed via Tailscale TUN")
 
         return TailscaleVpnBuilderAdapter(builder)
     }
