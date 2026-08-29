@@ -32,12 +32,13 @@ object EmbeddedTailscaleEngine {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val prefsJson = Json { ignoreUnknownKeys = true }
     private var goBackendReady = false
-    private var loginInFlight = false
+    private val loginInFlight = AtomicBoolean(false)
     private var loginSequenceComplete = false
     private var wantRunningApplied = false
     private var vpnActive = false
     private var loginWatchdogGeneration = 0
     private val vpnServiceStarting = AtomicBoolean(false)
+    private val controlPlaneProbedOk = AtomicBoolean(false)
 
     private var storedAppContext: Context? = null
     private lateinit var appContext: EmbeddedTailscaleAppContext
@@ -136,7 +137,10 @@ object EmbeddedTailscaleEngine {
             -> Unit
         }
 
-        if (loginInFlight) return
+        if (loginInFlight.get()) {
+            Log.d(TAG, "ensureRunning skipped — AuthKey login already in flight")
+            return
+        }
 
         if (loginSequenceComplete) {
             kickEngineActive(app)
@@ -147,84 +151,101 @@ object EmbeddedTailscaleEngine {
     }
 
     private fun performHeadlessLogin(app: Context) {
-        if (loginInFlight) return
-        loginInFlight = true
+        if (!loginInFlight.compareAndSet(false, true)) {
+            Log.d(TAG, "performHeadlessLogin skipped — already in flight")
+            return
+        }
 
         // Match tailscale-android startForegroundForLogin — keeps network alive during auth.
         EmbeddedTailscaleKeepAliveService.start(app)
 
         scope.launch(Dispatchers.IO) {
-            val watching = EmbeddedTailscaleNotifier.awaitWatching(WATCH_READY_TIMEOUT_MS)
-            if (!watching) {
-                Log.e(
+            try {
+                val watching = EmbeddedTailscaleNotifier.awaitWatching(WATCH_READY_TIMEOUT_MS)
+                if (!watching) {
+                    Log.e(
+                        TAG,
+                        "IPN bus not watching after ${WATCH_READY_TIMEOUT_MS}ms — " +
+                            "LoginFinished events may be missed",
+                    )
+                }
+                val initialReady =
+                    EmbeddedTailscaleNotifier.awaitInitialState(IPN_INITIAL_STATE_TIMEOUT_MS)
+                val state = EmbeddedTailscaleNotifier.state.value
+                Log.i(
                     TAG,
-                    "IPN bus not watching after ${WATCH_READY_TIMEOUT_MS}ms — " +
-                        "LoginFinished events may be missed",
+                    "IPN bus ready state=$state initial=$initialReady " +
+                        "watching=${EmbeddedTailscaleNotifier.isWatching()}",
                 )
-            }
-            val initialReady = EmbeddedTailscaleNotifier.awaitInitialState(IPN_INITIAL_STATE_TIMEOUT_MS)
-            val state = EmbeddedTailscaleNotifier.state.value
-            Log.i(
-                TAG,
-                "IPN bus ready state=$state initial=$initialReady " +
-                    "watching=${EmbeddedTailscaleNotifier.isWatching()}",
-            )
-            if (!initialReady) {
-                Log.w(TAG, "IPN InitialState not received — deferring login 2s")
-                delay(2_000L)
-            }
+                if (!initialReady) {
+                    Log.w(TAG, "IPN InitialState not received — deferring login 2s")
+                    delay(2_000L)
+                }
 
-            probeHeadscaleReachability()
+                val probeOk = probeHeadscaleReachability()
+                if (probeOk) {
+                    Log.i(
+                        TAG,
+                        "GET /key HTTP 200 — proceeding immediately to AuthKey POST /start " +
+                            "(no probe loop)",
+                    )
+                } else {
+                    Log.w(
+                        TAG,
+                        "GET /key probe failed — still attempting AuthKey POST /start",
+                    )
+                }
 
-            Log.i(
-                TAG,
-                "Headless login — LoggedOut reset then PATCH+POST /start with AuthKey " +
-                    "${EmbeddedTailscaleCredentials.AUTH_KEY.take(8)}… " +
-                    "control=${EmbeddedTailscaleCredentials.CONTROL_URL}",
-            )
+                Log.i(
+                    TAG,
+                    "Headless login — PATCH prefs + POST /start with AuthKey " +
+                        "${EmbeddedTailscaleCredentials.AUTH_KEY.take(8)}… " +
+                        "control=${EmbeddedTailscaleCredentials.CONTROL_URL}",
+                )
 
-            localApi.startWithAuthKey(
-                controlUrl = EmbeddedTailscaleCredentials.CONTROL_URL,
-                authKey = EmbeddedTailscaleCredentials.AUTH_KEY,
-                wantRunning = true,
-                onResult = { startResult ->
-                    startResult.onFailure { e ->
-                        Log.e(TAG, "Headless auth-key start failed", e)
-                        loginInFlight = false
-                    }
-                    startResult.onSuccess {
-                        val state = EmbeddedTailscaleNotifier.state.value
-                        // UpdatePrefs already had WantRunning=true; mark applied so
-                        // VpnService requestVPN is not blocked waiting on PATCH callback.
-                        wantRunningApplied = true
-                        Log.i(
-                            TAG,
-                            "Auth-key login chain OK — state=$state " +
-                                "watching=${EmbeddedTailscaleNotifier.isWatching()}; " +
-                                "forcing WantRunning=true + engine kickoff",
-                        )
-                        logLoginDiagnostics("auth-key chain")
-                        verifyControlUrlPersisted("auth-key start")
-                        loginInFlight = false
-                        kickEngineActive(app)
-                        when (state) {
-                            EmbeddedTailscaleModels.State.Stopped,
-                            EmbeddedTailscaleModels.State.Running,
-                            EmbeddedTailscaleModels.State.Starting,
-                            -> onHeadlessLoginComplete(app)
-                            EmbeddedTailscaleModels.State.NeedsLogin -> {
-                                Log.i(
-                                    TAG,
-                                    "NeedsLogin after AuthKey start — WantRunning already set; " +
-                                        "watchdog ${LOGIN_WATCHDOG_MS}ms for Running transition",
-                                )
-                                scheduleLoginCompletionWatchdog(app)
-                            }
-                            else -> scheduleLoginCompletionWatchdog(app)
+                localApi.startWithAuthKey(
+                    controlUrl = EmbeddedTailscaleCredentials.CONTROL_URL,
+                    authKey = EmbeddedTailscaleCredentials.AUTH_KEY,
+                    wantRunning = true,
+                    onResult = { startResult ->
+                        startResult.onFailure { e ->
+                            Log.e(TAG, "Headless auth-key start failed", e)
+                            loginInFlight.set(false)
                         }
-                    }
-                },
-            )
+                        startResult.onSuccess {
+                            val newState = EmbeddedTailscaleNotifier.state.value
+                            wantRunningApplied = true
+                            Log.i(
+                                TAG,
+                                "Auth-key POST /start chain OK — state=$newState; " +
+                                    "forcing WantRunning=true + engine kickoff",
+                            )
+                            logLoginDiagnostics("auth-key chain")
+                            verifyControlUrlPersisted("auth-key start")
+                            loginInFlight.set(false)
+                            kickEngineActive(app)
+                            when (newState) {
+                                EmbeddedTailscaleModels.State.Stopped,
+                                EmbeddedTailscaleModels.State.Running,
+                                EmbeddedTailscaleModels.State.Starting,
+                                -> onHeadlessLoginComplete(app)
+                                EmbeddedTailscaleModels.State.NeedsLogin -> {
+                                    Log.i(
+                                        TAG,
+                                        "NeedsLogin after AuthKey start — WantRunning set; " +
+                                            "watchdog monitors (will NOT re-probe /key)",
+                                    )
+                                    scheduleLoginCompletionWatchdog(app)
+                                }
+                                else -> scheduleLoginCompletionWatchdog(app)
+                            }
+                        }
+                    },
+                )
+            } catch (t: Throwable) {
+                Log.e(TAG, "performHeadlessLogin crashed before/during AuthKey start", t)
+                loginInFlight.set(false)
+            }
         }
     }
 
@@ -240,21 +261,24 @@ object EmbeddedTailscaleEngine {
     }
 
     /**
-     * Best-effort TCP/TLS probe of the Headscale control URL from the Android
-     * network stack (OkHttp/HttpURLConnection path respects networkSecurityConfig).
-     * Does not block login on failure — logs whether ngrok is reachable at all.
+     * Best-effort TCP/TLS probe of the Headscale control URL.
+     * Returns true on HTTP 2xx. Called at most once successfully per process
+     * (subsequent attempts are skipped to avoid a probe loop).
      */
-    private fun probeHeadscaleReachability() {
+    private fun probeHeadscaleReachability(): Boolean {
+        if (controlPlaneProbedOk.get()) {
+            Log.d(TAG, "Headscale probe skipped — already succeeded this process")
+            return true
+        }
         val base = EmbeddedTailscaleCredentials.CONTROL_URL.trimEnd('/')
         val keyUrl = "$base/key?v=109"
         var conn: HttpURLConnection? = null
-        try {
+        return try {
             conn = (URL(keyUrl).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 10_000
                 readTimeout = 10_000
                 instanceFollowRedirects = true
                 requestMethod = "GET"
-                // Free ngrok interstitial bypass for non-browser clients.
                 setRequestProperty("ngrok-skip-browser-warning", "true")
                 setRequestProperty("User-Agent", "IkhsanaHotelTV-HeadscaleProbe/1.0")
             }
@@ -267,8 +291,12 @@ object EmbeddedTailscaleEngine {
                     .orEmpty()
             }.getOrDefault("")
             Log.i(TAG, "Headscale probe GET $keyUrl → HTTP $code body=${body.replace('\n', ' ')}")
+            val ok = code in 200..299
+            if (ok) controlPlaneProbedOk.set(true)
+            ok
         } catch (t: Throwable) {
             Log.e(TAG, "Headscale probe FAILED for $keyUrl — TV cannot reach control plane", t)
+            false
         } finally {
             conn?.disconnect()
         }
@@ -304,7 +332,8 @@ object EmbeddedTailscaleEngine {
                 EmbeddedTailscaleModels.State.NeedsLogin -> {
                     Log.w(
                         TAG,
-                        "Still NeedsLogin — re-assert WantRunning=true + VPN kickoff",
+                        "Still NeedsLogin — re-assert WantRunning only " +
+                            "(no GET /key probe, no full re-login)",
                     )
                     kickEngineActive(app)
                     scheduleLoginCompletionWatchdog(app, delayMs = LOGIN_WATCHDOG_MS * 2)
@@ -320,15 +349,17 @@ object EmbeddedTailscaleEngine {
             delay(delayMs)
             if (generation != loginWatchdogGeneration || loginSequenceComplete) return@launch
             val state = EmbeddedTailscaleNotifier.state.value
-            Log.w(TAG, "Login watchdog retry — state=$state")
+            Log.w(TAG, "Login watchdog retry — state=$state (WantRunning kick only)")
             if (state == EmbeddedTailscaleModels.State.NeedsLogin && !loginSequenceComplete) {
-                Log.w(
-                    TAG,
-                    "Login watchdog retry — full AuthKey headless login " +
-                        "(no /login-interactive)",
-                )
-                loginInFlight = false
-                performHeadlessLogin(app)
+                // Do NOT call performHeadlessLogin again — that re-runs GET /key and
+                // looks like a probe loop while never advancing registration.
+                kickEngineActive(app)
+            } else if (
+                state == EmbeddedTailscaleModels.State.Stopped ||
+                state == EmbeddedTailscaleModels.State.Running ||
+                state == EmbeddedTailscaleModels.State.Starting
+            ) {
+                onHeadlessLoginComplete(app)
             }
         }
     }
@@ -341,7 +372,7 @@ object EmbeddedTailscaleEngine {
             return
         }
         loginSequenceComplete = true
-        loginInFlight = false
+        loginInFlight.set(false)
         Log.i(
             TAG,
             "onHeadlessLoginComplete — state=${EmbeddedTailscaleNotifier.state.value}; " +

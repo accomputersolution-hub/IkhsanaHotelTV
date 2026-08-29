@@ -23,11 +23,10 @@ class EmbeddedTailscaleLocalApi(
 
     /**
      * Headless Headscale login with AuthKey (no browser):
-     * 1. PATCH /prefs LoggedOut=true
-     * 2. PATCH /prefs LoggedOut=false
-     * 3. PATCH /prefs ControlURL
-     * 4. POST /start with AuthKey + WantRunning=true
-     * 5. STOP — do not call /login-interactive (cancels headless AuthKey register)
+     * 1. PATCH /prefs ControlURL + LoggedOut=false
+     * 2. POST /start with AuthKey + WantRunning=true
+     * 3. PATCH WantRunning=true again
+     * 4. STOP — do not call /login-interactive; do not loop GET /key
      *
      * LocalAPI requires the Go backend to already be started ([Libtailscale.start]).
      */
@@ -37,15 +36,10 @@ class EmbeddedTailscaleLocalApi(
         wantRunning: Boolean,
         onResult: (Result<Unit>) -> Unit,
     ) {
-        forceLogoutReset { resetResult ->
-            resetResult.onFailure { e ->
-                Log.e(TAG, "LoggedOut reset failed — aborting auth-key login", e)
-                onResult(Result.failure(e))
-            }
-            resetResult.onSuccess {
-                patchControlUrlThenStart(controlUrl, authKey, wantRunning, onResult)
-            }
-        }
+        // Skip LoggedOut=true wipe — it restarts the control client into a GET /key
+        // retry loop and can delay/block POST /start indefinitely.
+        Log.i(TAG, "AuthKey path — ControlURL + POST /start (no LoggedOut=true wipe)")
+        patchControlUrlThenStart(controlUrl, authKey, wantRunning, onResult)
     }
 
     /**
