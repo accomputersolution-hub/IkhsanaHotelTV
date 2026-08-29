@@ -120,10 +120,24 @@ class EmbeddedTailscaleLocalApi(
                     startResult.onSuccess {
                         Log.i(
                             TAG,
-                            "POST /start OK — skipping /login-interactive " +
-                                "(AuthKey headless register; watchdog monitors state)",
+                            "POST /start OK — skipping /login-interactive; " +
+                                "forcing WantRunning=$wantRunning",
                         )
-                        onResult(Result.success(Unit))
+                        if (wantRunning) {
+                            editWantRunning(true) { wr ->
+                                wr.onFailure { e ->
+                                    Log.e(TAG, "POST-start WantRunning=true failed", e)
+                                    // Still continue — UpdatePrefs already requested WantRunning.
+                                    onResult(Result.success(Unit))
+                                }
+                                wr.onSuccess {
+                                    Log.i(TAG, "POST-start WantRunning=true OK — engine should run")
+                                    onResult(Result.success(Unit))
+                                }
+                            }
+                        } else {
+                            onResult(Result.success(Unit))
+                        }
                     }
                 }
             }

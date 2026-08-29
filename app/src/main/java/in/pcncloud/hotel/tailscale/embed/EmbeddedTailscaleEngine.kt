@@ -194,6 +194,9 @@ object EmbeddedTailscaleEngine {
                     }
                     startResult.onSuccess {
                         val state = EmbeddedTailscaleNotifier.state.value
+                        // UpdatePrefs already had WantRunning=true; mark applied so
+                        // VpnService requestVPN is not blocked waiting on PATCH callback.
+                        wantRunningApplied = true
                         Log.i(
                             TAG,
                             "Auth-key login chain OK — state=$state " +
@@ -203,8 +206,6 @@ object EmbeddedTailscaleEngine {
                         logLoginDiagnostics("auth-key chain")
                         verifyControlUrlPersisted("auth-key start")
                         loginInFlight = false
-                        // Permanently assert WantRunning and start the VPN service loop
-                        // without waiting for a later manual ensureRunning.
                         kickEngineActive(app)
                         when (state) {
                             EmbeddedTailscaleModels.State.Stopped,
@@ -351,8 +352,14 @@ object EmbeddedTailscaleEngine {
 
     /** Assert WantRunning=true and start VpnService so the engine loop runs without manual triggers. */
     private fun kickEngineActive(app: Context) {
+        wantRunningApplied = true
         applyWantRunning(force = true)
         startVpnService(app)
+        Log.i(
+            TAG,
+            "kickEngineActive — WantRunning forced, VpnService started " +
+                "(state=${EmbeddedTailscaleNotifier.state.value})",
+        )
     }
 
     fun isAbleToStartVpn(): Boolean = isReadyForRequestVpn()
