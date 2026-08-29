@@ -15,7 +15,7 @@ No separate `com.tailscale.ipn` app is required.
 │  └────────┬────────┘   └──────────────────────────────┘ │
 │           │ libtailscale.aar (gomobile)                 │
 │           ▼                                             │
-│     Headscale https://b6ba5e93d09be1.lhr.life              │
+│     Headscale https://824c8c16d1209f.lhr.life               │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -112,7 +112,7 @@ Sync Gradle after placing the AAR.
 | `EmbeddedTailscaleVpnService.kt` | `VpnService` + `libtailscale.IPNService`; **only `com.ektv.pro` allowed** |
 | `TailscaleVpnBuilderAdapters.kt` | Maps `VpnService.Builder` → `libtailscale.VPNServiceBuilder` |
 | `EmbeddedTailscaleEngine.kt` | `Libtailscale.start()`, Headscale login, starts VPN service |
-| `EmbeddedTailscaleLocalApi.kt` | `POST /localapi/v0/start` + `login-interactive` |
+| `EmbeddedTailscaleLocalApi.kt` | AuthKey: LoggedOut reset → ControlURL → `POST /start` (no `login-interactive`) |
 | `EmbeddedTailscaleNotifier.kt` | Watches IPN state from Go |
 | `EmbeddedTailscaleKeepAliveService.kt` | FGS keep-alive on boot |
 | `TailscaleController.kt` | Corporate entry point from `Application` / `BootReceiver` |
@@ -130,14 +130,14 @@ Sync Gradle after placing the AAR.
 // EmbeddedTailscaleEngine.ensureRunning()
 localApi.start(
     Options(
-        AuthKey = "8cc35884186f1ca5cddd595431a0c7994e1c38f66dbf4435",
+        AuthKey = "…",
         UpdatePrefs = Prefs(
-            ControlURL = "https://b6ba5e93d09be1.lhr.life",
+            ControlURL = "https://824c8c16d1209f.lhr.life",
             WantRunning = true,
         ),
     ),
 )
-localApi.startLoginInteractive()  // consumes auth key — no browser on TV
+// AuthKey headless: do NOT call login-interactive (cancels automatic register)
 ```
 
 ---
@@ -184,7 +184,7 @@ First boot may still need **one** `VpnService.prepare()` consent unless Always-O
 | `Missing libtailscale.aar` | Run `scripts/build-libtailscale.sh` |
 | `gomobile bind` fails | Install NDK 23.x; check `ANDROID_SDK_ROOT` |
 | Stuck `NeedsLogin`, logcat `control: authRoutine: awaiting unpause` | Ensure VPN consent granted; TV has network before login. With HTTPS Headscale, use a valid TLS URL (no custom Go patches). |
-| `not-in-map-poll` / coordination server unreachable | Confirm TV can reach Headscale (`https://b6ba5e93d09be1.lhr.life`); rotate auth key if expired |
+| `not-in-map-poll` / coordination server unreachable | Confirm TV can reach Headscale (`https://824c8c16d1209f.lhr.life`); rotate auth key if expired |
 | Headscale TLS errors on `https://` URL | Use plain `http://` for LAN Headscale, or install CA for self-signed HTTPS |
 | Live TV not on VPN | Confirm `com.ektv.pro` installed; check `addAllowedApplication` logs |
 | Auth key rejected | Rotate key in Headscale; update `EmbeddedTailscaleCredentials` |

@@ -208,9 +208,8 @@ object EmbeddedTailscaleEngine {
                             EmbeddedTailscaleModels.State.NeedsLogin -> {
                                 Log.i(
                                     TAG,
-                                    "Register in progress (NeedsLogin) — watchdog ${LOGIN_WATCHDOG_MS}ms; " +
-                                        "EmbeddedTsGo: expect control:RegisterReq / doLogin; " +
-                                        "if only authRoutine: awaiting unpause → rebuild libtailscale.aar",
+                                    "AuthKey register in progress (NeedsLogin) — " +
+                                        "watchdog ${LOGIN_WATCHDOG_MS}ms (no login-interactive)",
                                 )
                                 scheduleLoginCompletionWatchdog(app)
                             }
@@ -285,18 +284,11 @@ object EmbeddedTailscaleEngine {
             if (state == EmbeddedTailscaleModels.State.NeedsLogin && !loginSequenceComplete) {
                 Log.w(
                     TAG,
-                    "Login watchdog retry — POST /login-interactive only (skip POST /start Shutdown loop)",
+                    "Login watchdog retry — full AuthKey headless login " +
+                        "(no /login-interactive)",
                 )
-                localApi.startLoginInteractive { retryResult ->
-                    retryResult.onFailure { e ->
-                        Log.w(TAG, "login-interactive retry failed — full headless login", e)
-                        loginInFlight = false
-                        performHeadlessLogin(app)
-                    }
-                    retryResult.onSuccess {
-                        scheduleLoginCompletionWatchdog(app, delayMs = LOGIN_WATCHDOG_MS * 2)
-                    }
-                }
+                loginInFlight = false
+                performHeadlessLogin(app)
             }
         }
     }

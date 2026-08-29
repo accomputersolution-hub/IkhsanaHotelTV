@@ -22,11 +22,12 @@ class EmbeddedTailscaleLocalApi(
     }
 
     /**
-     * Headless Headscale login:
-     * 0. Force logout reset — wipe corrupted auth/pause cache (LoggedOut true then false)
-     * 1. PATCH /prefs — ControlURL + LoggedOut=false only (no WantRunning in PATCH)
-     * 2. POST /start — UpdatePrefs with ControlURL + WantRunning + AuthKey
-     * 3. POST /login-interactive — required for auth-key register
+     * Headless Headscale login with AuthKey (no browser):
+     * 1. PATCH /prefs LoggedOut=true
+     * 2. PATCH /prefs LoggedOut=false
+     * 3. PATCH /prefs ControlURL
+     * 4. POST /start with AuthKey + WantRunning
+     * 5. STOP — do not call /login-interactive (cancels headless AuthKey register)
      *
      * LocalAPI requires the Go backend to already be started ([Libtailscale.start]).
      */
@@ -117,8 +118,12 @@ class EmbeddedTailscaleLocalApi(
                         onResult(Result.failure(e))
                     }
                     startResult.onSuccess {
-                        Log.i(TAG, "POST /start OK — POST /login-interactive (auth-key register)")
-                        startLoginInteractive(onResult)
+                        Log.i(
+                            TAG,
+                            "POST /start OK — skipping /login-interactive " +
+                                "(AuthKey headless register; watchdog monitors state)",
+                        )
+                        onResult(Result.success(Unit))
                     }
                 }
             }
