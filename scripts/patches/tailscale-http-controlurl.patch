@@ -1,27 +1,126 @@
 diff --git a/control/controlclient/direct.go b/control/controlclient/direct.go
 --- a/control/controlclient/direct.go
 +++ b/control/controlclient/direct.go
-@@ -838,7 +838,10 @@ func (c *Direct) doLogin(ctx context.Context, opt LoginOpt) (regen bool, url str
+@@ -165,6 +165,9 @@
+ 	// being used in tests.
+ 	StartPaused bool
+ 
++	// AllowInsecure permits plaintext HTTP control planes and insecure TLS.
++	AllowInsecure bool
++
+ 	// Observer is called when there's a change in status to report
+ 	// from the control client.
+ 	// If nil, no status updates are reported.
+@@ -300,6 +303,9 @@
+ 
+ // NewDirect returns a new Direct client.
+ func NewDirect(opts Options) (*Direct, error) {
++	if strings.HasPrefix(opts.ServerURL, "http://") {
++		opts.AllowInsecure = true
++	}
+ 	if opts.ServerURL == "" {
+ 		return nil, errors.New("controlclient.New: no server URL specified")
+ 	}
+@@ -363,6 +369,12 @@
+ 			tr.TLSClientConfig.RootCAs = opts.ExtraRootCAs
+ 		}
+ 		tr.TLSClientConfig = tlsdial.Config(opts.HealthTracker, tr.TLSClientConfig)
++		if strings.HasPrefix(opts.ServerURL, "http://") || opts.AllowInsecure {
++			if tr.TLSClientConfig == nil {
++				tr.TLSClientConfig = &tls.Config{}
++			}
++			tr.TLSClientConfig.InsecureSkipVerify = true
++		}
+ 		var dialFunc netx.DialFunc
+ 		dialFunc, interceptedDial = makeScreenTimeDetectingDialFunc(opts.Dialer.SystemDial)
+ 		tr.DialContext = dnscache.Dialer(dialFunc, dnsCache)
+@@ -838,7 +850,9 @@
  		return regen, opt.URL, nil, fmt.Errorf("getNoiseClient: %w", err)
  	}
  	url := fmt.Sprintf("%s/machine/register", c.serverURL)
 -	url = strings.Replace(url, "http:", "https:", 1)
-+	// Plain-HTTP control planes (e.g. Headscale on LAN) must not be upgraded to HTTPS.
 +	if !strings.HasPrefix(c.serverURL, "http://") {
 +		url = strings.Replace(url, "http:", "https:", 1)
 +	}
  
  	bodyData, err := encode(request)
  	if err != nil {
-@@ -1192,7 +1195,10 @@ func (c *Direct) sendMapRequest(ctx context.Context, serverURL string, serverNoise
+@@ -1192,7 +1206,9 @@
  		return fmt.Errorf("getNoiseClient: %w", err)
  	}
  	url := fmt.Sprintf("%s/machine/map", serverURL)
 -	url = strings.Replace(url, "http:", "https:", 1)
-+	// Plain-HTTP control planes (e.g. Headscale on LAN) must not be upgraded to HTTPS.
 +	if !strings.HasPrefix(serverURL, "http://") {
 +		url = strings.Replace(url, "http:", "https:", 1)
 +	}
  
  	// Create a watchdog timer that breaks the connection if we don't receive a
  	// MapResponse from the network at least once every two minutes. The
+diff --git a/ipn/ipnlocal/local.go b/ipn/ipnlocal/local.go
+--- a/ipn/ipnlocal/local.go
++++ b/ipn/ipnlocal/local.go
+@@ -1130,11 +1130,12 @@
+ 		return true
+ 	}
+ 
+-	networkUp := b.interfaceState.AnyInterfaceUp()
+-	pauseForNetwork := !networkUp && !testenv.InTest() && !envknob.AssumeNetworkUp()
+-	if pauseForNetwork {
+-		return true
+-	}
++	// Plain-HTTP Headscale: do not pause control client before VPN interface is up.
++	// networkUp := b.interfaceState.AnyInterfaceUp()
++	// pauseForNetwork := !networkUp && !testenv.InTest() && !envknob.AssumeNetworkUp()
++	// if pauseForNetwork {
++	// 	return true
++	// }
+ 
+ 	return false
+ }
+@@ -3235,6 +3236,7 @@
+ 		Shutdown:             ccShutdown,
+ 		Bus:                  b.sys.Bus.Get(),
+ 		StartPaused:          b.shouldPauseControlClientLocked(prefs),
++		AllowInsecure:        strings.HasPrefix(serverURL, "http://"),
+ 	})
+ 	if err != nil {
+ 		return err
+diff --git a/control/ts2021/client.go b/control/ts2021/client.go
+--- a/control/ts2021/client.go
++++ b/control/ts2021/client.go
+@@ -15,7 +15,6 @@
+ 	"math"
+ 	"net"
+ 	"net/http"
+-	"net/netip"
+ 	"net/url"
+ 	"sync"
+ 	"time"
+@@ -131,25 +130,15 @@
+ 	}
+ 
+ 	httpPort, httpsPort := "80", "443"
+-	addr, _ := netip.ParseAddr(u.Hostname())
+-	isPrivateHost := addr.IsPrivate() || addr.IsLoopback() || u.Hostname() == "localhost"
+ 	if port := u.Port(); port != "" {
+-		// If there is an explicit port specified, entirely rely on the scheme,
+-		// unless it's http with a private host in which case we never try using HTTPS.
+ 		if u.Scheme == "https" {
+ 			httpPort = ""
+ 			httpsPort = port
+ 		} else if u.Scheme == "http" {
+ 			httpPort = port
+-			httpsPort = "443"
+-			if isPrivateHost {
+-				logf("setting empty HTTPS port with http scheme and private host %s", u.Hostname())
+-				httpsPort = ""
+-			}
++			httpsPort = ""
+ 		}
+-	} else if u.Scheme == "http" && isPrivateHost {
+-		// Whenever the scheme is http and the hostname is an IP address, do not set the HTTPS port,
+-		// as there cannot be a TLS certificate issued for an IP, unless it's a public IP.
++	} else if u.Scheme == "http" {
+ 		httpPort = "80"
+ 		httpsPort = ""
+ 	}

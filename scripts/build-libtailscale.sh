@@ -58,6 +58,8 @@ TAILSCALE_PATCH="$ROOT/scripts/patches/tailscale-http-controlurl.patch"
 PATCHED_TAILSCALE_DIR="$SRC_DIR/.patched-deps/tailscale.com"
 if [[ -f "$TAILSCALE_PATCH" ]]; then
   echo "Patching tailscale.com module for HTTP control URLs ..."
+  # Drop replace so go list resolves the real module cache path, not a stale tree.
+  go mod edit -dropreplace=tailscale.com 2>/dev/null || true
   go mod download tailscale.com
   MOD_DIR="$(go list -m -f '{{.Dir}}' tailscale.com)"
   MOD_VERSION="$(go list -m -f '{{.Version}}' tailscale.com)"
@@ -70,7 +72,7 @@ if [[ -f "$TAILSCALE_PATCH" ]]; then
     mkdir -p "$PATCHED_TAILSCALE_DIR"
     tar -C "$MOD_DIR" -cf - . | tar -C "$PATCHED_TAILSCALE_DIR" -xf -
     chmod -R u+w "$PATCHED_TAILSCALE_DIR"
-    patch -p1 --forward -d "$PATCHED_TAILSCALE_DIR" < "$TAILSCALE_PATCH" || {
+    patch -p1 --batch --forward -d "$PATCHED_TAILSCALE_DIR" < "$TAILSCALE_PATCH" || {
       if grep -q "Plain-HTTP control planes" "$PATCHED_TAILSCALE_DIR/control/controlclient/direct.go"; then
         echo "HTTP control URL patch already applied."
       else
