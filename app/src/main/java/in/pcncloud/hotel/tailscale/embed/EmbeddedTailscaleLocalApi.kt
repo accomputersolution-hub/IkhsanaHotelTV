@@ -22,12 +22,67 @@ class EmbeddedTailscaleLocalApi(
     }
 
     /**
-     * Headless Headscale login — matches [IntegrationLoginWorker.login]:
+     * Headless Headscale login:
+     * 0. Force logout reset — wipe corrupted auth/pause cache (LoggedOut true then false)
      * 1. PATCH /prefs — ControlURL + LoggedOut=false only (no WantRunning in PATCH)
      * 2. POST /start — UpdatePrefs with ControlURL + WantRunning + AuthKey
      * 3. POST /login-interactive — required for auth-key register
+     *
+     * LocalAPI requires the Go backend to already be started ([Libtailscale.start]).
      */
     fun startWithAuthKey(
+        controlUrl: String,
+        authKey: String,
+        wantRunning: Boolean,
+        onResult: (Result<Unit>) -> Unit,
+    ) {
+        forceLogoutReset { resetResult ->
+            resetResult.onFailure { e ->
+                Log.e(TAG, "LoggedOut reset failed — aborting auth-key login", e)
+                onResult(Result.failure(e))
+            }
+            resetResult.onSuccess {
+                patchControlUrlThenStart(controlUrl, authKey, wantRunning, onResult)
+            }
+        }
+    }
+
+    /**
+     * Wipe stale auth state before re-login:
+     * PATCH LoggedOut=true, then LoggedOut=false.
+     */
+    fun forceLogoutReset(onResult: (Result<Unit>) -> Unit) {
+        val logout = EmbeddedTailscaleModels.MaskedPrefs(
+            LoggedOut = true,
+            LoggedOutSet = true,
+        )
+        Log.i(TAG, "PATCH /prefs LoggedOut=true (wipe corrupted auth cache)")
+        editMaskedPrefs(logout) { logoutResult ->
+            logoutResult.onFailure { e ->
+                Log.e(TAG, "PATCH /prefs LoggedOut=true failed", e)
+                onResult(Result.failure(e))
+            }
+            logoutResult.onSuccess {
+                Log.i(TAG, "PATCH /prefs LoggedOut=true OK — clearing LoggedOut for re-auth")
+                val loginReady = EmbeddedTailscaleModels.MaskedPrefs(
+                    LoggedOut = false,
+                    LoggedOutSet = true,
+                )
+                editMaskedPrefs(loginReady) { clearResult ->
+                    clearResult.onFailure { e ->
+                        Log.e(TAG, "PATCH /prefs LoggedOut=false failed", e)
+                        onResult(Result.failure(e))
+                    }
+                    clearResult.onSuccess {
+                        Log.i(TAG, "PATCH /prefs LoggedOut=false OK — auth cache reset complete")
+                        onResult(Result.success(Unit))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun patchControlUrlThenStart(
         controlUrl: String,
         authKey: String,
         wantRunning: Boolean,

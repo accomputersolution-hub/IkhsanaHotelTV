@@ -175,7 +175,7 @@ object EmbeddedTailscaleEngine {
 
             Log.i(
                 TAG,
-                "Headless login — PATCH+POST /start with AuthKey " +
+                "Headless login — LoggedOut reset then PATCH+POST /start with AuthKey " +
                     "${EmbeddedTailscaleCredentials.AUTH_KEY.take(8)}… " +
                     "control=${EmbeddedTailscaleCredentials.CONTROL_URL}",
             )
@@ -263,10 +263,12 @@ object EmbeddedTailscaleEngine {
                 EmbeddedTailscaleModels.State.NeedsLogin -> {
                     Log.w(
                         TAG,
-                        "Still NeedsLogin — applying WantRunning=true (callback may have been missed)",
+                        "Still NeedsLogin — force LoggedOut reset + full headless re-login",
                     )
-                    applyWantRunningIfNeeded()
-                    scheduleLoginCompletionWatchdog(app, delayMs = LOGIN_WATCHDOG_MS * 2)
+                    loginInFlight = false
+                    loginSequenceComplete = false
+                    wantRunningApplied = false
+                    performHeadlessLogin(app)
                 }
                 else -> scheduleLoginCompletionWatchdog(app, delayMs = LOGIN_WATCHDOG_MS)
             }
