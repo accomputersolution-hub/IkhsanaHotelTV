@@ -4,13 +4,19 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import `in`.pcncloud.hotel.BuildConfig
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
- * App-facing WireGuard entry point. Corporate builds auto-connect when
- * [WireGuardCredentials] are filled in; hotel builds no-op.
+ * App-facing WireGuard entry point.
+ *
+ * Corporate flow: generate local keypair → POST add-peer → connect tunnel.
  */
 object WireGuardController {
     private const val TAG = "WireGuardController"
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun init(context: Context) {
         if (!BuildConfig.IS_CORPORATE) return
@@ -46,10 +52,20 @@ object WireGuardController {
         ensureRunning(context)
     }
 
+    /**
+     * After VPN consent: generate/load keys, register peer, bring tunnel UP.
+     */
     fun ensureRunning(context: Context) {
         if (!BuildConfig.IS_CORPORATE) return
         try {
-            WireGuardEngine.ensureRunning(context)
+            WireGuardEngine.init(context)
+            if (!WireGuardEngine.isVpnPrepared(context)) {
+                Log.d(TAG, "ensureRunning — VPN consent required")
+                return
+            }
+            scope.launch {
+                WireGuardProvisioner.provisionAndConnect(context.applicationContext)
+            }
         } catch (t: Throwable) {
             Log.e(TAG, "ensureRunning failed", t)
         }

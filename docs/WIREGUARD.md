@@ -1,61 +1,40 @@
-# Embedded WireGuard (GoBackend)
+# Embedded WireGuard (GoBackend) + peer registration
 
-Corporate Android TV builds can establish a native WireGuard tunnel via the
-official [`com.wireguard.android:tunnel`](https://github.com/WireGuard/wireguard-android)
-library (userspace **libwg-go**).
+Corporate Android TV builds establish a native WireGuard tunnel via
+[`com.wireguard.android:tunnel`](https://github.com/WireGuard/wireguard-android)
+(**libwg-go** / `GoBackend`), after registering the device with the Node peer API.
 
-## Architecture
+## Flow
+
+1. **Keygen** — `KeyPair()` (official crypto; wraps `Key.generatePrivateKey()`)
+2. **Client IP** — fixed `10.0.0.3/32` (`WireGuardCredentials.CLIENT_ADDRESS`)
+3. **POST** `http://103.29.99.61:3000/api/add-peer`
+   ```json
+   { "publicKey": "<device public key>", "clientIp": "10.0.0.3" }
+   ```
+4. **On HTTP 200** — `WireGuardController.connect(...)` with:
+   - `address = 10.0.0.3/32`
+   - locally generated private key
+   - server public key (`WireGuardCredentials.SERVER_PUBLIC_KEY` or API `serverPublicKey`)
+   - `endpoint = 103.29.99.61:51820`
+   - `allowedIps = 0.0.0.0/0`
 
 | Component | Role |
 |-----------|------|
-| `GoBackend$VpnService` | Official `VpnService` that owns the TUN (`Builder.establish`) |
-| `WireGuardEngine` | Builds `Config` and calls `GoBackend.setState(UP/DOWN)` |
-| `WireGuardController` | Corporate-gated facade used by Splash / Main |
-| `WireGuardKeepAliveService` | Foreground keep-alive (not the TUN owner) |
-| `WireGuardCredentials` | Baked PrivateKey / Address / Endpoint / AllowedIPs |
+| `GoBackend$VpnService` | Official TUN owner |
+| `WireGuardKeyStore` | Persist local keypair + registration flag |
+| `WireGuardPeerApi` | HTTP add-peer |
+| `WireGuardProvisioner` | Orchestrates keygen → API → connect |
+| `WireGuardEngine` | `GoBackend.setState(UP/DOWN)` |
 
-```
-Activity (VPN consent)
-        │
-        ▼
-WireGuardController.ensureRunning()
-        │
-        ▼
-WireGuardEngine ──▶ GoBackend.setState(UP, Config)
-                        │
-                        ▼
-              GoBackend$VpnService (TUN + libwg-go)
-```
+## Server public key
 
-## Configure
+Paste the full server public key (starts with `eGIDnt4o…`) into:
 
-Edit `WireGuardCredentials.kt`:
+`WireGuardCredentials.SERVER_PUBLIC_KEY`
 
-```kotlin
-const val ADDRESS = "10.0.0.2/32"
-const val PRIVATE_KEY = "<interface private key base64>"
-const val PEER_PUBLIC_KEY = "<server public key base64>"
-const val ENDPOINT = "vpn.example.com:51820"
-const val ALLOWED_IPS = "0.0.0.0/0"
-```
+Or have add-peer return `{ "serverPublicKey": "…" }` and it will be stored automatically.
 
-Or call at runtime:
+## Cleartext
 
-```kotlin
-WireGuardController.connect(
-    context,
-    WireGuardTunnelConfig(
-        privateKey = "…",
-        address = "10.0.0.2/32",
-        peerPublicKey = "…",
-        endpoint = "host:51820",
-        allowedIps = "0.0.0.0/0",
-    ),
-)
-```
-
-## VPN consent
-
-`VpnService.prepare()` must succeed from a visible Activity (Splash / Main).
-Device Owner can pin Always-On VPN to this package so the system relaunches
-`GoBackend$VpnService` after reboot (`GoBackend.setAlwaysOnCallback`).
+`network_security_config.xml` allows HTTP cleartext only to `103.29.99.61` for the peer API.

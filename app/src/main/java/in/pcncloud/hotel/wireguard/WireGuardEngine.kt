@@ -44,12 +44,11 @@ object WireGuardEngine {
         appContext = app
         backend = GoBackend(app)
         GoBackend.setAlwaysOnCallback {
-            Log.i(TAG, "Always-On VPN triggered — re-asserting tunnel")
-            val cfg = lastConfig ?: WireGuardCredentials.toTunnelConfig().takeIf {
-                WireGuardCredentials.isConfigured()
-            }
-            if (cfg != null) {
-                connect(cfg)
+            Log.i(TAG, "Always-On VPN triggered — re-asserting tunnel via provisioner")
+            appContext?.let { ctx ->
+                scope.launch {
+                    WireGuardProvisioner.provisionAndConnect(ctx)
+                }
             }
         }
         Log.i(TAG, "GoBackend ready version=${runCatching { backend?.version }.getOrNull()}")
@@ -122,14 +121,18 @@ object WireGuardEngine {
 
     fun ensureRunning(context: Context) {
         init(context)
-        if (!WireGuardCredentials.isConfigured()) {
-            Log.d(TAG, "ensureRunning — credentials not configured, skip")
-            return
-        }
         if (!isVpnPrepared(context)) {
             Log.d(TAG, "ensureRunning — VPN consent required")
             return
         }
-        connect(WireGuardCredentials.toTunnelConfig())
+        // Prefer last successful config; otherwise full provision (keygen + add-peer).
+        val cached = lastConfig
+        if (cached != null && cached.isComplete()) {
+            connect(cached, context)
+            return
+        }
+        scope.launch {
+            WireGuardProvisioner.provisionAndConnect(context)
+        }
     }
 }

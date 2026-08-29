@@ -1,50 +1,46 @@
 package `in`.pcncloud.hotel.wireguard
 
 /**
- * Baked WireGuard peer settings for the corporate kiosk build.
+ * Fixed WireGuard control-plane + tunnel endpoints for corporate TVs.
  *
- * Fill in real values before deploying. Until [isConfigured] is true the
- * engine will not attempt to bring the tunnel up.
+ * Client identity (private/public key) is generated locally and persisted —
+ * see [WireGuardKeyStore] / [WireGuardProvisioner].
  */
 object WireGuardCredentials {
-    /** Interface Address — e.g. `10.66.66.2/32`. */
-    const val ADDRESS = ""
+    /** HTTP API that registers this device's public key as a WireGuard peer. */
+    const val ADD_PEER_URL = "http://103.29.99.61:3000/api/add-peer"
 
-    /** Interface PrivateKey (base64). */
-    const val PRIVATE_KEY = ""
+    /** Tunnel interface address assigned to this Android client. */
+    const val CLIENT_ADDRESS = "10.0.0.3/32"
 
-    /** Peer PublicKey (base64). */
-    const val PEER_PUBLIC_KEY = ""
+    /** IP sent to add-peer (no CIDR suffix). */
+    const val CLIENT_IP = "10.0.0.3"
 
-    /** Peer Endpoint — e.g. `vpn.example.com:51820`. */
-    const val ENDPOINT = ""
+    /**
+     * Server WireGuard public key (base64, 44 chars).
+     * Ops hint: begins with `eGIDnt4o…` — paste the **full** key here.
+     * If add-peer returns `serverPublicKey`, that value is preferred and persisted.
+     */
+    const val SERVER_PUBLIC_KEY = ""
 
-    /** Peer AllowedIPs — e.g. `0.0.0.0/0, ::/0` for full tunnel. */
+    /** UDP endpoint host:port. */
+    const val ENDPOINT = "103.29.99.61:51820"
+
     const val ALLOWED_IPS = "0.0.0.0/0"
-
-    /** Optional DNS — e.g. `1.1.1.1`. */
     const val DNS = "1.1.1.1"
-
-    /** Optional PreSharedKey (base64). */
-    const val PRE_SHARED_KEY = ""
-
     const val PERSISTENT_KEEPALIVE = 25
 
-    fun isConfigured(): Boolean =
-        PRIVATE_KEY.isNotBlank() &&
-            ADDRESS.isNotBlank() &&
-            PEER_PUBLIC_KEY.isNotBlank() &&
-            ENDPOINT.isNotBlank()
+    /** Legacy baked-key path — unused once local keygen + add-peer is active. */
+    fun isConfigured(): Boolean = false
 
     fun toTunnelConfig(): WireGuardTunnelConfig =
         WireGuardTunnelConfig(
-            privateKey = PRIVATE_KEY.trim(),
-            address = ADDRESS.trim(),
-            peerPublicKey = PEER_PUBLIC_KEY.trim(),
-            endpoint = ENDPOINT.trim(),
-            allowedIps = ALLOWED_IPS.trim().ifBlank { "0.0.0.0/0" },
-            dns = DNS.trim().takeIf { it.isNotEmpty() },
-            preSharedKey = PRE_SHARED_KEY.trim().takeIf { it.isNotEmpty() },
+            privateKey = "",
+            address = CLIENT_ADDRESS,
+            peerPublicKey = SERVER_PUBLIC_KEY,
+            endpoint = ENDPOINT,
+            allowedIps = ALLOWED_IPS,
+            dns = DNS,
             persistentKeepalive = PERSISTENT_KEEPALIVE,
         )
 }
