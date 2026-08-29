@@ -132,11 +132,25 @@ app.get("/health", (_req, res) => {
 
 app.post("/api/add-peer", (req, res) => {
   try {
-    const publicKey =
-      typeof req.body?.publicKey === "string" ? req.body.publicKey.trim() : "";
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+
+    // Android no longer sends clientIp — server auto-assigns from wg0.conf.
+    // OLD (broken) check that caused 400 {"error":"PublicKey and clientIp are required"}:
+    //   if (!publicKey || !clientIp) return res.status(400).json({ error: "..." });
+    // Do NOT require / validate clientIp (or ClientIp) from the request body.
+    const publicKey = String(
+      body.publicKey ?? body.PublicKey ?? body.public_key ?? "",
+    ).trim();
+
+    // Intentionally ignore any client-supplied IP to prevent collisions:
+    // body.clientIp / body.ClientIp / body.allowedIps are discarded.
+    void body.clientIp;
+    void body.ClientIp;
+
     if (!publicKey || publicKey.length < 40) {
       return res.status(400).json({
         success: false,
+        error: "publicKey is required",
         message: "publicKey is required (WireGuard base64 public key)",
       });
     }
@@ -144,6 +158,7 @@ app.post("/api/add-peer", (req, res) => {
     if (!fs.existsSync(WG_CONF)) {
       return res.status(500).json({
         success: false,
+        error: `WireGuard conf not found: ${WG_CONF}`,
         message: `WireGuard conf not found: ${WG_CONF}`,
       });
     }
@@ -152,6 +167,7 @@ app.post("/api/add-peer", (req, res) => {
     if (app.locals.addingPeer) {
       return res.status(409).json({
         success: false,
+        error: "Another peer registration is in progress — retry",
         message: "Another peer registration is in progress — retry",
       });
     }
@@ -174,7 +190,7 @@ app.post("/api/add-peer", (req, res) => {
         });
       }
 
-      // Ignore client-supplied clientIp to prevent conflicts; always allocate.
+      // Auto-generate next available 10.0.0.x from the highest IP in wg0.conf.
       const clientIp = nextClientIp(conf);
       appendPeerToConf(publicKey, clientIp);
       applyPeerLive(publicKey, clientIp);
@@ -199,6 +215,7 @@ app.post("/api/add-peer", (req, res) => {
     console.error("add-peer error:", err);
     return res.status(500).json({
       success: false,
+      error: err.message || "Internal error",
       message: err.message || "Internal error",
     });
   }

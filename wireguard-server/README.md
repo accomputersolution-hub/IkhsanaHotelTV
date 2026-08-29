@@ -27,13 +27,22 @@ Client-supplied `clientIp` in the request body is **ignored** so devices cannot 
 
 Re-registering the same `publicKey` returns the existing AllowedIP (idempotent).
 
-## Run on the VPN server
+## Important: redeploy on the VPN host
 
-```bash
-cd wireguard-server
-npm install
-sudo WG_CONF=/etc/wireguard/wg0.conf PORT=3000 node server.js
+If Android still gets:
+```json
+{"error":"PublicKey and clientIp are required"}
 ```
+the **old** `server.js` is still running on `103.29.99.61:3000`. Copy this
+folder’s `server.js` onto the VPS and restart Node (systemd / pm2 / screen).
+
+Quick check after deploy:
+```bash
+curl -sS -X POST http://127.0.0.1:3000/api/add-peer \
+  -H 'Content-Type: application/json' \
+  -d '{"publicKey":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}'
+```
+Must return `200` with a `clientIp` — never 400 asking for `clientIp`.
 
 Optional env:
 
