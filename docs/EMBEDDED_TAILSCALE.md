@@ -183,7 +183,7 @@ First boot may still need **one** `VpnService.prepare()` consent unless Always-O
 |-------|-----|
 | `Missing libtailscale.aar` | Run `scripts/build-libtailscale.sh` |
 | `gomobile bind` fails | Install NDK 23.x; check `ANDROID_SDK_ROOT` |
-| Stuck `NeedsLogin`, logcat `control: authRoutine: awaiting unpause` | Rebuild AAR (`libtailscale-headscale-initial-controlurl.patch` sets `TS_ASSUME_NETWORK_UP_FOR_TEST` for embedded Headscale). `client.Login()` does not unpause a paused control client. |
+| Stuck `NeedsLogin`, logcat `control: authRoutine: awaiting unpause` | Ensure VPN consent granted; TV has network before login. With HTTPS Headscale, use a valid TLS URL (no custom Go patches). |
 | `not-in-map-poll` / coordination server unreachable | Confirm TV can reach Headscale (`https://b6ba5e93d09be1.lhr.life`); rotate auth key if expired |
 | Headscale TLS errors on `https://` URL | Use plain `http://` for LAN Headscale, or install CA for self-signed HTTPS |
 | Live TV not on VPN | Confirm `com.ektv.pro` installed; check `addAllowedApplication` logs |

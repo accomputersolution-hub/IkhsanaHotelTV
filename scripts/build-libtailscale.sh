@@ -38,59 +38,18 @@ fi
 
 cd "$SRC_DIR"
 
-PATCH_FILE="$ROOT/scripts/patches/libtailscale-headscale-initial-controlurl.patch"
-if [[ -f "$PATCH_FILE" ]]; then
-  echo "Applying libtailscale patch: $PATCH_FILE"
-  # Reset patched files so re-runs apply cleanly (partial applies break gomobile bind).
-  git -C "$SRC_DIR" checkout HEAD -- libtailscale/interfaces.go libtailscale/backend.go 2>/dev/null || true
-  rm -f "$SRC_DIR/libtailscale/interfaces.go.rej" "$SRC_DIR/libtailscale/backend.go.rej"
-  patch -p1 --forward -d "$SRC_DIR" < "$PATCH_FILE" || {
-    if grep -q "headscaleAssumeNetworkUpForEmbeddedControl" "$SRC_DIR/libtailscale/backend.go"; then
-      echo "Patch already applied."
-    else
-      echo "ERROR: failed to apply $PATCH_FILE" >&2
-      exit 1
-    fi
-  }
-fi
-
-TAILSCALE_PATCH="$ROOT/scripts/patches/tailscale-http-controlurl.patch"
-PATCHED_TAILSCALE_DIR="$SRC_DIR/.patched-deps/tailscale.com"
-if [[ -f "$TAILSCALE_PATCH" ]]; then
-  echo "Patching tailscale.com module for HTTP control URLs ..."
-  # Drop replace so go list resolves the real module cache path, not a stale tree.
-  go mod edit -dropreplace=tailscale.com 2>/dev/null || true
-  go mod download tailscale.com
-  MOD_DIR="$(go list -m -f '{{.Dir}}' tailscale.com)"
-  MOD_VERSION="$(go list -m -f '{{.Version}}' tailscale.com)"
-  STAMP_FILE="$PATCHED_TAILSCALE_DIR/.patch-stamp"
-  if [[ -f "$STAMP_FILE" ]] && [[ "$(cat "$STAMP_FILE")" == "$MOD_VERSION" ]] \
-      && grep -q "Plain-HTTP control planes" "$PATCHED_TAILSCALE_DIR/control/controlclient/direct.go" 2>/dev/null; then
-    echo "tailscale.com $MOD_VERSION already patched at $PATCHED_TAILSCALE_DIR"
-  else
-    rm -rf "$PATCHED_TAILSCALE_DIR"
-    mkdir -p "$PATCHED_TAILSCALE_DIR"
-    tar -C "$MOD_DIR" -cf - . | tar -C "$PATCHED_TAILSCALE_DIR" -xf -
-    chmod -R u+w "$PATCHED_TAILSCALE_DIR"
-    patch -p1 --batch --forward -d "$PATCHED_TAILSCALE_DIR" < "$TAILSCALE_PATCH" || {
-      if grep -q "Plain-HTTP control planes" "$PATCHED_TAILSCALE_DIR/control/controlclient/direct.go"; then
-        echo "HTTP control URL patch already applied."
-      else
-        echo "ERROR: failed to apply $TAILSCALE_PATCH" >&2
-        exit 1
-      fi
-    }
-    echo "$MOD_VERSION" > "$STAMP_FILE"
-  fi
-  go mod edit -dropreplace=tailscale.com 2>/dev/null || true
-  go mod edit -replace="tailscale.com=$PATCHED_TAILSCALE_DIR"
-  echo "go.mod replace: tailscale.com => $PATCHED_TAILSCALE_DIR"
-fi
+# Factory build: no patches to libtailscale or tailscale.com (vanilla upstream).
+echo "Resetting tailscale-android to clean upstream state ..."
+git checkout HEAD -- libtailscale/ go.mod 2>/dev/null || true
+rm -rf .patched-deps
+go mod edit -dropreplace=tailscale.com 2>/dev/null || true
+go mod download tailscale.com
 
 echo "Installing Android SDK packages (platform, NDK, build-tools) ..."
 make androidsdk
 
 echo "Building libtailscale.aar (gomobile bind — may take several minutes) ..."
+make clean 2>/dev/null || true
 make libtailscale
 
 mkdir -p "$(dirname "$OUT_AAR")"
