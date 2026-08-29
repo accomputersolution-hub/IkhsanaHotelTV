@@ -15,10 +15,13 @@ Node service for `POST /api/add-peer` on the VPN host.
   "success": true,
   "clientIp": "10.0.0.4",
   "address": "10.0.0.4/32",
+  "dns": "8.8.8.8, 8.8.4.4",
   "serverPublicKey": "eGIDnt4o…",
   "message": "Assigned 10.0.0.4/32"
 }
 ```
+
+`dns` is required by Android TV full-tunnel clients so websites resolve while the tunnel is UP.
 
 Client-supplied `clientIp` in the request body is **ignored** so devices cannot collide.
 
@@ -39,6 +42,7 @@ Optional env:
 | `WG_CONF` | `/etc/wireguard/wg0.conf` | Config path |
 | `WG_INTERFACE` | `wg0` | Interface for `wg set` |
 | `WG_SERVER_PUBLIC_KEY` | from `wg show` | Override returned public key |
+| `WG_CLIENT_DNS` | `8.8.8.8, 8.8.4.4` | DNS returned to Android clients |
 | `WG_MIN_CLIENT_HOST` | `2` | First client octet (`.1` = server) |
 | `PORT` | `3000` | Listen port |
 

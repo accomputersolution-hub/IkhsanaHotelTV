@@ -45,6 +45,7 @@ class WireGuardKeyStore(context: Context) {
     fun markPeerRegistered(
         clientIp: String,
         address: String? = null,
+        dns: String? = null,
         serverPublicKey: String? = null,
     ) {
         val bare = clientIp.trim().replace(Regex("/\\d+$"), "")
@@ -53,6 +54,9 @@ class WireGuardKeyStore(context: Context) {
             .putBoolean(KEY_PEER_REGISTERED, true)
             .putString(KEY_CLIENT_IP, bare)
             .putString(KEY_ADDRESS, cidr)
+        if (!dns.isNullOrBlank()) {
+            editor.putString(KEY_DNS, dns.trim())
+        }
         if (!serverPublicKey.isNullOrBlank()) {
             editor.putString(KEY_SERVER_PUBLIC, serverPublicKey.trim())
         }
@@ -65,6 +69,10 @@ class WireGuardKeyStore(context: Context) {
 
     fun assignedClientIp(): String? =
         prefs.getString(KEY_CLIENT_IP, null)?.takeIf { it.isNotBlank() }
+
+    fun assignedDns(): String =
+        prefs.getString(KEY_DNS, null)?.takeIf { it.isNotBlank() }
+            ?: WireGuardCredentials.DNS
 
     fun serverPublicKeyOrDefault(): String =
         prefs.getString(KEY_SERVER_PUBLIC, null)
@@ -86,5 +94,6 @@ class WireGuardKeyStore(context: Context) {
         private const val KEY_SERVER_PUBLIC = "server_public_key_b64"
         private const val KEY_CLIENT_IP = "client_ip"
         private const val KEY_ADDRESS = "client_address"
+        private const val KEY_DNS = "client_dns"
     }
 }

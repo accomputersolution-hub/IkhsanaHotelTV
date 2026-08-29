@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
  * ```
  *
  * Server allocates the next free `10.0.0.x` from `wg0.conf` and returns
- * `{ clientIp, address, serverPublicKey }`.
+ * `{ clientIp, address, dns, serverPublicKey }`.
  */
 class WireGuardPeerApi(
     private val client: OkHttpClient = defaultClient(),
@@ -27,6 +27,7 @@ class WireGuardPeerApi(
         val httpCode: Int,
         val clientIp: String? = null,
         val address: String? = null,
+        val dns: String? = null,
         val serverPublicKey: String? = null,
         val message: String? = null,
     )
@@ -63,11 +64,16 @@ class WireGuardPeerApi(
                             s.isNotBlank() && s != publicKey
                         }
                     }
+                val dns = listOf("dns", "DNS", "dnsServers")
+                    .firstNotNullOfOrNull { key ->
+                        parsed?.optString(key)?.trim()?.takeIf { it.isNotBlank() }
+                    }
                 AddPeerResult(
                     success = response.isSuccessful && !clientIp.isNullOrBlank(),
                     httpCode = response.code,
                     clientIp = clientIp,
                     address = address,
+                    dns = dns,
                     serverPublicKey = serverKey,
                     message = parsed?.optString("message")?.takeIf { it.isNotBlank() }
                         ?: raw.takeIf { it.isNotBlank() },

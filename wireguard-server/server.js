@@ -21,6 +21,8 @@ const IP_PREFIX = "10.0.0.";
 /** First usable client host octet (.1 is typically the server Address). */
 const MIN_CLIENT_HOST = Number(process.env.WG_MIN_CLIENT_HOST || 2);
 const MAX_CLIENT_HOST = Number(process.env.WG_MAX_CLIENT_HOST || 254);
+/** DNS pushed to Android clients for full-tunnel name resolution. */
+const CLIENT_DNS = process.env.WG_CLIENT_DNS || "8.8.8.8, 8.8.4.4";
 
 const app = express();
 app.use(express.json({ limit: "32kb" }));
@@ -166,6 +168,7 @@ app.post("/api/add-peer", (req, res) => {
           success: true,
           clientIp: existingIp,
           address: `${existingIp}/32`,
+          dns: CLIENT_DNS,
           serverPublicKey,
           message: "Peer already present — reusing assigned IP",
         });
@@ -185,6 +188,7 @@ app.post("/api/add-peer", (req, res) => {
         success: true,
         clientIp,
         address: `${clientIp}/32`,
+        dns: CLIENT_DNS,
         serverPublicKey,
         message: `Assigned ${clientIp}/32`,
       });

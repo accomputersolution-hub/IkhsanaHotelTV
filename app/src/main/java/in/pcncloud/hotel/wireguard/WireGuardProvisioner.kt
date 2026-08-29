@@ -52,11 +52,13 @@ object WireGuardProvisioner {
                 store.markPeerRegistered(
                     clientIp = result.clientIp,
                     address = result.address,
+                    dns = result.dns ?: WireGuardCredentials.DNS,
                     serverPublicKey = result.serverPublicKey,
                 )
                 Log.i(
                     TAG,
-                    "add-peer OK — assigned ${result.address ?: result.clientIp + "/32"}",
+                    "add-peer OK — assigned ${result.address ?: result.clientIp + "/32"} " +
+                        "dns=${result.dns ?: WireGuardCredentials.DNS}",
                 )
             } else {
                 Log.i(TAG, "Peer already registered — reconnecting tunnel")
@@ -78,15 +80,17 @@ object WireGuardProvisioner {
                 return false
             }
 
+            val dns = store.assignedDns()
             val config = WireGuardTunnelConfig(
                 address = address,
                 privateKey = keys.privateKeyBase64,
                 peerPublicKey = serverPub,
                 endpoint = WireGuardCredentials.ENDPOINT,
                 allowedIps = WireGuardCredentials.ALLOWED_IPS,
-                dns = WireGuardCredentials.DNS,
+                dns = dns,
                 persistentKeepalive = WireGuardCredentials.PERSISTENT_KEEPALIVE,
             )
+            Log.i(TAG, "Connecting tunnel address=$address dns=$dns")
             WireGuardController.connect(app, config)
             true
         } catch (t: Throwable) {

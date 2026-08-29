@@ -20,7 +20,13 @@ object WireGuardCredentials {
     const val ENDPOINT = "103.29.99.61:51820"
 
     const val ALLOWED_IPS = "0.0.0.0/0"
-    const val DNS = "1.1.1.1"
+
+    /**
+     * Interface DNS for full-tunnel Android TV — without this, names do not
+     * resolve even when the WireGuard tunnel is UP.
+     */
+    const val DNS = "8.8.8.8, 8.8.4.4"
+
     const val PERSISTENT_KEEPALIVE = 25
 
     /** Legacy baked-key path — unused once local keygen + add-peer is active. */
