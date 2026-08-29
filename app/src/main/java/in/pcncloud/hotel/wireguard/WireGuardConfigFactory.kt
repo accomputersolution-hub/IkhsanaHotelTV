@@ -33,9 +33,15 @@ object WireGuardConfigFactory {
             .parseEndpoint(config.endpoint.trim())
             .parseAllowedIPs(config.allowedIps.trim())
 
-        if (config.persistentKeepalive > 0) {
-            peerBuilder.setPersistentKeepalive(config.persistentKeepalive)
+        // Keep NAT mappings alive toward the server (required on Android TV / CGNAT).
+        val keepalive = if (config.persistentKeepalive > 0) {
+            config.persistentKeepalive
+        } else {
+            WireGuardCredentials.PERSISTENT_KEEPALIVE
         }
+        peerBuilder.setPersistentKeepalive(keepalive)
+        Log.i(TAG, "Peer PersistentKeepalive=$keepalive endpoint=${config.endpoint}")
+
         config.preSharedKey?.trim()?.takeIf { it.isNotEmpty() }?.let {
             peerBuilder.parsePreSharedKey(it)
         }

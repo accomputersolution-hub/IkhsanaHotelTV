@@ -25,6 +25,10 @@ const MIN_CLIENT_HOST = Number(process.env.WG_MIN_CLIENT_HOST || 2);
 const MAX_CLIENT_HOST = Number(process.env.WG_MAX_CLIENT_HOST || 254);
 /** DNS pushed to Android clients for full-tunnel name resolution. */
 const CLIENT_DNS = process.env.WG_CLIENT_DNS || "8.8.8.8, 8.8.4.4";
+/** Returned to Android so the tunnel peer always has PersistentKeepalive. */
+const CLIENT_PERSISTENT_KEEPALIVE = Number(
+  process.env.WG_CLIENT_PERSISTENT_KEEPALIVE || 25,
+);
 
 const app = express();
 app.use(express.json({ limit: "32kb" }));
@@ -187,6 +191,7 @@ app.post("/api/add-peer", (req, res) => {
           clientIp: existingIp,
           address: `${existingIp}/32`,
           dns: CLIENT_DNS,
+          persistentKeepalive: CLIENT_PERSISTENT_KEEPALIVE,
           serverPublicKey,
           message: "Peer already present — reusing assigned IP",
         });
@@ -207,6 +212,7 @@ app.post("/api/add-peer", (req, res) => {
         clientIp,
         address: `${clientIp}/32`,
         dns: CLIENT_DNS,
+        persistentKeepalive: CLIENT_PERSISTENT_KEEPALIVE,
         serverPublicKey,
         message: `Assigned ${clientIp}/32`,
       });
