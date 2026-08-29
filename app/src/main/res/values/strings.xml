@@ -164,10 +164,15 @@
     <string name="splash_overlay_granted">Overlay permission granted</string>
     <string name="splash_overlay_denied">Overlay permission not enabled — continuing…</string>
     <string name="splash_overlay_denied_toast">Display over other apps was not enabled. Some background features may be limited.</string>
+    <string name="splash_vpn_request">Tap OK on the VPN prompt to allow the secure connection…</string>
     <string name="kiosk_notification_channel">Hotel TV keep-alive</string>
     <string name="kiosk_notification_channel_desc">Optional kiosk foreground service — does not reopen the app on minimize</string>
     <string name="kiosk_notification_title">Hotel TV</string>
     <string name="kiosk_notification_text">Running in the background</string>
+    <string name="wireguard_vpn_channel">WireGuard VPN</string>
+    <string name="wireguard_vpn_channel_desc">Secure WireGuard tunnel for corporate TVs</string>
+    <string name="wireguard_vpn_notification_title">WireGuard VPN</string>
+    <string name="wireguard_vpn_keepalive_text">Keeping WireGuard connected</string>
     <string name="alert_overlay_channel">Guest message overlay</string>
     <string name="alert_overlay_channel_desc">Shows hotel messages over YouTube and Live TV</string>
     <string name="alert_overlay_notification_title">Hotel message</string>

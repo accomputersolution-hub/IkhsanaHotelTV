@@ -110,6 +110,9 @@ dependencies {
     implementation(libs.androidx.media3.datasource.okhttp)
     implementation(libs.okhttp)
 
+    // Official WireGuard Android tunnel (userspace Go backend / libwg-go).
+    implementation("com.wireguard.android:tunnel:1.0.20260102")
+
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

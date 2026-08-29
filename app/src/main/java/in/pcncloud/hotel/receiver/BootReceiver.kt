@@ -8,11 +8,13 @@ import android.content.Intent
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.PairingActivity
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
+import `in`.pcncloud.hotel.wireguard.WireGuardController
 
 /**
  * Auto-starts the hotel UI after device restart.
@@ -77,6 +79,14 @@ class BootReceiver : BroadcastReceiver() {
 
         // PendingIntent launch first (BAL-safe). Watchdog after UI attempt.
         launchUiAfterBoot(context, launchIntent, target.simpleName, action)
+
+        if (BuildConfig.IS_CORPORATE) {
+            try {
+                WireGuardController.init(appContext)
+            } catch (e: Exception) {
+                Log.w(TAG, "WireGuard init after boot failed", e)
+            }
+        }
 
         if (hotelConfig.isPaired() && isKioskActive) {
             try {
