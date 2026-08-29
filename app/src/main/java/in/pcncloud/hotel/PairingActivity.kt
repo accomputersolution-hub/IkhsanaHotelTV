@@ -14,11 +14,13 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.data.RoomIds
 import `in`.pcncloud.hotel.data.RoomTvPairing
 import `in`.pcncloud.hotel.kiosk.HotelSessionManager
+import `in`.pcncloud.hotel.integration.TailscaleController
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -58,6 +60,17 @@ class PairingActivity : AppCompatActivity() {
     private var resolvedPublicSlug: String = ""
     private var activeCode: String = ""
     private var deviceId: String = ""
+
+    private var awaitingVpnPermission = false
+
+    private val vpnPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { _ ->
+        awaitingVpnPermission = false
+        if (BuildConfig.IS_CORPORATE && TailscaleController.isVpnPrepared(applicationContext)) {
+            TailscaleController.onVpnPermissionGranted(applicationContext)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,6 +132,27 @@ class PairingActivity : AppCompatActivity() {
         btnPair.setOnClickListener { beginPairingLookup() }
         btnNewCode.setOnClickListener { regenerateCode() }
         etHotelId.requestFocus()
+
+        ensureCorporateVpnPermission()
+    }
+
+    /** Unpaired boot often skips SplashActivity — VPN consent must happen here too. */
+    private fun ensureCorporateVpnPermission() {
+        if (!BuildConfig.IS_CORPORATE) return
+        try {
+            if (TailscaleController.isVpnPrepared(this)) {
+                TailscaleController.ensureRunning(applicationContext)
+                return
+            }
+            val prepare = TailscaleController.preparePermissionIntent(this)
+            if (prepare != null && !awaitingVpnPermission) {
+                awaitingVpnPermission = true
+                Log.i(TAG, "VPN consent required — launching prepare from PairingActivity")
+                vpnPermissionLauncher.launch(prepare)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Tailscale VPN consent from PairingActivity failed", e)
+        }
     }
 
     private fun applyFlavorCopy() {

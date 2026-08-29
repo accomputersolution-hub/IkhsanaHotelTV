@@ -9,8 +9,7 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import `in`.pcncloud.hotel.BuildConfig
-import `in`.pcncloud.hotel.MainActivity
-import `in`.pcncloud.hotel.PairingActivity
+import `in`.pcncloud.hotel.SplashActivity
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
@@ -18,7 +17,8 @@ import `in`.pcncloud.hotel.integration.TailscaleController
 
 /**
  * Auto-starts the hotel UI after device restart.
- * Paired → [MainActivity]; unpaired → [PairingActivity].
+ * Auto-starts the hotel UI after device restart via [SplashActivity]
+ * (VPN consent + overlay gates, then MainActivity or PairingActivity).
  *
  * Bare [Context.startActivity] from a [BroadcastReceiver] is suppressed by
  * Background Activity Launch (BAL) on modern Android (and flaky on 9/10+).
@@ -63,13 +63,7 @@ class BootReceiver : BroadcastReceiver() {
         KioskPolicy.clearExternalAppActive(context)
         KioskPolicy.clearExternalAppSession(context)
 
-        val target = if (hotelConfig.isPaired()) {
-            MainActivity::class.java
-        } else {
-            PairingActivity::class.java
-        }
-
-        val launchIntent = Intent(context, target).apply {
+        val launchIntent = Intent(context, SplashActivity::class.java).apply {
             this.action = action
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -78,7 +72,7 @@ class BootReceiver : BroadcastReceiver() {
         }
 
         // PendingIntent launch first (BAL-safe). Watchdog after UI attempt.
-        launchUiAfterBoot(context, launchIntent, target.simpleName, action)
+        launchUiAfterBoot(context, launchIntent, SplashActivity::class.java.simpleName, action)
 
         // Corporate: init libtailscale only — VPN consent must come from Splash/Main Activity.
         if (BuildConfig.IS_CORPORATE) {
