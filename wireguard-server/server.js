@@ -2,12 +2,14 @@
  * WireGuard peer registration API.
  *
  * POST /api/add-peer
- *   body: { "publicKey": "<base64>" }
+ *   body: { "publicKey": "<base64>" }   ← ONLY publicKey is required
+ *   clientIp from the client is IGNORED (was causing 400 when Android stopped sending it)
  *   → reads /etc/wireguard/wg0.conf, assigns next free 10.0.0.x,
- *     adds the peer, returns { clientIp, address, serverPublicKey }.
+ *     adds the peer, returns { clientIp, address, dns, serverPublicKey }.
  *
- * Deploy on the VPN host (e.g. 103.29.99.61) as root / with sudo for
- * `wg` + write access to wg0.conf.
+ * Deploy on the VPN host (e.g. 103.29.99.61) — replace the old server.js that still
+ * validated clientIp, then restart the Node process:
+ *   sudo systemctl restart wireguard-peer-api   # or: pm2 restart … / kill + node server.js
  */
 const express = require("express");
 const fs = require("fs");
