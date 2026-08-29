@@ -13,3 +13,4 @@
 .externalNativeBuild
 .cxx
 local.properties
+wireguard-server/node_modules/

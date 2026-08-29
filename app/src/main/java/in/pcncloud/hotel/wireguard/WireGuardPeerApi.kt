@@ -13,8 +13,11 @@ import java.util.concurrent.TimeUnit
  *
  * POST [WireGuardCredentials.ADD_PEER_URL]
  * ```json
- * { "publicKey": "<device>", "clientIp": "10.0.0.3" }
+ * { "publicKey": "<device>" }
  * ```
+ *
+ * Server allocates the next free `10.0.0.x` from `wg0.conf` and returns
+ * `{ clientIp, address, serverPublicKey }`.
  */
 class WireGuardPeerApi(
     private val client: OkHttpClient = defaultClient(),
@@ -22,14 +25,15 @@ class WireGuardPeerApi(
     data class AddPeerResult(
         val success: Boolean,
         val httpCode: Int,
+        val clientIp: String? = null,
+        val address: String? = null,
         val serverPublicKey: String? = null,
         val message: String? = null,
     )
 
-    fun addPeer(publicKey: String, clientIp: String = WireGuardCredentials.CLIENT_IP): AddPeerResult {
+    fun addPeer(publicKey: String): AddPeerResult {
         val bodyJson = JSONObject()
             .put("publicKey", publicKey)
-            .put("clientIp", clientIp)
             .toString()
 
         val request = Request.Builder()
@@ -42,20 +46,28 @@ class WireGuardPeerApi(
         return try {
             client.newCall(request).execute().use { response ->
                 val raw = response.body?.string().orEmpty()
-                Log.i(TAG, "add-peer HTTP ${response.code} body=${raw.take(200)}")
+                Log.i(TAG, "add-peer HTTP ${response.code} body=${raw.take(240)}")
                 val parsed = raw.takeIf { it.isNotBlank() }?.let {
                     runCatching { JSONObject(it) }.getOrNull()
                 }
-                val serverKey = listOf("serverPublicKey", "server_public_key", "publicKey")
+                val clientIp = listOf("clientIp", "client_ip", "ip")
+                    .firstNotNullOfOrNull { key ->
+                        parsed?.optString(key)?.trim()?.takeIf { it.isNotBlank() }
+                    }
+                    ?.replace(Regex("/\\d+$"), "")
+                val address = parsed?.optString("address")?.trim()?.takeIf { it.isNotBlank() }
+                    ?: clientIp?.let { "$it/32" }
+                val serverKey = listOf("serverPublicKey", "server_public_key")
                     .firstNotNullOfOrNull { key ->
                         parsed?.optString(key)?.takeIf { s ->
                             s.isNotBlank() && s != publicKey
                         }
                     }
-                val ok = response.isSuccessful
                 AddPeerResult(
-                    success = ok,
+                    success = response.isSuccessful && !clientIp.isNullOrBlank(),
                     httpCode = response.code,
+                    clientIp = clientIp,
+                    address = address,
                     serverPublicKey = serverKey,
                     message = parsed?.optString("message")?.takeIf { it.isNotBlank() }
                         ?: raw.takeIf { it.isNotBlank() },

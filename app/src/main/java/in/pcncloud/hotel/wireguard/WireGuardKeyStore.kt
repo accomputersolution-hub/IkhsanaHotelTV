@@ -5,10 +5,8 @@ import android.util.Log
 import com.wireguard.crypto.KeyPair
 
 /**
- * Persists a locally generated WireGuard [KeyPair] (private + public base64).
- *
- * Generation uses the official tunnel library: `KeyPair()` →
- * `Key.generatePrivateKey()` + `Key.generatePublicKey()` (package API).
+ * Persists a locally generated WireGuard [KeyPair] plus the server-assigned
+ * client IP from add-peer.
  */
 class WireGuardKeyStore(context: Context) {
     private val prefs =
@@ -25,7 +23,6 @@ class WireGuardKeyStore(context: Context) {
             )
         }
 
-        // Official WireGuard Android crypto: KeyPair() generates a Curve25519 pair.
         val pair = KeyPair()
         val privateB64 = pair.privateKey.toBase64()
         val publicB64 = pair.publicKey.toBase64()
@@ -41,15 +38,33 @@ class WireGuardKeyStore(context: Context) {
         )
     }
 
-    fun isPeerRegistered(): Boolean = prefs.getBoolean(KEY_PEER_REGISTERED, false)
+    fun isPeerRegistered(): Boolean =
+        prefs.getBoolean(KEY_PEER_REGISTERED, false) &&
+            !assignedAddress().isNullOrBlank()
 
-    fun markPeerRegistered(serverPublicKey: String? = null) {
-        val editor = prefs.edit().putBoolean(KEY_PEER_REGISTERED, true)
+    fun markPeerRegistered(
+        clientIp: String,
+        address: String? = null,
+        serverPublicKey: String? = null,
+    ) {
+        val bare = clientIp.trim().replace(Regex("/\\d+$"), "")
+        val cidr = address?.trim()?.takeIf { it.isNotBlank() } ?: "$bare/32"
+        val editor = prefs.edit()
+            .putBoolean(KEY_PEER_REGISTERED, true)
+            .putString(KEY_CLIENT_IP, bare)
+            .putString(KEY_ADDRESS, cidr)
         if (!serverPublicKey.isNullOrBlank()) {
             editor.putString(KEY_SERVER_PUBLIC, serverPublicKey.trim())
         }
         editor.apply()
     }
+
+    fun assignedAddress(): String? =
+        prefs.getString(KEY_ADDRESS, null)?.takeIf { it.isNotBlank() }
+            ?: prefs.getString(KEY_CLIENT_IP, null)?.takeIf { it.isNotBlank() }?.let { "$it/32" }
+
+    fun assignedClientIp(): String? =
+        prefs.getString(KEY_CLIENT_IP, null)?.takeIf { it.isNotBlank() }
 
     fun serverPublicKeyOrDefault(): String =
         prefs.getString(KEY_SERVER_PUBLIC, null)
@@ -69,5 +84,7 @@ class WireGuardKeyStore(context: Context) {
         private const val KEY_PUBLIC = "public_key_b64"
         private const val KEY_PEER_REGISTERED = "peer_registered"
         private const val KEY_SERVER_PUBLIC = "server_public_key_b64"
+        private const val KEY_CLIENT_IP = "client_ip"
+        private const val KEY_ADDRESS = "client_address"
     }
 }

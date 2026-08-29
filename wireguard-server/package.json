@@ -1,0 +1,17 @@
+{
+  "name": "wireguard-peer-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Auto-assign next 10.0.0.x from wg0.conf on /api/add-peer",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/next-ip.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

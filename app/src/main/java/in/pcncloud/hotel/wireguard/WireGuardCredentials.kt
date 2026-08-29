@@ -3,18 +3,12 @@ package `in`.pcncloud.hotel.wireguard
 /**
  * Fixed WireGuard control-plane + tunnel endpoints for corporate TVs.
  *
- * Client identity (private/public key) is generated locally and persisted —
- * see [WireGuardKeyStore] / [WireGuardProvisioner].
+ * Client IP is **not** baked — the Node add-peer API allocates the next free
+ * `10.0.0.x` from `/etc/wireguard/wg0.conf` and the app persists it.
  */
 object WireGuardCredentials {
     /** HTTP API that registers this device's public key as a WireGuard peer. */
     const val ADD_PEER_URL = "http://103.29.99.61:3000/api/add-peer"
-
-    /** Tunnel interface address assigned to this Android client. */
-    const val CLIENT_ADDRESS = "10.0.0.3/32"
-
-    /** IP sent to add-peer (no CIDR suffix). */
-    const val CLIENT_IP = "10.0.0.3"
 
     /**
      * Server WireGuard public key (base64, 44 chars).
@@ -35,7 +29,7 @@ object WireGuardCredentials {
     fun toTunnelConfig(): WireGuardTunnelConfig =
         WireGuardTunnelConfig(
             privateKey = "",
-            address = CLIENT_ADDRESS,
+            address = "",
             peerPublicKey = SERVER_PUBLIC_KEY,
             endpoint = ENDPOINT,
             allowedIps = ALLOWED_IPS,

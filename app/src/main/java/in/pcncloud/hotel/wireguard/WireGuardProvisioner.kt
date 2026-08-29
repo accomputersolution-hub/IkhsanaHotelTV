@@ -9,9 +9,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * End-to-end corporate WireGuard bring-up:
  * 1. Generate (or load) local keypair via official [com.wireguard.crypto.KeyPair]
- * 2. Assign client IP `10.0.0.3/32`
- * 3. POST public key to Node add-peer API
- * 4. On HTTP 200 → [WireGuardController.connect]
+ * 2. POST public key to Node add-peer (server assigns next 10.0.0.x from wg0.conf)
+ * 3. On HTTP 200 → [WireGuardController.connect] with returned address
  */
 object WireGuardProvisioner {
     private const val TAG = "WireGuardProvisioner"
@@ -36,26 +35,37 @@ object WireGuardProvisioner {
             Log.i(
                 TAG,
                 "Device key public=${keys.publicKeyBase64.take(8)}… " +
-                    "fresh=${keys.freshlyGenerated} registered=${store.isPeerRegistered()}",
+                    "fresh=${keys.freshlyGenerated} registered=${store.isPeerRegistered()} " +
+                    "ip=${store.assignedClientIp()}",
             )
 
             if (!store.isPeerRegistered()) {
                 val api = WireGuardPeerApi()
-                val result = api.addPeer(
-                    publicKey = keys.publicKeyBase64,
-                    clientIp = WireGuardCredentials.CLIENT_IP,
-                )
-                if (!result.success) {
+                val result = api.addPeer(publicKey = keys.publicKeyBase64)
+                if (!result.success || result.clientIp.isNullOrBlank()) {
                     Log.e(
                         TAG,
                         "add-peer failed http=${result.httpCode} msg=${result.message}",
                     )
                     return false
                 }
-                store.markPeerRegistered(result.serverPublicKey)
-                Log.i(TAG, "add-peer OK — proceeding to connect")
+                store.markPeerRegistered(
+                    clientIp = result.clientIp,
+                    address = result.address,
+                    serverPublicKey = result.serverPublicKey,
+                )
+                Log.i(
+                    TAG,
+                    "add-peer OK — assigned ${result.address ?: result.clientIp + "/32"}",
+                )
             } else {
                 Log.i(TAG, "Peer already registered — reconnecting tunnel")
+            }
+
+            val address = store.assignedAddress()
+            if (address.isNullOrBlank()) {
+                Log.e(TAG, "No assigned client address after registration")
+                return false
             }
 
             val serverPub = store.serverPublicKeyOrDefault().trim()
@@ -63,13 +73,13 @@ object WireGuardProvisioner {
                 Log.e(
                     TAG,
                     "Missing server public key — set WireGuardCredentials.SERVER_PUBLIC_KEY " +
-                        "(full key starting with eGIDnt4o…) or return serverPublicKey from add-peer",
+                        "or return serverPublicKey from add-peer",
                 )
                 return false
             }
 
             val config = WireGuardTunnelConfig(
-                address = WireGuardCredentials.CLIENT_ADDRESS,
+                address = address,
                 privateKey = keys.privateKeyBase64,
                 peerPublicKey = serverPub,
                 endpoint = WireGuardCredentials.ENDPOINT,
