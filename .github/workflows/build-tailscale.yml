@@ -12,7 +12,7 @@ on:
         default: main
         type: string
   push:
-    branches: [main]
+    branches: [main, 'cursor/**']
     paths:
       - 'scripts/build-libtailscale.sh'
       - 'scripts/patches/**'

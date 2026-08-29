@@ -1,8 +1,7 @@
 diff --git a/libtailscale/backend.go b/libtailscale/backend.go
-index bfd0a11..71db749 100644
 --- a/libtailscale/backend.go
 +++ b/libtailscale/backend.go
-@@ -73,6 +73,8 @@ func start(dataDir, directFileRoot string, hwAttestationPref bool, appCtx AppCon
+@@ -73,6 +73,8 @@
  		}
  	}()
  
@@ -11,7 +10,7 @@ index bfd0a11..71db749 100644
  	initLogging(appCtx)
  	// Set XDG_CACHE_HOME to make os.UserCacheDir work.
  	if _, exists := os.LookupEnv("XDG_CACHE_HOME"); !exists {
-@@ -379,7 +381,7 @@ func (a *App) newBackend(dataDir string, appCtx AppContext, store *stateStore,
+@@ -379,7 +381,7 @@
  	b.backend = lb
  	b.sys = sys
  	go func() {
@@ -20,12 +19,12 @@ index bfd0a11..71db749 100644
  		if err != nil {
  			log.Printf("Failed to start LocalBackend, panicking: %s", err)
  			panic(err)
-@@ -399,6 +401,47 @@ func (a *App) watchFileOpsChanges() {
+@@ -399,6 +401,40 @@
  	}
  }
  
++
 +// headscaleStartOptions builds ipn.Options for the first LocalBackend.Start call.
-+// ControlURL must be in UpdatePrefs here — post-start LocalAPI edits are not reliable.
 +func headscaleStartOptions(appCtx AppContext) ipn.Options {
 +	opts := ipn.Options{}
 +	controlURL, source := embeddedControlURLFromAppCtx(appCtx)
@@ -43,19 +42,12 @@ index bfd0a11..71db749 100644
 +}
 +
 +func embeddedControlURLFromAppCtx(appCtx AppContext) (string, string) {
-+	if url, err := appCtx.GetEmbeddedControlURL(); err == nil && url != "" {
-+		return url, "AppContext.GetEmbeddedControlURL"
-+	}
 +	if url, err := appCtx.DecryptFromPref(customLoginServerPrefKey); err == nil && url != "" {
 +		return url, customLoginServerPrefKey + " pref"
 +	}
 +	return "", ""
 +}
 +
-+// headscaleAssumeNetworkUpForEmbeddedControl sets TS_ASSUME_NETWORK_UP_FOR_TEST when the
-+// host app provides a non-default control URL. On Android TV, netmon may report no
-+// interface before VPN is up; shouldPauseControlClient then keeps the control client
-+// paused and client.Login() never reaches Headscale (authRoutine: awaiting unpause).
 +func headscaleAssumeNetworkUpForEmbeddedControl(appCtx AppContext) {
 +	controlURL, source := embeddedControlURLFromAppCtx(appCtx)
 +	if controlURL == "" {
@@ -68,18 +60,3 @@ index bfd0a11..71db749 100644
  func (b *backend) isConfigNonNilAndDifferent(rcfg *router.Config, dcfg *dns.OSConfig) bool {
  	if reflect.DeepEqual(rcfg, b.lastCfg) && reflect.DeepEqual(dcfg, b.lastDNSCfg) {
  		b.logger.Logf("isConfigNonNilAndDifferent: no change to Routes or DNS, ignore")
-diff --git a/libtailscale/interfaces.go b/libtailscale/interfaces.go
-index 8adbcc1..c3d98d5 100644
---- a/libtailscale/interfaces.go
-+++ b/libtailscale/interfaces.go
-@@ -86,6 +86,10 @@ type AppContext interface {
- 	// GetUserCACertsPEM returns PEM-encoded user-installed CA certificates
- 	// from the Android KeyStore, or empty bytes if none are installed.
- 	GetUserCACertsPEM() ([]byte, error)
-+
-+	// GetEmbeddedControlURL returns a control plane URL injected by the host app
-+	// (e.g. Headscale). Empty string means use Tailscale default coordination server.
-+	GetEmbeddedControlURL() (string, error)
- }
- 
- // IPNService corresponds to our IPNService in Java.

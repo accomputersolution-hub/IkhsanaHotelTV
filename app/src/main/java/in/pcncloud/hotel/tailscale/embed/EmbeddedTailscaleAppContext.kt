@@ -118,14 +118,8 @@ class EmbeddedTailscaleAppContext(
     override fun getUserCACertsPEM(): ByteArray = ByteArray(0)
 
     /**
-     * Injected directly into libtailscale LocalBackend.Start(ipn.Options.UpdatePrefs)
-     * — no LocalAPI PATCH required. Primary source for Headscale ControlURL.
-     */
-    override fun getEmbeddedControlURL(): String =
-        EmbeddedTailscaleCredentials.CONTROL_URL
-
-    /**
-     * Backup path: encrypted pref read by Go if [getEmbeddedControlURL] is empty.
+     * Backup path: encrypted pref read by patched libtailscale at LocalBackend.Start().
+     * Call before [libtailscale.Libtailscale.start].
      */
     fun writeHeadscaleControlUrlForEngineStart(controlUrl: String) {
         encryptedPrefs().edit().putString(PREF_CUSTOM_LOGIN_SERVER, controlUrl).commit()
