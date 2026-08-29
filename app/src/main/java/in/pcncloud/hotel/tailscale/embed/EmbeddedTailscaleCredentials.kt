@@ -5,7 +5,7 @@ package `in`.pcncloud.hotel.tailscale.embed
  */
 object EmbeddedTailscaleCredentials {
     const val CONTROL_URL = "https://estimate-unscrew-antidote.ngrok-free.dev"
-    const val AUTH_KEY = "088d3dc2b14a652888fb19f5eb8c7367b37efc59f7bcb585"
+    const val AUTH_KEY = "f807162be9fdd0354a8c763d7ea87e3bcd2f939133bd2c63"
 
     /** Only this app's traffic is routed through the Tailscale TUN (per-app VPN). */
     const val SPLIT_TUNNEL_PACKAGE = "com.ektv.pro"
