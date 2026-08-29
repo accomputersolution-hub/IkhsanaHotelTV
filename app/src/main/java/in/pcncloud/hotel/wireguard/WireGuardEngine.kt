@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -45,6 +46,8 @@ object WireGuardEngine {
         if (!started.compareAndSet(false, true)) return
         val app = context.applicationContext
         appContext = app
+        // Corporate flavor ships libwg-go built for in.pcncloud.corporate (see scripts/build-libwg-go.sh).
+        File(app.cacheDir, "wireguard").mkdirs()
         backend = GoBackend(app)
         GoBackend.setAlwaysOnCallback {
             Log.i(TAG, "Always-On VPN triggered — scheduling boot-safe auto-connect")

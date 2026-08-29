@@ -14,3 +14,4 @@
 .cxx
 local.properties
 wireguard-server/node_modules/
+scripts/libwg-go-build/libwg-go/build-*

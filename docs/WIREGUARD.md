@@ -31,10 +31,10 @@ Auto-connect ([WireGuardController.ensureRunning]) runs on **Dispatchers.IO**:
 
 | Component | Role |
 |-----------|------|
-|-----------|------|
 | `GoBackend$VpnService` | Official TUN owner |
 | `WireGuardKeyStore` | Persist local keypair + assigned IP |
 | `WireGuardPeerApi` | HTTP add-peer |
+| `WireGuardProvisioner` | Keygen → add-peer → connect |
 | `WireGuardAutoConnect` | IO thread: network gate → provision/connect |
 | `WireGuardNetworkGate` | Validated internet + routing settle |
 | `WireGuardEngine` | `GoBackend.setState(UP/DOWN)` |
@@ -42,3 +42,18 @@ Auto-connect ([WireGuardController.ensureRunning]) runs on **Dispatchers.IO**:
 ## Cleartext
 
 `network_security_config.xml` allows HTTP cleartext only to `103.29.99.61` for the peer API.
+
+## libwg-go UAPI path (corporate)
+
+The published `tunnel` AAR embeds `libwg-go.so` with UAPI socket dir
+`/data/data/com.wireguard.android/cache/wireguard`, which our app cannot create
+(`UAPIOpen: mkdir … permission denied` on boot).
+
+Corporate builds override native libs in `app/src/corporate/jniLibs/` rebuilt with:
+
+```bash
+./scripts/build-libwg-go.sh
+```
+
+That sets `ipc.socketDirectory=/data/data/in.pcncloud.corporate/cache/wireguard`.
+`WireGuardEngine.init()` also creates `cache/wireguard` before `GoBackend` loads.
