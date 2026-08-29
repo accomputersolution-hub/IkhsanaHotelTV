@@ -18,10 +18,9 @@ object WireGuardCredentials {
 
     /**
      * Server WireGuard public key (base64, 44 chars).
-     * Ops hint: begins with `eGIDnt4o…` — paste the **full** key here.
      * If add-peer returns `serverPublicKey`, that value is preferred and persisted.
      */
-    const val SERVER_PUBLIC_KEY = ""
+    const val SERVER_PUBLIC_KEY = "eGIDnt4o1QVDVxm/t0jqeWpPrvy3QKY8RHhJIucGhmU="
 
     /** UDP endpoint host:port. */
     const val ENDPOINT = "103.29.99.61:51820"

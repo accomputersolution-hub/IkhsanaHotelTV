@@ -29,11 +29,11 @@ Corporate Android TV builds establish a native WireGuard tunnel via
 
 ## Server public key
 
-Paste the full server public key (starts with `eGIDnt4o…`) into:
+Baked into `WireGuardCredentials.SERVER_PUBLIC_KEY`:
 
-`WireGuardCredentials.SERVER_PUBLIC_KEY`
+`eGIDnt4o1QVDVxm/t0jqeWpPrvy3QKY8RHhJIucGhmU=`
 
-Or have add-peer return `{ "serverPublicKey": "…" }` and it will be stored automatically.
+If add-peer returns `{ "serverPublicKey": "…" }`, that value is preferred and persisted over the baked default.
 
 ## Cleartext
 
