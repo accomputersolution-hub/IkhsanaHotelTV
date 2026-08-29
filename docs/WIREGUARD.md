@@ -20,12 +20,23 @@ Corporate Android TV builds establish a native WireGuard tunnel via
 
 See `wireguard-server/` for the Node implementation of auto IP assignment.
 
+## Boot / cold-start (network race)
+
+On TV reboot, Wi-Fi/Ethernet may take 10–15s before UDP to the VPN endpoint works.
+Auto-connect ([WireGuardController.ensureRunning]) runs on **Dispatchers.IO**:
+
+1. Wait for `ConnectivityManager` **validated** internet (poll up to 2 min)
+2. **11s** routing settle delay (10–12s window)
+3. add-peer + `setState(UP)`
+
 | Component | Role |
+|-----------|------|
 |-----------|------|
 | `GoBackend$VpnService` | Official TUN owner |
 | `WireGuardKeyStore` | Persist local keypair + assigned IP |
 | `WireGuardPeerApi` | HTTP add-peer |
-| `WireGuardProvisioner` | Orchestrates keygen → API → connect |
+| `WireGuardAutoConnect` | IO thread: network gate → provision/connect |
+| `WireGuardNetworkGate` | Validated internet + routing settle |
 | `WireGuardEngine` | `GoBackend.setState(UP/DOWN)` |
 
 ## Cleartext
