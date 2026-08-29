@@ -139,8 +139,7 @@ object EmbeddedTailscaleEngine {
         if (loginInFlight) return
 
         if (loginSequenceComplete) {
-            startVpnService(app)
-            applyWantRunningIfNeeded()
+            kickEngineActive(app)
             return
         }
 
@@ -187,25 +186,26 @@ object EmbeddedTailscaleEngine {
             localApi.startWithAuthKey(
                 controlUrl = EmbeddedTailscaleCredentials.CONTROL_URL,
                 authKey = EmbeddedTailscaleCredentials.AUTH_KEY,
-                // WantRunning=false until Headscale register completes — keeps control
-                // traffic on the physical network (no TUN) during bootstrap.
-                wantRunning = false,
+                wantRunning = true,
                 onResult = { startResult ->
                     startResult.onFailure { e ->
                         Log.e(TAG, "Headless auth-key start failed", e)
                         loginInFlight = false
                     }
                     startResult.onSuccess {
-                        wantRunningApplied = false
                         val state = EmbeddedTailscaleNotifier.state.value
                         Log.i(
                             TAG,
-                            "Auth-key login chain OK (WantRunning deferred) — state=$state " +
-                                "watching=${EmbeddedTailscaleNotifier.isWatching()}",
+                            "Auth-key login chain OK — state=$state " +
+                                "watching=${EmbeddedTailscaleNotifier.isWatching()}; " +
+                                "forcing WantRunning=true + engine kickoff",
                         )
                         logLoginDiagnostics("auth-key chain")
                         verifyControlUrlPersisted("auth-key start")
                         loginInFlight = false
+                        // Permanently assert WantRunning and start the VPN service loop
+                        // without waiting for a later manual ensureRunning.
+                        kickEngineActive(app)
                         when (state) {
                             EmbeddedTailscaleModels.State.Stopped,
                             EmbeddedTailscaleModels.State.Running,
@@ -214,8 +214,8 @@ object EmbeddedTailscaleEngine {
                             EmbeddedTailscaleModels.State.NeedsLogin -> {
                                 Log.i(
                                     TAG,
-                                    "AuthKey register in progress (NeedsLogin) — " +
-                                        "watchdog ${LOGIN_WATCHDOG_MS}ms (no login-interactive)",
+                                    "NeedsLogin after AuthKey start — WantRunning already set; " +
+                                        "watchdog ${LOGIN_WATCHDOG_MS}ms for Running transition",
                                 )
                                 scheduleLoginCompletionWatchdog(app)
                             }
@@ -303,12 +303,10 @@ object EmbeddedTailscaleEngine {
                 EmbeddedTailscaleModels.State.NeedsLogin -> {
                     Log.w(
                         TAG,
-                        "Still NeedsLogin — force LoggedOut reset + full headless re-login",
+                        "Still NeedsLogin — re-assert WantRunning=true + VPN kickoff",
                     )
-                    loginInFlight = false
-                    loginSequenceComplete = false
-                    wantRunningApplied = false
-                    performHeadlessLogin(app)
+                    kickEngineActive(app)
+                    scheduleLoginCompletionWatchdog(app, delayMs = LOGIN_WATCHDOG_MS * 2)
                 }
                 else -> scheduleLoginCompletionWatchdog(app, delayMs = LOGIN_WATCHDOG_MS)
             }
@@ -338,7 +336,7 @@ object EmbeddedTailscaleEngine {
         loginWatchdogGeneration++
         if (loginSequenceComplete) {
             Log.d(TAG, "onHeadlessLoginComplete (already complete) — re-apply WantRunning")
-            applyWantRunningIfNeeded()
+            kickEngineActive(app)
             return
         }
         loginSequenceComplete = true
@@ -346,25 +344,32 @@ object EmbeddedTailscaleEngine {
         Log.i(
             TAG,
             "onHeadlessLoginComplete — state=${EmbeddedTailscaleNotifier.state.value}; " +
-                "setting WantRunning=true",
+                "WantRunning=true + VPN service",
         )
-        applyWantRunningIfNeeded()
+        kickEngineActive(app)
+    }
+
+    /** Assert WantRunning=true and start VpnService so the engine loop runs without manual triggers. */
+    private fun kickEngineActive(app: Context) {
+        applyWantRunning(force = true)
         startVpnService(app)
     }
 
     fun isAbleToStartVpn(): Boolean = isReadyForRequestVpn()
 
-    /** Go notifier + login complete and engine in a stable state for TUN bring-up. */
+    /** Go notifier ready and WantRunning asserted — allow TUN while Starting/Stopped/Running. */
     fun isReadyForRequestVpn(): Boolean {
         if (!goBackendReady || !EmbeddedTailscaleNotifier.hasInitialState()) return false
         if (!isVpnPrepared(storedAppContext ?: return false)) return false
-        if (EmbeddedTailscaleNotifier.state.value == EmbeddedTailscaleModels.State.NeedsLogin) {
-            return false
-        }
+        if (!wantRunningApplied && !loginSequenceComplete) return false
         return when (EmbeddedTailscaleNotifier.state.value) {
             EmbeddedTailscaleModels.State.Stopped,
             EmbeddedTailscaleModels.State.Running,
-            -> loginSequenceComplete
+            EmbeddedTailscaleModels.State.Starting,
+            -> true
+            // AuthKey register may still report NeedsLogin briefly; do not block forever —
+            // VpnService retries until state advances.
+            EmbeddedTailscaleModels.State.NeedsLogin -> wantRunningApplied
             else -> false
         }
     }
@@ -377,7 +382,7 @@ object EmbeddedTailscaleEngine {
         vpnActive = active
         Log.i(TAG, "vpnActive=$active state=${EmbeddedTailscaleNotifier.state.value}")
         if (active) {
-            applyWantRunningIfNeeded()
+            applyWantRunning(force = true)
             storedAppContext?.let { EmbeddedTailscaleKeepAliveService.start(it) }
         }
     }
@@ -413,16 +418,16 @@ object EmbeddedTailscaleEngine {
         )
     }
 
-    private fun applyWantRunningIfNeeded() {
+    private fun applyWantRunning(force: Boolean = false) {
         if (!goBackendReady) {
             Log.w(TAG, "applyWantRunning skipped — Go backend not ready")
             return
         }
-        if (wantRunningApplied) {
+        if (wantRunningApplied && !force) {
             Log.d(TAG, "applyWantRunning skipped — already applied")
             return
         }
-        Log.i(TAG, "PATCH /prefs WantRunning=true")
+        Log.i(TAG, "PATCH /prefs WantRunning=true (force=$force)")
         localApi.editWantRunning(
             wantRunning = true,
             onResult = { result ->
@@ -436,11 +441,14 @@ object EmbeddedTailscaleEngine {
                     verifyControlUrlPersisted("WantRunning patch")
                 }
                 result.onFailure { e ->
+                    wantRunningApplied = false
                     Log.e(TAG, "PATCH /prefs WantRunning failed", e)
                 }
             },
         )
     }
+
+    private fun applyWantRunningIfNeeded() = applyWantRunning(force = false)
 
     /**
      * GET /prefs often returns ControlURL "" — live URL is set at engine init (patched libtailscale)

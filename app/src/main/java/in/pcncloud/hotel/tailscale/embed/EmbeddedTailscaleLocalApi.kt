@@ -26,7 +26,7 @@ class EmbeddedTailscaleLocalApi(
      * 1. PATCH /prefs LoggedOut=true
      * 2. PATCH /prefs LoggedOut=false
      * 3. PATCH /prefs ControlURL
-     * 4. POST /start with AuthKey (WantRunning false until register completes)
+     * 4. POST /start with AuthKey + WantRunning=true
      * 5. STOP — do not call /login-interactive (cancels headless AuthKey register)
      *
      * LocalAPI requires the Go backend to already be started ([Libtailscale.start]).
