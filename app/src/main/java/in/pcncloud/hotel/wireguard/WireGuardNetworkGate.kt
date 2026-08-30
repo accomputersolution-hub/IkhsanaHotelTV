@@ -32,8 +32,26 @@ object WireGuardNetworkGate {
         val network = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(network) ?: return false
 
-        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+        // Prefer underlying link; if active is VPN, look for any validated non-VPN network.
+        if (!caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        ) {
+            return true
+        }
+
+        @Suppress("DEPRECATION")
+        val all = cm.allNetworks
+        for (n in all) {
+            val c = cm.getNetworkCapabilities(n) ?: continue
+            if (c.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue
+            if (c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                c.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            ) {
+                return true
+            }
+        }
+        return false
     }
 
     /**

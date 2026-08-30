@@ -4,6 +4,9 @@ package `in`.pcncloud.hotel.wireguard
  * WireGuard parameters used to build a [com.wireguard.config.Config].
  *
  * Required: [privateKey], [address], [peerPublicKey], [endpoint], [allowedIps].
+ *
+ * [includedApplications] enables app-based split tunneling (VpnService allowed apps).
+ * When non-empty, only those packages use the tunnel; all other apps use direct internet.
  */
 data class WireGuardTunnelConfig(
     /** Interface private key (base64). */
@@ -24,6 +27,12 @@ data class WireGuardTunnelConfig(
     val persistentKeepalive: Int = 25,
     /** Optional MTU override. */
     val mtu: Int? = null,
+    /**
+     * Package names routed into the VPN (IncludedApplications).
+     * Empty / null = do not set (legacy full-device tunnel). Prefer
+     * [WireGuardSplitTunnel.resolveIncludedApplications] at connect time.
+     */
+    val includedApplications: List<String>? = null,
 ) {
     fun isComplete(): Boolean =
         privateKey.isNotBlank() &&

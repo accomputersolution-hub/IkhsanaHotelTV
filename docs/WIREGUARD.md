@@ -7,8 +7,10 @@ Corporate Android TV builds establish a native WireGuard tunnel via
 ## Flow
 
 1. **Keygen** — `KeyPair()` (official crypto)
-2. **POST** `http://103.29.99.61:3000/api/add-peer` with `{ "publicKey": "…" }` only  
-   Server reads `/etc/wireguard/wg0.conf`, takes the highest `10.0.0.x`, assigns **next** IP
+2. **POST** `http://103.29.99.61:3001/api/add-peer` with
+   `{ "publicKey": "…", "deviceId": "<ANDROID_ID or UUID>" }`  
+   Server remembers `deviceId` so app reinstalls keep the same `10.0.0.x`;
+   otherwise reads `/etc/wireguard/wg0.conf`, takes the highest `10.0.0.x`, assigns **next** IP
 3. **On HTTP 200** — persist returned `clientIp` / `address` / `dns`, then `WireGuardController.connect`:
    - `address` = server-assigned (e.g. `10.0.0.4/32`)
    - `DNS = 8.8.8.8, 8.8.4.4` (required for Android TV name resolution on full tunnel)
@@ -17,6 +19,8 @@ Corporate Android TV builds establish a native WireGuard tunnel via
    - server public key `eGIDnt4o1QVDVxm/t0jqeWpPrvy3QKY8RHhJIucGhmU=`
    - `endpoint = 103.29.99.61:51820`
    - `allowedIps = 0.0.0.0/0`
+   - **Split tunnel** `IncludedApplications` = this app (`context.packageName`) + Pro TV
+     (`KioskLockTask.LIVE_TV_PACKAGE` / `com.ektv.pro`) — all other apps use direct internet
 
 See `wireguard-server/` for the Node implementation of auto IP assignment.
 
@@ -38,6 +42,7 @@ Auto-connect ([WireGuardController.ensureRunning]) runs on **Dispatchers.IO**:
 | `WireGuardAutoConnect` | IO thread: network gate → provision/connect |
 | `WireGuardNetworkGate` | Validated internet + routing settle |
 | `WireGuardEngine` | `GoBackend.setState(UP/DOWN)` |
+| `WireGuardNetworkMonitor` | `ConnectivityManager.NetworkCallback` → connect on VALIDATED, disconnect on lost |
 
 ## Cleartext
 

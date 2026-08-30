@@ -30,8 +30,10 @@ object WireGuardAutoConnect {
         // Reconnect with cached config when possible; otherwise keygen + add-peer.
         val cached = WireGuardEngine.peekLastConfig()
         if (cached != null && cached.isComplete()) {
-            Log.i(TAG, "Network ready — reconnecting with cached tunnel config")
-            WireGuardEngine.connect(cached, app)
+            val included = WireGuardSplitTunnel.resolveIncludedApplications(app)
+            val refreshed = cached.copy(includedApplications = included)
+            Log.i(TAG, "Network ready — reconnecting with cached tunnel config includedApps=$included")
+            WireGuardEngine.connect(refreshed, app)
             return true
         }
 

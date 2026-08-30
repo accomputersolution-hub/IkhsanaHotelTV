@@ -13,11 +13,11 @@ import java.util.concurrent.TimeUnit
  *
  * POST [WireGuardCredentials.ADD_PEER_URL]
  * ```json
- * { "publicKey": "<device>" }
+ * { "publicKey": "<device>", "deviceId": "<ANDROID_ID or UUID>" }
  * ```
  *
- * Server allocates the next free `10.0.0.x` from `wg0.conf` and returns
- * `{ clientIp, address, dns, serverPublicKey }`.
+ * Server allocates (or reuses by deviceId) a `10.0.0.x` from `wg0.conf` and
+ * returns `{ clientIp, address, dns, serverPublicKey }`.
  */
 class WireGuardPeerApi(
     private val client: OkHttpClient = defaultClient(),
@@ -32,9 +32,10 @@ class WireGuardPeerApi(
         val message: String? = null,
     )
 
-    fun addPeer(publicKey: String): AddPeerResult {
+    fun addPeer(publicKey: String, deviceId: String): AddPeerResult {
         val bodyJson = JSONObject()
             .put("publicKey", publicKey)
+            .put("deviceId", deviceId)
             .toString()
 
         val request = Request.Builder()
@@ -47,7 +48,11 @@ class WireGuardPeerApi(
         return try {
             client.newCall(request).execute().use { response ->
                 val raw = response.body?.string().orEmpty()
-                Log.i(TAG, "add-peer HTTP ${response.code} body=${raw.take(240)}")
+                Log.i(
+                    TAG,
+                    "add-peer HTTP ${response.code} deviceId=${deviceId.take(8)}… " +
+                        "body=${raw.take(240)}",
+                )
                 val parsed = raw.takeIf { it.isNotBlank() }?.let {
                     runCatching { JSONObject(it) }.getOrNull()
                 }

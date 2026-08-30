@@ -89,11 +89,14 @@ object WireGuardEngine {
                         Log.w(TAG, "VpnService.prepare() not granted — wait for Activity consent")
                         return@withLock
                     }
-                    val wgConfig = WireGuardConfigFactory.build(config)
+                    val wgConfig = WireGuardConfigFactory.build(config, app)
+                    val included = config.includedApplications
+                        ?: WireGuardSplitTunnel.resolveIncludedApplications(app)
                     Log.i(
                         TAG,
                         "Bringing tunnel UP endpoint=${config.endpoint} " +
-                            "address=${config.address} allowedIps=${config.allowedIps}",
+                            "address=${config.address} allowedIps=${config.allowedIps} " +
+                            "includedApps=$included",
                     )
                     val state = go.setState(tunnel, Tunnel.State.UP, wgConfig)
                     _tunnelState.value = state
