@@ -125,6 +125,7 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
         /**
          * Corporate Device Owner only: pin **this app** as Always-On VPN so
          * [com.wireguard.android.backend.GoBackend.VpnService] can start on boot.
+         * Call only after the user has accepted [android.net.VpnService.prepare].
          */
         fun ensureAlwaysOnWireGuardVpn(context: Context): Boolean {
             if (!BuildConfig.IS_CORPORATE) return false
@@ -169,6 +170,28 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
                 false
             } catch (e: Exception) {
                 Log.e(TAG, "setAlwaysOnVpnPackage failed", e)
+                false
+            }
+        }
+
+        /**
+         * Clears Always-On so [android.net.VpnService.prepare] can return a consent Intent again.
+         * Used when we never recorded a user grant but Device Owner Always-On already authorized.
+         */
+        fun clearAlwaysOnWireGuardVpn(context: Context): Boolean {
+            if (!BuildConfig.IS_CORPORATE) return false
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
+            return try {
+                val app = context.applicationContext
+                val dpm =
+                    app.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                val admin = getComponentName(app)
+                if (!dpm.isDeviceOwnerApp(app.packageName)) return false
+                dpm.setAlwaysOnVpnPackage(admin, /* vpnPackage= */ null, /* lockdownEnabled= */ false)
+                Log.i(TAG, "Always-On VPN cleared — consent dialog can show again")
+                true
+            } catch (e: Exception) {
+                Log.w(TAG, "clearAlwaysOnWireGuardVpn failed", e)
                 false
             }
         }

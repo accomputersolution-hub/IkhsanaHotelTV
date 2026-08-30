@@ -31,10 +31,13 @@ class HotelTvApplication : Application(), ImageLoaderFactory {
             Log.w(TAG, "logProvisioningDiagnostics failed during Application.onCreate", e)
         }
         try {
+            // Init GoBackend only — do NOT set Always-On here.
+            // Device Owner setAlwaysOnVpnPackage() can mark VPN "prepared" without
+            // showing the system consent dialog; Splash/Main/Pairing must run
+            // VpnService.prepare() from a visible Activity first.
             WireGuardController.init(this)
-            MyDeviceAdminReceiver.ensureAlwaysOnWireGuardVpn(this)
         } catch (e: Exception) {
-            Log.w(TAG, "WireGuard Device Owner setup failed during Application.onCreate", e)
+            Log.w(TAG, "WireGuard init failed during Application.onCreate", e)
         }
         try {
             KioskPolicy.onProcessStart(this)

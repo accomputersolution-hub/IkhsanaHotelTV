@@ -14,11 +14,14 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.data.RoomIds
 import `in`.pcncloud.hotel.data.RoomTvPairing
 import `in`.pcncloud.hotel.kiosk.HotelSessionManager
+import `in`.pcncloud.hotel.wireguard.WireGuardConsentStore
+import `in`.pcncloud.hotel.wireguard.WireGuardController
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -58,6 +61,18 @@ class PairingActivity : AppCompatActivity() {
     private var resolvedPublicSlug: String = ""
     private var activeCode: String = ""
     private var deviceId: String = ""
+
+    private var awaitingVpnPermission = false
+
+    private val vpnPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        awaitingVpnPermission = false
+        Log.i(TAG, "VPN prepare resultCode=${result.resultCode}")
+        if (BuildConfig.IS_CORPORATE && WireGuardController.isVpnPrepared(applicationContext)) {
+            WireGuardController.onVpnPermissionGranted(applicationContext)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,6 +134,32 @@ class PairingActivity : AppCompatActivity() {
         btnPair.setOnClickListener { beginPairingLookup() }
         btnNewCode.setOnClickListener { regenerateCode() }
         etHotelId.requestFocus()
+
+        ensureCorporateVpnPermission()
+    }
+
+    /**
+     * Unpaired / cold paths can reach Pairing without Splash VPN gate.
+     * Always request [android.net.VpnService.prepare] from this Activity when needed.
+     */
+    private fun ensureCorporateVpnPermission() {
+        if (!BuildConfig.IS_CORPORATE) return
+        try {
+            WireGuardController.prepareForConsentPrompt(this)
+            if (WireGuardController.isVpnPrepared(this)) {
+                WireGuardConsentStore.markUserGranted(this)
+                WireGuardController.onVpnPermissionGranted(applicationContext)
+                return
+            }
+            val prepare = WireGuardController.preparePermissionIntent(this)
+            if (prepare != null && !awaitingVpnPermission) {
+                awaitingVpnPermission = true
+                Log.i(TAG, "VPN consent required — launching prepare from PairingActivity")
+                vpnPermissionLauncher.launch(prepare)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "WireGuard VPN consent from PairingActivity failed", e)
+        }
     }
 
     private fun applyFlavorCopy() {

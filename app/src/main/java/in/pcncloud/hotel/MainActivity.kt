@@ -43,6 +43,7 @@ import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
 import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
 import `in`.pcncloud.hotel.wireguard.WireGuardController
+import `in`.pcncloud.hotel.wireguard.WireGuardConsentStore
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.ScreensaverOverlay
 import `in`.pcncloud.hotel.ui.components.ServiceSuspendedScreen
@@ -1651,6 +1652,7 @@ class MainActivity : ComponentActivity() {
             var deferOverlayForVpn = false
             if (BuildConfig.IS_CORPORATE && !KioskPolicy.isExternalAppActive(this)) {
                 try {
+                    WireGuardController.prepareForConsentPrompt(this)
                     if (!WireGuardController.isVpnPrepared(this)) {
                         deferOverlayForVpn = true
                         if (!awaitingVpnPermission) {
@@ -1663,8 +1665,8 @@ class MainActivity : ComponentActivity() {
                         }
                     } else {
                         awaitingVpnPermission = false
-                        MyDeviceAdminReceiver.ensureAlwaysOnWireGuardVpn(this)
-                        WireGuardController.ensureRunning(this)
+                        WireGuardConsentStore.markUserGranted(this)
+                        WireGuardController.onVpnPermissionGranted(this)
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "WireGuard ensure from MainActivity failed", e)

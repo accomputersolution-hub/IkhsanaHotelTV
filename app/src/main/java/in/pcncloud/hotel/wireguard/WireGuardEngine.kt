@@ -58,12 +58,12 @@ object WireGuardEngine {
         Log.i(TAG, "GoBackend ready version=${runCatching { backend?.version }.getOrNull()}")
     }
 
-    /** Null when VPN consent already granted; otherwise launch this Intent. */
+    /** Null when VPN consent already granted; otherwise launch this Intent from an Activity. */
     fun preparePermissionIntent(context: Context): Intent? =
-        VpnService.prepare(context.applicationContext)
+        VpnService.prepare(context)
 
     fun isVpnPrepared(context: Context): Boolean =
-        VpnService.prepare(context.applicationContext) == null
+        VpnService.prepare(context) == null
 
     fun connect(
         config: WireGuardTunnelConfig = WireGuardCredentials.toTunnelConfig(),

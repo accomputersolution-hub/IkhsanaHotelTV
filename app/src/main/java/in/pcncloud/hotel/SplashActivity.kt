@@ -22,6 +22,7 @@ import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.ui.home.BrandAssets
 import `in`.pcncloud.hotel.wireguard.WireGuardController
+import `in`.pcncloud.hotel.wireguard.WireGuardConsentStore
 import coil.imageLoader
 import coil.request.ImageRequest
 import com.google.firebase.FirebaseApp
@@ -152,14 +153,17 @@ class SplashActivity : AppCompatActivity() {
             return
         }
         try {
+            WireGuardController.prepareForConsentPrompt(this)
             val prepare = WireGuardController.preparePermissionIntent(this)
             if (prepare != null) {
                 awaitingVpnPermission = true
                 splashStatus.text = getString(R.string.splash_vpn_request)
+                Log.i(TAG, "VPN consent required — launching prepare from SplashActivity")
                 vpnPermissionLauncher.launch(prepare)
             } else {
                 vpnGatePassed = true
-                WireGuardController.ensureRunning(applicationContext)
+                WireGuardConsentStore.markUserGranted(applicationContext)
+                WireGuardController.onVpnPermissionGranted(applicationContext)
                 ensureOverlayPermissionThenInit()
             }
         } catch (e: Exception) {
