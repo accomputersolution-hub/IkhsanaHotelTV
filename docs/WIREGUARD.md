@@ -38,6 +38,7 @@ Auto-connect ([WireGuardController.ensureRunning]) runs on **Dispatchers.IO**:
 | `WireGuardAutoConnect` | IO thread: network gate → provision/connect |
 | `WireGuardNetworkGate` | Validated internet + routing settle |
 | `WireGuardEngine` | `GoBackend.setState(UP/DOWN)` |
+| `WireGuardNetworkMonitor` | `ConnectivityManager.NetworkCallback` → connect on VALIDATED, disconnect on lost |
 
 ## Cleartext
 
