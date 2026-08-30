@@ -7,7 +7,7 @@ Corporate Android TV builds establish a native WireGuard tunnel via
 ## Flow
 
 1. **Keygen** — `KeyPair()` (official crypto)
-2. **POST** `http://103.29.99.61:3000/api/add-peer` with `{ "publicKey": "…" }` only  
+2. **POST** `http://103.29.99.61:3001/api/add-peer` with `{ "publicKey": "…" }` only  
    Server reads `/etc/wireguard/wg0.conf`, takes the highest `10.0.0.x`, assigns **next** IP
 3. **On HTTP 200** — persist returned `clientIp` / `address` / `dns`, then `WireGuardController.connect`:
    - `address` = server-assigned (e.g. `10.0.0.4/32`)

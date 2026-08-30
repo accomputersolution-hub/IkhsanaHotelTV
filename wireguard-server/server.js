@@ -16,7 +16,7 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const PORT = Number(process.env.PORT || 3000);
+const PORT = Number(process.env.PORT || 3001);
 const WG_CONF = process.env.WG_CONF || "/etc/wireguard/wg0.conf";
 const WG_INTERFACE = process.env.WG_INTERFACE || "wg0";
 const IP_PREFIX = "10.0.0.";

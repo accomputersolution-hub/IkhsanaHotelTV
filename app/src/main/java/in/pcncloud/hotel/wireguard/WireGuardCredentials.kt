@@ -8,7 +8,7 @@ package `in`.pcncloud.hotel.wireguard
  */
 object WireGuardCredentials {
     /** HTTP API that registers this device's public key as a WireGuard peer. */
-    const val ADD_PEER_URL = "http://103.29.99.61:3000/api/add-peer"
+    const val ADD_PEER_URL = "http://103.29.99.61:3001/api/add-peer"
 
     /**
      * Server WireGuard public key (base64, 44 chars).

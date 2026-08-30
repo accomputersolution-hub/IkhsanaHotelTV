@@ -33,12 +33,12 @@ If Android still gets:
 ```json
 {"error":"PublicKey and clientIp are required"}
 ```
-the **old** `server.js` is still running on `103.29.99.61:3000`. Copy this
+the **old** `server.js` is still running on `103.29.99.61:3001`. Copy this
 folder’s `server.js` onto the VPS and restart Node (systemd / pm2 / screen).
 
 Quick check after deploy:
 ```bash
-curl -sS -X POST http://127.0.0.1:3000/api/add-peer \
+curl -sS -X POST http://127.0.0.1:3001/api/add-peer \
   -H 'Content-Type: application/json' \
   -d '{"publicKey":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}'
 ```
@@ -53,7 +53,7 @@ Optional env:
 | `WG_SERVER_PUBLIC_KEY` | from `wg show` | Override returned public key |
 | `WG_CLIENT_DNS` | `8.8.8.8, 8.8.4.4` | DNS returned to Android clients |
 | `WG_MIN_CLIENT_HOST` | `2` | First client octet (`.1` = server) |
-| `PORT` | `3000` | Listen port |
+| `PORT` | `3001` | Listen port |
 
 ## Tests
 
