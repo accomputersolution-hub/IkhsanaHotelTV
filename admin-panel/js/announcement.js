@@ -1,26 +1,23 @@
 /**
- * Global TV ticker — Realtime Database
+ * Global TV ticker — loaded/saved via Vercel Admin API (Firebase Admin SDK).
  *
- * Path (aligned with working kiosk config writes):
+ * RTDB node (TV still listens here):
  *   hotels/{hotelId}/config/global_announcement
  *
- * Legacy path hotel_settings/{hotelId}/global_announcement is denied by
- * production RTDB rules (permission_denied for signed-in admins).
+ * Client RTDB rules deny admin reads/writes on this node, so the panel must
+ * go through /api/announcement instead of onValue/set from the browser.
  */
 
-import { rtdb } from './firebase-config.js';
-import {
-  ref as rtdbRef,
-  set as rtdbSet,
-  onValue,
-} from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js';
 import { toast } from './utils.js';
 import { normalizeHotelId } from './firebase-config.js';
 import { getHotelId, onHotelChange } from './tenant-context.js';
+import {
+  fetchAnnouncement,
+  publishAnnouncementApi,
+} from './api-client.js';
 
-/** @type {(() => void) | null} */
-let announcementUnsub = null;
 let publishing = false;
+let loadSeq = 0;
 
 export function announcementPath(hotelId = getHotelId()) {
   const id = normalizeHotelId(hotelId);
@@ -46,18 +43,15 @@ export function initAnnouncement() {
     }
   });
 
-  onHotelChange(() => listenAnnouncement());
+  onHotelChange(() => loadAnnouncement());
 }
 
-function listenAnnouncement() {
-  if (typeof announcementUnsub === 'function') {
-    announcementUnsub();
-    announcementUnsub = null;
-  }
-
+async function loadAnnouncement() {
   const input = document.getElementById('global-announcement-input');
   const hint = document.getElementById('global-announcement-path');
   const hotelId = normalizeHotelId(getHotelId());
+  const seq = ++loadSeq;
+
   if (!hotelId) {
     if (input) input.value = '';
     if (hint) hint.textContent = 'Select a hotel to edit the TV ticker.';
@@ -68,33 +62,18 @@ function listenAnnouncement() {
   if (hint) hint.textContent = path;
 
   try {
-    announcementUnsub = onValue(
-      rtdbRef(rtdb, path),
-      (snapshot) => {
-        if (!input || document.activeElement === input) return;
-        const value = snapshot.exists() ? snapshot.val() : '';
-        input.value = value == null ? '' : String(value);
-      },
-      (err) => {
-        console.error('[announcement] RTDB listen failed', path, err);
-        const code = err?.code || '';
-        const msg = err?.message || String(err);
-        if (hint) {
-          hint.textContent = `${path} — access denied (check RTDB rules for hotels/{id}/config)`;
-        }
-        // Avoid spamming a red toast on Room Status; only toast permission once per listen.
-        if (code === 'PERMISSION_DENIED' || /permission_denied/i.test(msg)) {
-          toast(
-            'TV ticker blocked by Realtime Database rules. Path must be under hotels/{id}/config.',
-            'error',
-          );
-        } else {
-          toast(msg || 'Could not load TV announcement', 'error');
-        }
-      },
-    );
+    const data = await fetchAnnouncement(hotelId);
+    if (seq !== loadSeq) return;
+    if (input && document.activeElement !== input) {
+      input.value = data.text == null ? '' : String(data.text);
+    }
   } catch (err) {
-    console.error('[announcement] RTDB listen threw', err);
+    if (seq !== loadSeq) return;
+    console.error('[announcement] Admin API load failed', err);
+    if (hint) {
+      hint.textContent = `${path} — could not load via Admin API`;
+    }
+    // Do not toast on Room Status auto-load; user sees empty field until retry.
   }
 }
 
@@ -103,11 +82,9 @@ async function publishAnnouncement() {
   const btn = document.getElementById('global-announcement-save');
   if (!input || publishing) return;
 
-  let path;
-  try {
-    path = announcementPath();
-  } catch (err) {
-    toast(err?.message || 'No hotel selected', 'error');
+  const hotelId = normalizeHotelId(getHotelId());
+  if (!hotelId) {
+    toast('No hotel selected', 'error');
     return;
   }
 
@@ -119,10 +96,10 @@ async function publishAnnouncement() {
   }
 
   try {
-    await rtdbSet(rtdbRef(rtdb, path), text);
+    await publishAnnouncementApi(hotelId, text);
     toast(text ? 'TV ticker updated' : 'TV ticker cleared', 'success');
   } catch (err) {
-    console.error('[announcement] RTDB write failed', path, err);
+    console.error('[announcement] Admin API publish failed', err);
     toast(err?.message || 'Failed to update TV ticker', 'error');
   } finally {
     publishing = false;
