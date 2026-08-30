@@ -9,8 +9,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * End-to-end corporate WireGuard bring-up:
  * 1. Generate (or load) local keypair via official [com.wireguard.crypto.KeyPair]
- * 2. POST public key to Node add-peer (server assigns next 10.0.0.x from wg0.conf)
- * 3. On HTTP 200 → [WireGuardController.connect] with returned address
+ * 2. Resolve stable [WireGuardDeviceId] (ANDROID_ID, else stored UUID)
+ * 3. POST `{ publicKey, deviceId }` to Node add-peer (server assigns/reuses 10.0.0.x)
+ * 4. On HTTP 200 → [WireGuardController.connect] with returned address
  */
 object WireGuardProvisioner {
     private const val TAG = "WireGuardProvisioner"
@@ -32,16 +33,21 @@ object WireGuardProvisioner {
 
             val store = WireGuardKeyStore(app)
             val keys = store.getOrCreateKeyPair()
+            val deviceId = WireGuardDeviceId.resolve(app)
             Log.i(
                 TAG,
                 "Device key public=${keys.publicKeyBase64.take(8)}… " +
+                    "deviceId=${deviceId.take(8)}… " +
                     "fresh=${keys.freshlyGenerated} registered=${store.isPeerRegistered()} " +
                     "ip=${store.assignedClientIp()}",
             )
 
             if (!store.isPeerRegistered()) {
                 val api = WireGuardPeerApi()
-                val result = api.addPeer(publicKey = keys.publicKeyBase64)
+                val result = api.addPeer(
+                    publicKey = keys.publicKeyBase64,
+                    deviceId = deviceId,
+                )
                 if (!result.success || result.clientIp.isNullOrBlank()) {
                     Log.e(
                         TAG,
@@ -58,7 +64,8 @@ object WireGuardProvisioner {
                 Log.i(
                     TAG,
                     "add-peer OK — assigned ${result.address ?: result.clientIp + "/32"} " +
-                        "dns=${result.dns ?: WireGuardCredentials.DNS}",
+                        "dns=${result.dns ?: WireGuardCredentials.DNS} " +
+                        "deviceId=${deviceId.take(8)}…",
                 )
             } else {
                 Log.i(TAG, "Peer already registered — reconnecting tunnel")
