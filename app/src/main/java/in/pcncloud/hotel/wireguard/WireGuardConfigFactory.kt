@@ -37,7 +37,11 @@ object WireGuardConfigFactory {
             ifaceBuilder.includeApplications(included)
             Log.i(TAG, "Split tunnel IncludedApplications=$included")
         } else {
-            Log.w(TAG, "No IncludedApplications — tunnel would capture all apps; refusing empty list")
+            // Never omit IncludedApplications — that would capture ALL apps (including us).
+            throw IllegalStateException(
+                "Split tunnel requires Pro TV (${`in`.pcncloud.hotel.kiosk.KioskLockTask.LIVE_TV_PACKAGE}) " +
+                    "installed; refusing full-device tunnel",
+            )
         }
 
         val peerBuilder = Peer.Builder()

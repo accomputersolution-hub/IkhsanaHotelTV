@@ -6,43 +6,40 @@ import android.util.Log
 import `in`.pcncloud.hotel.kiosk.KioskLockTask
 
 /**
- * App-based split tunnel: only these packages are routed into the WireGuard TUN
- * ([com.wireguard.config.Interface.Builder.includeApplication] →
- * [android.net.VpnService.Builder.addAllowedApplication]).
+ * App-based split tunnel: only [KioskLockTask.LIVE_TV_PACKAGE] (Pro TV) is
+ * routed into the WireGuard TUN. This hotel/corporate app stays on direct
+ * internet (intro video, Firebase, peer API) so Splash timing is not blocked
+ * by the tunnel.
  *
- * Everything else uses the direct (non-VPN) network.
+ * GoBackend maps [com.wireguard.config.Interface.Builder.includeApplication]
+ * → [android.net.VpnService.Builder.addAllowedApplication].
  */
 object WireGuardSplitTunnel {
     private const val TAG = "WireGuardSplitTunnel"
 
     /**
-     * Packages that must use the VPN:
-     * 1. This app ([Context.getPackageName]) — peer API / control plane on the private net
-     * 2. Pro TV / Live TV ([KioskLockTask.LIVE_TV_PACKAGE]) — same package as the Live TV card
+     * Packages that use the VPN — **Pro TV only** (`com.ektv.pro`).
      *
      * Uninstalled packages are skipped so [VpnService.Builder.addAllowedApplication]
      * does not throw [PackageManager.NameNotFoundException] and abort tunnel UP.
      */
     fun resolveIncludedApplications(context: Context): List<String> {
         val app = context.applicationContext
-        val candidates = linkedSetOf(
-            app.packageName.trim(),
-            KioskLockTask.LIVE_TV_PACKAGE.trim(),
-        ).filter { it.isNotEmpty() }
-
+        val liveTv = KioskLockTask.LIVE_TV_PACKAGE.trim()
         val pm = app.packageManager
-        val included = candidates.filter { pkg ->
-            val installed = isPackageInstalled(pm, pkg)
-            if (!installed) {
-                Log.w(TAG, "Split-tunnel skip (not installed): $pkg")
+
+        val included = buildList {
+            if (liveTv.isNotEmpty() && isPackageInstalled(pm, liveTv)) {
+                add(liveTv)
+            } else if (liveTv.isNotEmpty()) {
+                Log.w(TAG, "Split-tunnel skip (Pro TV not installed): $liveTv")
             }
-            installed
         }
 
         Log.i(
             TAG,
-            "IncludedApplications=${included.joinToString()} " +
-                "(self=${app.packageName}, liveTv=${KioskLockTask.LIVE_TV_PACKAGE})",
+            "IncludedApplications=${included.joinToString().ifBlank { "(none)" }} " +
+                "(self=${app.packageName} stays off-VPN, liveTv=$liveTv)",
         )
         return included
     }
