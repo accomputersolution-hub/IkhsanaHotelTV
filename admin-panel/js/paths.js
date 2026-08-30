@@ -57,9 +57,9 @@ export const paths = {
   usersCollection: () => 'users',
   /** Helper matching TenantManager.pathFor */
   tenantPath: (sub) => TenantManager.pathFor(sub),
-  /** RTDB TV ticker — hotel_settings/{hotelId}/global_announcement */
+  /** RTDB TV ticker — hotels/{hotelId}/config/global_announcement */
   rtdbAnnouncement: (hotelId = getHotelId()) =>
-    `hotel_settings/${normalizeHotelId(hotelId)}/global_announcement`,
+    `hotels/${normalizeHotelId(hotelId)}/config/global_announcement`,
   /** RTDB staff RBAC — staff_users/{uid}/role */
   rtdbStaffUser: (uid) => `staff_users/${uid}`,
   rtdbStaffUsers: () => 'staff_users',

@@ -15,8 +15,7 @@ import com.google.firebase.database.FirebaseDatabase;
 
 /**
  * Admin App: write the TV ticker string to Realtime Database.
- * Node: {@code hotel_settings/{hotelId}/global_announcement}
- * Example: {@code hotel_settings/lnt_academy/global_announcement}
+ * Node: {@code hotels/{hotelId}/config/global_announcement}
  */
 public final class AdminAnnouncementPublisher {
 
@@ -29,7 +28,7 @@ public final class AdminAnnouncementPublisher {
     @NonNull
     public static String path(@Nullable String hotelId) {
         String id = hotelId == null ? "" : hotelId.trim().toLowerCase().replace('-', '_');
-        return "hotel_settings/" + id + "/global_announcement";
+        return "hotels/" + id + "/config/global_announcement";
     }
 
     /**

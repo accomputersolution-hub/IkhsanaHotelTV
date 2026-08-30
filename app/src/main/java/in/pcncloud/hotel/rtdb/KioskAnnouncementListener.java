@@ -18,11 +18,11 @@ import com.google.firebase.database.ValueEventListener;
 import in.pcncloud.hotel.R;
 
 /**
- * TV Kiosk: live-listen to {@code hotel_settings/{hotelId}/global_announcement}
+ * TV Kiosk: live-listen to {@code hotels/{hotelId}/config/global_announcement}
  * and update the marquee TextView instantly.
  *
  * <pre>
- * listener = KioskAnnouncementListener.attach(this, "lnt_academy");
+ * listener = KioskAnnouncementListener.attach(this, "3210");
  * // onDestroy:
  * listener.detach();
  * </pre>
@@ -43,7 +43,7 @@ public final class KioskAnnouncementListener {
     @NonNull
     public static String path(@Nullable String hotelId) {
         String id = hotelId == null ? "" : hotelId.trim().toLowerCase().replace('-', '_');
-        return "hotel_settings/" + id + "/global_announcement";
+        return "hotels/" + id + "/config/global_announcement";
     }
 
     /**

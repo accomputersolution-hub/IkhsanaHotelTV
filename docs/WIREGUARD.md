@@ -48,11 +48,8 @@ also requests prepare.
 | `WireGuardAutoConnect` | IO thread: network gate → provision/connect |
 | `WireGuardNetworkGate` | Validated internet + routing settle |
 | `WireGuardEngine` | `GoBackend.setState(UP/DOWN)` |
-<<<<<<< HEAD
 | `WireGuardNetworkMonitor` | `ConnectivityManager.NetworkCallback` → connect on VALIDATED, disconnect on lost |
-=======
 | `WireGuardConsentStore` | User accepted system VPN prepare dialog |
->>>>>>> origin/cursor/vpn-consent-fix-5d1c
 
 ## Cleartext
 

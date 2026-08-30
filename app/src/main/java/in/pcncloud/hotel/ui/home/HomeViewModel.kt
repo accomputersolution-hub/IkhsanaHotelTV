@@ -32,7 +32,7 @@ data class HomeUiState(
     val isLoading: Boolean = true,
     val serviceToastMessage: String? = null,
     val serviceToastType: ServiceToastType = ServiceToastType.STATUS,
-    /** Live RTDB `hotel_settings/{hotelId}/global_announcement`. */
+    /** Live RTDB `hotels/{hotelId}/config/global_announcement`. */
     val rtdbAnnouncement: String = "",
     /** This TV room's card visibility (Hotels/.../Rooms/{room}). Defaults all visible. */
     val featureFlags: RoomFeatureFlags = RoomFeatureFlags(),

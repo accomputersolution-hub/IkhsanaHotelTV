@@ -13,9 +13,11 @@ import kotlinx.coroutines.flow.callbackFlow
 
 /**
  * Realtime Database node shared by Admin and TV kiosk:
- * `hotel_settings/{hotelId}/global_announcement`
+ * `hotels/{hotelId}/config/global_announcement`
  *
- * Example for L&T: `hotel_settings/lnt_academy/global_announcement`
+ * Same tree as kiosk Lock Task flags (`hotels/{id}/config/…`) so signed-in
+ * admin panel writes are allowed by production RTDB rules.
+ * Legacy `hotel_settings/…` path returns permission_denied for admins.
  */
 object GlobalAnnouncementRtdb {
 
@@ -24,7 +26,7 @@ object GlobalAnnouncementRtdb {
         "https://ikhsana-hotel-tv-default-rtdb.asia-southeast1.firebasedatabase.app"
 
     fun path(hotelId: String): String =
-        "hotel_settings/${HotelConfig.normalizeHotelId(hotelId)}/global_announcement"
+        "hotels/${HotelConfig.normalizeHotelId(hotelId)}/config/global_announcement"
 
     private fun database() =
         FirebaseDatabase.getInstance(FirebaseApp.getInstance(), RTDB_URL)

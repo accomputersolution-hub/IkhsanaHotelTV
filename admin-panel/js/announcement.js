@@ -1,7 +1,11 @@
 /**
  * Global TV ticker — Realtime Database
- * Path: hotel_settings/{hotelId}/global_announcement
- * Example: hotel_settings/lnt_academy/global_announcement
+ *
+ * Path (aligned with working kiosk config writes):
+ *   hotels/{hotelId}/config/global_announcement
+ *
+ * Legacy path hotel_settings/{hotelId}/global_announcement is denied by
+ * production RTDB rules (permission_denied for signed-in admins).
  */
 
 import { rtdb } from './firebase-config.js';
@@ -21,7 +25,7 @@ let publishing = false;
 export function announcementPath(hotelId = getHotelId()) {
   const id = normalizeHotelId(hotelId);
   if (!id) throw new Error('No active hotel context');
-  return `hotel_settings/${id}/global_announcement`;
+  return `hotels/${id}/config/global_announcement`;
 }
 
 export function initAnnouncement() {
@@ -72,8 +76,21 @@ function listenAnnouncement() {
         input.value = value == null ? '' : String(value);
       },
       (err) => {
-        console.error('[announcement] RTDB listen failed', err);
-        toast(err?.message || 'Could not load TV announcement', 'error');
+        console.error('[announcement] RTDB listen failed', path, err);
+        const code = err?.code || '';
+        const msg = err?.message || String(err);
+        if (hint) {
+          hint.textContent = `${path} — access denied (check RTDB rules for hotels/{id}/config)`;
+        }
+        // Avoid spamming a red toast on Room Status; only toast permission once per listen.
+        if (code === 'PERMISSION_DENIED' || /permission_denied/i.test(msg)) {
+          toast(
+            'TV ticker blocked by Realtime Database rules. Path must be under hotels/{id}/config.',
+            'error',
+          );
+        } else {
+          toast(msg || 'Could not load TV announcement', 'error');
+        }
       },
     );
   } catch (err) {
@@ -105,7 +122,7 @@ async function publishAnnouncement() {
     await rtdbSet(rtdbRef(rtdb, path), text);
     toast(text ? 'TV ticker updated' : 'TV ticker cleared', 'success');
   } catch (err) {
-    console.error('[announcement] RTDB write failed', err);
+    console.error('[announcement] RTDB write failed', path, err);
     toast(err?.message || 'Failed to update TV ticker', 'error');
   } finally {
     publishing = false;
