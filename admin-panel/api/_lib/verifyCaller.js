@@ -71,9 +71,42 @@ async function requirePasswordManager(req, { targetUid } = {}) {
   return { decoded, profile, isSuperAdmin: false };
 }
 
+/**
+ * Super Admin (any hotel) or Hotel Admin for [hotelId] only.
+ */
+async function requireHotelAdminOrSuper(req, hotelId) {
+  const decoded = await verifyIdToken(req);
+  const profile = await loadUserProfile(decoded.uid);
+  if (!profile) {
+    const err = new Error('Not authorized');
+    err.statusCode = 403;
+    throw err;
+  }
+
+  const target = String(hotelId || '').trim();
+  if (!target) {
+    const err = new Error('hotelId is required');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (profile.role === 'super_admin') {
+    return { decoded, profile, isSuperAdmin: true };
+  }
+
+  if (profile.role === 'hotel_admin' && profile.hotelId === target) {
+    return { decoded, profile, isSuperAdmin: false };
+  }
+
+  const err = new Error('Not authorized for this hotel');
+  err.statusCode = 403;
+  throw err;
+}
+
 module.exports = {
   verifyIdToken,
   loadUserProfile,
   loadStaffRecord,
   requirePasswordManager,
+  requireHotelAdminOrSuper,
 };
