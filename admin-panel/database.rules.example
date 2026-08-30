@@ -1,0 +1,40 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "staff_users": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid == $uid || root.child('staff_users').child(auth.uid).child('role').val() == 'admin')",
+        ".write": "auth != null && root.child('staff_users').child(auth.uid).child('role').val() == 'admin'"
+      }
+    },
+
+    "hotels": {
+      "$hotelId": {
+        ".read": true,
+        "config": {
+          ".write": "auth != null",
+          "global_announcement": {
+            ".validate": "newData.isString() || !newData.exists()"
+          }
+        },
+        "rooms": {
+          "$roomId": {
+            ".write": "auth != null"
+          }
+        }
+      }
+    },
+
+    "hotel_settings": {
+      "$hotelId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "global_announcement": {
+          ".validate": "newData.isString() || !newData.exists()"
+        }
+      }
+    }
+  }
+}
