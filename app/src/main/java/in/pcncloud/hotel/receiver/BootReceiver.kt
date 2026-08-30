@@ -31,6 +31,8 @@ class BootReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "BootReceiver"
         private const val BOOT_REQUEST_CODE = 1001
+        /** Ignore duplicate LOCKED_BOOT + BOOT_COMPLETED / QuickBoot within this window. */
+        private const val BOOT_LAUNCH_DEDUPE_MS = 120_000L
 
         private val BOOT_ACTIONS = setOf(
             Intent.ACTION_BOOT_COMPLETED,
@@ -39,6 +41,9 @@ class BootReceiver : BroadcastReceiver() {
             "com.htc.intent.action.QUICKBOOT_POWERON",
             "com.android.internal.intent.action.QUICKBOOT_POWERON",
         )
+
+        @Volatile
+        private var lastUiLaunchElapsedMs: Long = 0L
     }
 
     override fun onReceive(context: Context, intent: Intent?) {
@@ -59,6 +64,34 @@ class BootReceiver : BroadcastReceiver() {
                 "hotel=${hotelConfig.getHotelId()} room=${hotelConfig.getRoomNumberOrNull()}",
         )
 
+        // Duplicate boot broadcasts (LOCKED_BOOT then BOOT_COMPLETED) used to relaunch
+        // Splash with CLEAR_TASK and restart IntroVideo mid-play. Skip when UI already up.
+        val now = android.os.SystemClock.elapsedRealtime()
+        val sinceLaunch = now - lastUiLaunchElapsedMs
+        if (lastUiLaunchElapsedMs > 0L && sinceLaunch in 0 until BOOT_LAUNCH_DEDUPE_MS) {
+            Log.i(
+                TAG,
+                "Skipping duplicate boot UI launch action=$action " +
+                    "sinceLastLaunchMs=$sinceLaunch (dedupe ${BOOT_LAUNCH_DEDUPE_MS}ms)",
+            )
+            if (BuildConfig.IS_CORPORATE) {
+                runCatching { WireGuardController.init(appContext) }
+            }
+            return
+        }
+        if (KioskPolicy.isMainActivityForeground(appContext) ||
+            KioskPolicy.isIntroPlaybackActive()
+        ) {
+            Log.i(
+                TAG,
+                "Skipping boot UI launch — Main/intro already active action=$action",
+            )
+            if (BuildConfig.IS_CORPORATE) {
+                runCatching { WireGuardController.init(appContext) }
+            }
+            return
+        }
+
         // Fresh boot: clear stale minimize / OTT session gates from previous power cycle.
         KioskPolicy.clearUserMinimized(context)
         KioskPolicy.clearExternalAppActive(context)
@@ -75,6 +108,7 @@ class BootReceiver : BroadcastReceiver() {
             addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
         }
 
+        lastUiLaunchElapsedMs = now
         // PendingIntent launch first (BAL-safe). Watchdog after UI attempt.
         launchUiAfterBoot(context, launchIntent, target.simpleName, action)
 

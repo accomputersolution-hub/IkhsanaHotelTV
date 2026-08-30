@@ -600,9 +600,22 @@ class SplashActivity : AppCompatActivity() {
         roomListener?.remove()
         roomListener = null
         releaseSplashSurfaces()
+
+        // If Main/intro is already running (duplicate boot Splash), do NOT CLEAR_TASK —
+        // that destroyed ExoPlayer and made intro play twice after a second Welcome.
+        val mainAlreadyUp = KioskPolicy.isMainActivityForeground(applicationContext) ||
+            KioskPolicy.isIntroPlaybackActive()
+        val launchFlags = if (mainAlreadyUp) {
+            Log.i(TAG, "openMain — Main/intro already up; bring to front without CLEAR_TASK")
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+        } else {
+            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
         startActivity(
             Intent(this, MainActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                addFlags(launchFlags)
             },
         )
         @Suppress("DEPRECATION")
