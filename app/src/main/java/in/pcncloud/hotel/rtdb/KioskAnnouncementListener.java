@@ -46,6 +46,12 @@ public final class KioskAnnouncementListener {
         return "hotels/" + id + "/config/global_announcement";
     }
 
+    @NonNull
+    public static String legacyPath(@Nullable String hotelId) {
+        String id = hotelId == null ? "" : hotelId.trim().toLowerCase().replace('-', '_');
+        return "hotel_settings/" + id + "/global_announcement";
+    }
+
     /**
      * Finds {@link R.id#tv_announcement_ticker}, starts the marquee, and
      * attaches {@code addValueEventListener} on the same RTDB node Admin writes.

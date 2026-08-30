@@ -12,12 +12,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 
 /**
- * Realtime Database node shared by Admin and TV kiosk:
- * `hotels/{hotelId}/config/global_announcement`
+ * TV ticker from Realtime Database.
  *
- * Same tree as kiosk Lock Task flags (`hotels/{id}/config/…`) so signed-in
- * admin panel writes are allowed by production RTDB rules.
- * Legacy `hotel_settings/…` path returns permission_denied for admins.
+ * Prefers `hotels/{hotelId}/config/global_announcement`, and also listens to
+ * legacy `hotel_settings/{hotelId}/global_announcement` so either Admin write
+ * path still updates the Home ticker.
+ *
+ * Firestore `Hotels/{id}.announcement` remains a fallback via [HomeUiState.tickerMessage].
  */
 object GlobalAnnouncementRtdb {
 
@@ -28,20 +29,24 @@ object GlobalAnnouncementRtdb {
     fun path(hotelId: String): String =
         "hotels/${HotelConfig.normalizeHotelId(hotelId)}/config/global_announcement"
 
+    fun legacyPath(hotelId: String): String =
+        "hotel_settings/${HotelConfig.normalizeHotelId(hotelId)}/global_announcement"
+
     private fun database() =
         FirebaseDatabase.getInstance(FirebaseApp.getInstance(), RTDB_URL)
 
-    /**
-     * Admin write — same as Java `ref.setValue(text)` from an EditText + Button.
-     */
     fun publish(hotelId: String, message: String, onComplete: (Exception?) -> Unit = {}) {
         val id = HotelConfig.normalizeHotelId(hotelId)
         if (id.isBlank()) {
             onComplete(IllegalArgumentException("Hotel ID is blank"))
             return
         }
+        val text = message.trim()
         try {
-            database().getReference(path(id)).setValue(message.trim())
+            val primary = database().getReference(path(id))
+            val legacy = database().getReference(legacyPath(id))
+            primary.setValue(text)
+                .continueWithTask { legacy.setValue(text) }
                 .addOnSuccessListener { onComplete(null) }
                 .addOnFailureListener { err ->
                     Log.e(TAG, "publish failed → ${path(id)}", err)
@@ -54,8 +59,7 @@ object GlobalAnnouncementRtdb {
     }
 
     /**
-     * TV kiosk listen — `addValueEventListener` on the same node.
-     * Emits `""` when the snapshot is missing or null so the ticker can hide.
+     * Emits the latest non-blank ticker from primary or legacy RTDB node.
      */
     fun observe(hotelId: String?): Flow<String> = callbackFlow {
         val id = HotelConfig.normalizeHotelId(hotelId)
@@ -65,29 +69,60 @@ object GlobalAnnouncementRtdb {
             return@callbackFlow
         }
 
-        val ref = database().getReference(path(id))
-        val listener = object : ValueEventListener {
+        var primaryText = ""
+        var legacyText = ""
+
+        fun emitBest() {
+            val best = primaryText.ifBlank { legacyText }
+            Log.d(TAG, "ticker emit hotel=$id len=${best.length}")
+            trySend(best)
+        }
+
+        fun parseValue(snapshot: DataSnapshot): String {
+            if (!snapshot.exists() || snapshot.value == null) return ""
+            return when (val value = snapshot.value) {
+                is String -> value.trim()
+                else -> value.toString().trim()
+            }
+        }
+
+        val primaryRef = database().getReference(path(id))
+        val legacyRef = database().getReference(legacyPath(id))
+
+        val primaryListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                if (!snapshot.exists() || snapshot.value == null) {
-                    Log.d(TAG, "RTDB ${path(id)} empty/null")
-                    trySend("")
-                    return
-                }
-                val text = when (val value = snapshot.value) {
-                    is String -> value.trim()
-                    else -> value.toString().trim()
-                }
-                Log.d(TAG, "RTDB ${path(id)} → \"${text.take(80)}\"")
-                trySend(text)
+                primaryText = parseValue(snapshot)
+                Log.d(TAG, "RTDB ${path(id)} → \"${primaryText.take(80)}\"")
+                emitBest()
             }
 
             override fun onCancelled(error: DatabaseError) {
                 Log.e(TAG, "RTDB ${path(id)} cancelled: ${error.message}", error.toException())
-                trySend("")
+                primaryText = ""
+                emitBest()
             }
         }
 
-        ref.addValueEventListener(listener)
-        awaitClose { ref.removeEventListener(listener) }
+        val legacyListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                legacyText = parseValue(snapshot)
+                Log.d(TAG, "RTDB ${legacyPath(id)} → \"${legacyText.take(80)}\"")
+                emitBest()
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.w(TAG, "RTDB ${legacyPath(id)} cancelled: ${error.message}")
+                legacyText = ""
+                emitBest()
+            }
+        }
+
+        primaryRef.addValueEventListener(primaryListener)
+        legacyRef.addValueEventListener(legacyListener)
+
+        awaitClose {
+            primaryRef.removeEventListener(primaryListener)
+            legacyRef.removeEventListener(legacyListener)
+        }
     }
 }
