@@ -29,7 +29,7 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
         Log.i(TAG, "Device admin enabled — applying Lock Task + Always-On VPN policy")
         ensureSelfAllowlisted(context)
         applyStrictLockTaskFeatures(context)
-        ensureAlwaysOnEmbeddedVpn(context)
+        ensureAlwaysOnWireGuardVpn(context)
     }
 
     override fun onDisabled(context: Context, intent: Intent) {
@@ -124,9 +124,9 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
 
         /**
          * Corporate Device Owner only: pin **this app** as Always-On VPN so
-         * [in.pcncloud.hotel.tailscale.embed.EmbeddedTailscaleVpnService] starts on boot.
+         * [com.wireguard.android.backend.GoBackend.VpnService] can start on boot.
          */
-        fun ensureAlwaysOnEmbeddedVpn(context: Context): Boolean {
+        fun ensureAlwaysOnWireGuardVpn(context: Context): Boolean {
             if (!BuildConfig.IS_CORPORATE) return false
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
                 Log.w(TAG, "setAlwaysOnVpnPackage requires API 24+ — skip")
@@ -157,7 +157,7 @@ class MyDeviceAdminReceiver : DeviceAdminReceiver() {
                 }
                 Log.i(
                     TAG,
-                    "Always-On VPN set → package=${app.packageName} (embedded Tailscale) " +
+                    "Always-On VPN set → package=${app.packageName} (WireGuard GoBackend) " +
                         "lockdown=false activePackage=$active",
                 )
                 true

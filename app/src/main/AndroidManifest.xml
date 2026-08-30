@@ -19,7 +19,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
     <uses-feature
         android:name="android.hardware.touchscreen"
@@ -56,7 +55,7 @@
         android:icon="@drawable/pcn_logo"
         android:label="${appName}"
         android:supportsRtl="true"
-        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:directBootAware="true"
         android:theme="@style/Theme.PcnCloudTv"
         tools:ignore="GoogleAppIndexingWarning">
@@ -143,7 +142,7 @@
 
         <!--
           Device Owner admin receiver — required for true Lock Task / Home suppression
-          and (corporate) Always-On VPN pinned to THIS app's built-in VpnService.
+          and (corporate) Always-On VPN for WireGuard GoBackend$VpnService.
           Provision once (factory-reset TV, no Google account):
           Hotel:     adb shell dpm set-device-owner in.pcncloud.hotel/in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
           Corporate: adb shell dpm set-device-owner in.pcncloud.corporate/in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
@@ -179,30 +178,30 @@
                 android:value="Hotel TV optional kiosk keep-alive; does not relaunch UI on minimize" />
         </service>
 
-        <!-- Embedded libtailscale keep-alive + in-process VpnService TUN. -->
+        <!--
+          Official WireGuard GoBackend TUN owner (libwg-go). Declared explicitly so
+          the VpnService intent-filter is visible alongside the AAR merge.
+        -->
         <service
-            android:name=".tailscale.embed.EmbeddedTailscaleKeepAliveService"
+            android:name="com.wireguard.android.backend.GoBackend$VpnService"
+            android:exported="false"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+
+        <!-- Keeps the process warm while the WireGuard Go tunnel is up. -->
+        <service
+            android:name=".wireguard.WireGuardKeepAliveService"
             android:enabled="true"
             android:exported="false"
             android:directBootAware="true"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Re-assert embedded Tailscale VPN after boot" />
-        </service>
-
-        <service
-            android:name=".tailscale.embed.EmbeddedTailscaleVpnService"
-            android:exported="false"
-            android:directBootAware="true"
-            android:permission="android.permission.BIND_VPN_SERVICE"
-            android:foregroundServiceType="specialUse">
-            <intent-filter>
-                <action android:name="android.net.VpnService" />
-            </intent-filter>
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Embedded Tailscale TUN — per-app split for Live TV" />
+                android:value="Keep WireGuard GoBackend process alive on Android TV" />
         </service>
 
         <!--

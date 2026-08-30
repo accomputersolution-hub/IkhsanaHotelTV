@@ -13,4 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
-.tailscale-android-src/
+wireguard-server/node_modules/
+scripts/libwg-go-build/libwg-go/build-*

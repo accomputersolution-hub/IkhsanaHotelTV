@@ -42,7 +42,7 @@ import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
 import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
-import `in`.pcncloud.hotel.integration.TailscaleController
+import `in`.pcncloud.hotel.wireguard.WireGuardController
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.ScreensaverOverlay
 import `in`.pcncloud.hotel.ui.components.ServiceSuspendedScreen
@@ -90,8 +90,8 @@ class MainActivity : ComponentActivity() {
     ) { result ->
         awaitingVpnPermission = false
         Log.i(TAG, "VPN prepare resultCode=${result.resultCode}")
-        if (BuildConfig.IS_CORPORATE && TailscaleController.isVpnPrepared(applicationContext)) {
-            TailscaleController.onVpnPermissionGranted(applicationContext)
+        if (BuildConfig.IS_CORPORATE && WireGuardController.isVpnPrepared(applicationContext)) {
+            WireGuardController.onVpnPermissionGranted(applicationContext)
             if (resolveKioskEnabled()) {
                 ensureOverlayPermissionForBal()
             }
@@ -1649,13 +1649,12 @@ class MainActivity : ComponentActivity() {
             }
 
             var deferOverlayForVpn = false
-            // Corporate: VPN consent before overlay settings — overlay steals prepare dialog focus.
             if (BuildConfig.IS_CORPORATE && !KioskPolicy.isExternalAppActive(this)) {
                 try {
-                    if (!TailscaleController.isVpnPrepared(this)) {
+                    if (!WireGuardController.isVpnPrepared(this)) {
                         deferOverlayForVpn = true
                         if (!awaitingVpnPermission) {
-                            val prepare = TailscaleController.preparePermissionIntent(this)
+                            val prepare = WireGuardController.preparePermissionIntent(this)
                             if (prepare != null) {
                                 awaitingVpnPermission = true
                                 Log.w(TAG, "VPN consent required — launching prepare from MainActivity")
@@ -1664,11 +1663,11 @@ class MainActivity : ComponentActivity() {
                         }
                     } else {
                         awaitingVpnPermission = false
-                        MyDeviceAdminReceiver.ensureAlwaysOnEmbeddedVpn(this)
-                        TailscaleController.ensureRunning(this)
+                        MyDeviceAdminReceiver.ensureAlwaysOnWireGuardVpn(this)
+                        WireGuardController.ensureRunning(this)
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Tailscale ensure from MainActivity failed", e)
+                    Log.w(TAG, "WireGuard ensure from MainActivity failed", e)
                 }
             }
 
@@ -1683,7 +1682,6 @@ class MainActivity : ComponentActivity() {
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to start KioskWatchdogService", e)
                 }
-                // Overlay settings must not open while VPN prepare dialog is showing.
                 if (!deferOverlayForVpn && !awaitingVpnPermission) {
                     ensureOverlayPermissionForBal()
                 }

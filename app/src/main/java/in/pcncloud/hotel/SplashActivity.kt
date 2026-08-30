@@ -21,7 +21,7 @@ import `in`.pcncloud.hotel.config.IntroVideoCache
 import `in`.pcncloud.hotel.data.FirestorePaths
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.ui.home.BrandAssets
-import `in`.pcncloud.hotel.integration.TailscaleController
+import `in`.pcncloud.hotel.wireguard.WireGuardController
 import coil.imageLoader
 import coil.request.ImageRequest
 import com.google.firebase.FirebaseApp
@@ -60,7 +60,7 @@ class SplashActivity : AppCompatActivity() {
     /** True once overlay check passed (granted, N/A, or gracefully skipped). */
     private var overlayGatePassed = false
 
-    /** True once VPN prepare finished (granted, denied, or already authorized). */
+    /** True once VPN prepare finished (granted, denied, N/A, or already authorized). */
     private var vpnGatePassed = !BuildConfig.IS_CORPORATE
 
     /** True while Settings overlay screen is open via [startActivityForResult]. */
@@ -69,7 +69,6 @@ class SplashActivity : AppCompatActivity() {
     /** True while the system VPN consent activity is open. */
     private var awaitingVpnPermission = false
 
-    /** One-shot VPN consent (Device Owner Always-On may already authorize). */
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -77,13 +76,13 @@ class SplashActivity : AppCompatActivity() {
         vpnGatePassed = true
         Log.i(TAG, "VPN prepare resultCode=${result.resultCode}")
         if (BuildConfig.IS_CORPORATE) {
-            if (TailscaleController.isVpnPrepared(applicationContext)) {
-                TailscaleController.onVpnPermissionGranted(applicationContext)
+            if (WireGuardController.isVpnPrepared(applicationContext)) {
+                WireGuardController.onVpnPermissionGranted(applicationContext)
             } else {
                 Log.w(TAG, "VPN consent denied or cancelled — continuing without tunnel")
             }
         }
-        continueStartupGates()
+        ensureOverlayPermissionThenInit()
     }
 
     private val proceedUnpaired = Runnable { openPairing() }
@@ -144,39 +143,30 @@ class SplashActivity : AppCompatActivity() {
         }
         splashProgress.isVisible = true
 
-        // VPN consent must finish before overlay settings or MainActivity navigation.
         ensureVpnPermissionThenContinue()
     }
 
-    /**
-     * First gate: VpnService.prepare from this visible Activity.
-     * Overlay + Firestore prefetch only run after [vpnGatePassed].
-     */
     private fun ensureVpnPermissionThenContinue() {
         if (vpnGatePassed) {
-            continueStartupGates()
+            ensureOverlayPermissionThenInit()
             return
         }
         try {
-            val prepare = TailscaleController.preparePermissionIntent(this)
+            val prepare = WireGuardController.preparePermissionIntent(this)
             if (prepare != null) {
                 awaitingVpnPermission = true
                 splashStatus.text = getString(R.string.splash_vpn_request)
                 vpnPermissionLauncher.launch(prepare)
             } else {
                 vpnGatePassed = true
-                TailscaleController.ensureRunning(applicationContext)
-                continueStartupGates()
+                WireGuardController.ensureRunning(applicationContext)
+                ensureOverlayPermissionThenInit()
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Tailscale VPN consent from Splash failed", e)
+            Log.w(TAG, "WireGuard VPN consent from Splash failed", e)
             vpnGatePassed = true
-            continueStartupGates()
+            ensureOverlayPermissionThenInit()
         }
-    }
-
-    private fun continueStartupGates() {
-        ensureOverlayPermissionThenInit()
     }
 
     private fun ensureOverlayPermissionThenInit() {

@@ -14,7 +14,7 @@ import `in`.pcncloud.hotel.PairingActivity
 import `in`.pcncloud.hotel.config.HotelConfig
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
-import `in`.pcncloud.hotel.integration.TailscaleController
+import `in`.pcncloud.hotel.wireguard.WireGuardController
 
 /**
  * Auto-starts the hotel UI after device restart.
@@ -80,12 +80,11 @@ class BootReceiver : BroadcastReceiver() {
         // PendingIntent launch first (BAL-safe). Watchdog after UI attempt.
         launchUiAfterBoot(context, launchIntent, target.simpleName, action)
 
-        // Corporate: init libtailscale only — VPN consent must come from Splash/Main Activity.
         if (BuildConfig.IS_CORPORATE) {
             try {
-                TailscaleController.init(appContext)
+                WireGuardController.init(appContext)
             } catch (e: Exception) {
-                Log.w(TAG, "Tailscale init after boot failed", e)
+                Log.w(TAG, "WireGuard init after boot failed", e)
             }
         }
 

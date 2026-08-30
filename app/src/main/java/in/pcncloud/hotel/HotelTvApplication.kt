@@ -9,8 +9,8 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.SvgDecoder
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
-import `in`.pcncloud.hotel.integration.TailscaleController
 import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
+import `in`.pcncloud.hotel.wireguard.WireGuardController
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -31,11 +31,10 @@ class HotelTvApplication : Application(), ImageLoaderFactory {
             Log.w(TAG, "logProvisioningDiagnostics failed during Application.onCreate", e)
         }
         try {
-            // Corporate Device Owner: Headscale / Tailscale VPN on boot.
-            TailscaleController.init(this)
-            MyDeviceAdminReceiver.ensureAlwaysOnEmbeddedVpn(this)
+            WireGuardController.init(this)
+            MyDeviceAdminReceiver.ensureAlwaysOnWireGuardVpn(this)
         } catch (e: Exception) {
-            Log.w(TAG, "Tailscale Device Owner setup failed during Application.onCreate", e)
+            Log.w(TAG, "WireGuard Device Owner setup failed during Application.onCreate", e)
         }
         try {
             KioskPolicy.onProcessStart(this)
