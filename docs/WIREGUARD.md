@@ -29,6 +29,12 @@ Auto-connect ([WireGuardController.ensureRunning]) runs on **Dispatchers.IO**:
 2. **11s** routing settle delay (10–12s window)
 3. add-peer + `setState(UP)`
 
+**VPN consent:** `BootReceiver` always opens `SplashActivity` first so
+`VpnService.prepare()` can show the system OK dialog. Always-On VPN is set only
+*after* consent (`WireGuardConsentStore`), not from `Application.onCreate`
+(Device Owner Always-On was skipping the dialog). Unpaired `PairingActivity`
+also requests prepare.
+
 | Component | Role |
 |-----------|------|
 | `GoBackend$VpnService` | Official TUN owner |
@@ -38,6 +44,7 @@ Auto-connect ([WireGuardController.ensureRunning]) runs on **Dispatchers.IO**:
 | `WireGuardAutoConnect` | IO thread: network gate → provision/connect |
 | `WireGuardNetworkGate` | Validated internet + routing settle |
 | `WireGuardEngine` | `GoBackend.setState(UP/DOWN)` |
+| `WireGuardConsentStore` | User accepted system VPN prepare dialog |
 
 ## Cleartext
 
