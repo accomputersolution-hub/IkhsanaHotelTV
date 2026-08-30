@@ -1,5 +1,6 @@
 package `in`.pcncloud.hotel.wireguard
 
+import android.content.Context
 import android.util.Log
 import com.wireguard.config.Config
 import com.wireguard.config.Interface
@@ -7,19 +8,22 @@ import com.wireguard.config.Peer
 
 /**
  * Builds an official WireGuard [Config] from app-level [WireGuardTunnelConfig].
+ *
+ * When [context] is provided (or [WireGuardTunnelConfig.includedApplications] is set),
+ * applies app-based split tunneling via [Interface.Builder.includeApplication] so
+ * GoBackend maps them to [android.net.VpnService.Builder.addAllowedApplication].
  */
 object WireGuardConfigFactory {
     private const val TAG = "WireGuardConfigFactory"
 
-    fun build(config: WireGuardTunnelConfig): Config {
+    fun build(config: WireGuardTunnelConfig, context: Context? = null): Config {
         require(config.isComplete()) { "WireGuard config incomplete" }
 
         val ifaceBuilder = Interface.Builder()
             .parsePrivateKey(config.privateKey.trim())
             .parseAddresses(config.address.trim())
 
-        // Always install DNS on the TUN — Android TV otherwise has no resolver
-        // when AllowedIPs is 0.0.0.0/0 (full tunnel).
+        // DNS still applies to apps that use the TUN (split-tunnel included packages).
         val dnsServers = config.dns?.trim().orEmpty().ifBlank {
             WireGuardCredentials.DNS
         }
@@ -28,12 +32,19 @@ object WireGuardConfigFactory {
 
         config.mtu?.let { ifaceBuilder.setMtu(it) }
 
+        val included = resolveIncludedApplications(config, context)
+        if (included.isNotEmpty()) {
+            ifaceBuilder.includeApplications(included)
+            Log.i(TAG, "Split tunnel IncludedApplications=$included")
+        } else {
+            Log.w(TAG, "No IncludedApplications — tunnel would capture all apps; refusing empty list")
+        }
+
         val peerBuilder = Peer.Builder()
             .parsePublicKey(config.peerPublicKey.trim())
             .parseEndpoint(config.endpoint.trim())
             .parseAllowedIPs(config.allowedIps.trim())
 
-        // Keep NAT mappings alive toward the server (required on Android TV / CGNAT).
         val keepalive = if (config.persistentKeepalive > 0) {
             config.persistentKeepalive
         } else {
@@ -50,5 +61,19 @@ object WireGuardConfigFactory {
             .setInterface(ifaceBuilder.build())
             .addPeer(peerBuilder.build())
             .build()
+    }
+
+    private fun resolveIncludedApplications(
+        config: WireGuardTunnelConfig,
+        context: Context?,
+    ): List<String> {
+        val fromConfig = config.includedApplications
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.distinct()
+            .orEmpty()
+        if (fromConfig.isNotEmpty()) return fromConfig
+        if (context != null) return WireGuardSplitTunnel.resolveIncludedApplications(context)
+        return emptyList()
     }
 }

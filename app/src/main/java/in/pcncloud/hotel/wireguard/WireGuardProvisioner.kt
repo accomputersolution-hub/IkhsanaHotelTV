@@ -88,6 +88,7 @@ object WireGuardProvisioner {
             }
 
             val dns = store.assignedDns()
+            val includedApps = WireGuardSplitTunnel.resolveIncludedApplications(app)
             val config = WireGuardTunnelConfig(
                 address = address,
                 privateKey = keys.privateKeyBase64,
@@ -96,8 +97,12 @@ object WireGuardProvisioner {
                 allowedIps = WireGuardCredentials.ALLOWED_IPS,
                 dns = dns,
                 persistentKeepalive = WireGuardCredentials.PERSISTENT_KEEPALIVE,
+                includedApplications = includedApps,
             )
-            Log.i(TAG, "Connecting tunnel address=$address dns=$dns")
+            Log.i(
+                TAG,
+                "Connecting tunnel address=$address dns=$dns includedApps=$includedApps",
+            )
             WireGuardController.connect(app, config)
             true
         } catch (t: Throwable) {

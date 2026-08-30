@@ -19,6 +19,8 @@ Corporate Android TV builds establish a native WireGuard tunnel via
    - server public key `eGIDnt4o1QVDVxm/t0jqeWpPrvy3QKY8RHhJIucGhmU=`
    - `endpoint = 103.29.99.61:51820`
    - `allowedIps = 0.0.0.0/0`
+   - **Split tunnel** `IncludedApplications` = this app (`context.packageName`) + Pro TV
+     (`KioskLockTask.LIVE_TV_PACKAGE` / `com.ektv.pro`) — all other apps use direct internet
 
 See `wireguard-server/` for the Node implementation of auto IP assignment.
 
