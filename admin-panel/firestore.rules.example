@@ -65,7 +65,10 @@ service cloud.firestore {
 
       match /Rooms/{roomNumber} {
         allow read: if isHotelStaff(hotelId) || isPairedRoom(hotelId, roomNumber);
-        allow create, update, delete: if isHotelStaff(hotelId);
+        // Only Super Admin may create or delete room inventory docs.
+        allow create, delete: if isSuperAdmin();
+        // Hotel staff may update PMS / pairing fields on existing rooms.
+        allow update: if isHotelStaff(hotelId);
         // Paired TV may update limited session fields only (optional tighten):
         allow update: if isPairedRoom(hotelId, roomNumber)
           && request.resource.data.diff(resource.data).affectedKeys()

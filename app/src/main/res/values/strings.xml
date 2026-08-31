@@ -150,6 +150,7 @@
     <string name="pairing_code_expired">Pairing code expired. Generate a new one.</string>
     <string name="pairing_claimed">Paired to %1$s</string>
     <string name="pairing_already_paired">Already paired with another TV. Please unpair first.</string>
+    <string name="pairing_room_not_found">Room \"%1$s\" is not configured. Ask Super Admin to create it first.</string>
     <string name="service_suspended_title">Service Suspended</string>
     <string name="service_suspended_message">This hotel account is currently inactive. Guest services on this TV are temporarily unavailable.</string>
     <string name="service_suspended_hint">Please contact the front desk or your platform administrator.</string>

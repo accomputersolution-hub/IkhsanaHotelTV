@@ -16,6 +16,7 @@ import { getHotelId } from './tenant-context.js';
 import { toast, openModal, closeModal, setupModalClose } from './utils.js';
 import { normalizeRoom, formatRoomLabel } from './paths.js';
 import { canAccessModule } from './rbac.js';
+import { isSuperAdminManagedRoom } from './room-inventory.js';
 
 export function initPairingClaim() {
   setupModalClose('pairing-claim-modal', 'pairing-claim-close');
@@ -65,7 +66,21 @@ async function onClaimSubmit(e) {
   try {
     const roomRef = doc(db, 'Hotels', hotelId, 'Rooms', roomNumber);
     const roomSnap = await getDoc(roomRef);
-    if (roomSnap.exists() && isRoomAlreadyPaired(roomSnap.data())) {
+    if (!roomSnap.exists()) {
+      toast(
+        `Room “${formatRoomLabel(roomNumber)}” does not exist. Only Super Admin can create rooms.`,
+        'error',
+      );
+      return;
+    }
+    if (!isSuperAdminManagedRoom(roomSnap.data())) {
+      toast(
+        `Room “${formatRoomLabel(roomNumber)}” is not in Super Admin inventory. Create it under Super Admin → Edit Hotel → Rooms.`,
+        'error',
+      );
+      return;
+    }
+    if (isRoomAlreadyPaired(roomSnap.data())) {
       toast('Already paired with another TV. Please unpair first.', 'error');
       return;
     }
