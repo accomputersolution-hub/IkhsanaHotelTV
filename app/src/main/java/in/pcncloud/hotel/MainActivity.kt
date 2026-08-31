@@ -377,9 +377,9 @@ class MainActivity : ComponentActivity() {
             try {
                 val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
                 val adminComponent = MyDeviceAdminReceiver.getComponentName(this)
-                // Idle on Main: hotel app + Live TV baseline only — external apps
-                // are added dynamically right before each launch.
-                val packages = KioskLockTask.buildLockTaskPackageArray(this, emptyList())
+                // Keep session-launched OTTs + RTDB list in the whitelist so Lock Task
+                // never shrinks mid-OTT and lets HOME escape to the box launcher.
+                val packages = KioskLockTask.buildEffectiveLockTaskPackages(this)
 
                 dpm.setLockTaskPackages(adminComponent, packages)
                 MyDeviceAdminReceiver.applyStrictLockTaskFeatures(this)
@@ -1841,6 +1841,8 @@ class MainActivity : ComponentActivity() {
                 // Clear OTT session flags before nav (interceptor may have already).
                 KioskPolicy.clearExternalAppActive(this)
                 KioskPolicy.clearOttLaunchState(this)
+                // Re-push full DPM whitelist before pin — never baseline-only shrink.
+                KioskLockTask.reassertLockTaskPackages(this)
                 snapKioskSurfaceImmediate("onNewIntent")
                 if (KioskPolicy.isIntroPlaybackActive()) {
                     // Bring-to-front only — do not tear down IntroVideoScreen / ExoPlayer.

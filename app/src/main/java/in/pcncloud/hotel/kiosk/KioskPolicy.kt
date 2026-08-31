@@ -458,6 +458,7 @@ object KioskPolicy {
             .putBoolean(KEY_MAIN_FOREGROUND, false)
             .putBoolean(KEY_ON_GUEST_HOME, false)
             .apply()
+        KioskLockTask.clearSessionLockTaskPackages(context)
         try {
             KioskWatchdogService.stop(context.applicationContext)
         } catch (e: Exception) {
@@ -715,6 +716,7 @@ object KioskPolicy {
             }
             // Empty array: no restricted Lock Task allowlist (OTT launches freely).
             dpm.setLockTaskPackages(adminComponent, arrayOf())
+            KioskLockTask.clearSessionLockTaskPackages(context)
             Log.i(TAG, "clearDeviceOwnerLockTaskPackages → setLockTaskPackages([])")
         } catch (e: Exception) {
             Log.e(TAG, "clearDeviceOwnerLockTaskPackages failed", e)
