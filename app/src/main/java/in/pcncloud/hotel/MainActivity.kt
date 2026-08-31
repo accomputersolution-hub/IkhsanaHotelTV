@@ -377,12 +377,9 @@ class MainActivity : ComponentActivity() {
             try {
                 val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
                 val adminComponent = MyDeviceAdminReceiver.getComponentName(this)
-                val hotelId = currentHotelIdOrNull()
-                val allowed = (
-                    lastAppliedAllowedPackages
-                        ?: KioskPolicy.getAllowedPackagesList(this, hotelId)
-                    )
-                val packages = KioskLockTask.buildLockTaskPackageArray(this, allowed)
+                // Idle on Main: hotel app + Live TV baseline only — external apps
+                // are added dynamically right before each launch.
+                val packages = KioskLockTask.buildLockTaskPackageArray(this, emptyList())
 
                 dpm.setLockTaskPackages(adminComponent, packages)
                 MyDeviceAdminReceiver.applyStrictLockTaskFeatures(this)
@@ -1058,12 +1055,8 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Apply Lock Task package whitelist via [DevicePolicyManager.setLockTaskPackages]
-     * and suppress system UI with [DevicePolicyManager.setLockTaskFeatures]
-     * (`LOCK_TASK_FEATURE_NONE`). Persists Admin packages scoped to the paired hotelId.
-     *
-     * When kiosk is OFF, packages are persisted for later but the live DPM whitelist
-     * is cleared so Android 9/11 do not keep blocking OTT with "Unauthorized by Admin".
+     * Apply Lock Task baseline via [DevicePolicyManager.setLockTaskPackages].
+     * RTDB `allowedPackages` is cached for Admin only — guests may launch any app.
      */
     private fun applyLockTaskPackages(allowedPackagesList: List<String>) {
         val hotelId = currentHotelIdOrNull()
@@ -1087,17 +1080,12 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Validates whether an external app may be launched.
-     * When Kiosk Mode is OFF → allow everything.
-     * When Kiosk Mode is ON → only packages explicitly in this hotel's Admin whitelist
-     * (no YouTube / OTT baseline bypass).
-     * Never throws into Compose / key dispatch.
+     * Kiosk ON → any package; HOME reclaim still pins guests to Root Home.
      */
     fun canLaunchApp(targetPackageName: String): Boolean {
         return try {
             if (!isKioskModeEnabled) return true
-            val allowedPackagesList = lastAppliedAllowedPackages
-                ?: KioskPolicy.getAllowedPackagesList(this, currentHotelIdOrNull())
-            allowedPackagesList.contains(targetPackageName.trim())
+            targetPackageName.trim().isNotEmpty()
         } catch (t: Throwable) {
             Log.e(TAG, "canLaunchApp failed — denying under kiosk (safe)", t)
             !isKioskModeEnabled

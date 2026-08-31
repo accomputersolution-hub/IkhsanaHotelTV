@@ -488,26 +488,13 @@ object KioskPolicy {
 
     /**
      * Validates whether an external app may be launched.
-     * When Kiosk Mode is OFF → allow everything.
-     * When Kiosk Mode is ON → hotel Admin `allowedPackages` **or** Lock Task baseline
-     * (Live TV / EKTV Pro).
-     * Never throws — a prefs / parse failure fails closed (deny) under kiosk.
+     * Kiosk ON → any installed package (YouTube, Hotstar, etc.) — no Admin whitelist gate.
+     * HOME / Lock Task still return guests to this app's Root Home.
      */
     fun canLaunchApp(context: Context, targetPackageName: String): Boolean {
         return try {
             if (!isKioskModeEnabled(context)) return true
-            val target = targetPackageName.trim()
-            if (target.isEmpty()) return false
-            if (target in KioskLockTask.baselineLockTaskPackages()) return true
-            val allowed = getAllowedPackagesList(context)
-            val ok = allowed.contains(target)
-            if (!ok) {
-                Log.w(
-                    TAG,
-                    "Blocked launch of $target — not in hotel allowedPackages ($allowed)",
-                )
-            }
-            ok
+            targetPackageName.trim().isNotEmpty()
         } catch (t: Throwable) {
             Log.e(TAG, "canLaunchApp failed — denying under kiosk (safe)", t)
             isKioskModeEnabled(context).not()
