@@ -261,6 +261,12 @@ class MainActivity : ComponentActivity() {
         reclaimPhysicalTvImmediate("retry")
     }
 
+    private var deferredStartLockTaskReason: String = "deferred"
+    private val deferredStartLockTaskRunnable = Runnable {
+        if (isActivitySurfaceGone()) return@Runnable
+        startLockTaskSafely("deferred:${deferredStartLockTaskReason}")
+    }
+
     /** Instant Admin / RTDB kiosk toggle — cancel reclaim retries & sync memory. */
     private val kioskModeChangedListener: (Boolean) -> Unit = { enabled ->
         runOnUiThread {
@@ -504,9 +510,13 @@ class MainActivity : ComponentActivity() {
         if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
             Log.d(
                 TAG,
-                "startLockTaskSafely skip — not RESUMED " +
+                "startLockTaskSafely defer — not RESUMED " +
                     "(state=${lifecycle.currentState}, reason=$reason)",
             )
+            // HOME reclaim often hits onNewIntent while still CREATED/STARTED — pin after resume.
+            mainHandler.removeCallbacks(deferredStartLockTaskRunnable)
+            deferredStartLockTaskReason = reason
+            mainHandler.post(deferredStartLockTaskRunnable)
             return
         }
         if (isLockTaskAlreadyActive()) {
@@ -2177,6 +2187,7 @@ class MainActivity : ComponentActivity() {
         KioskPolicy.removeKioskModeChangedListener(kioskModeChangedListener)
         mainHandler.removeCallbacks(physicalTvReclaimRetryRunnable)
         mainHandler.removeCallbacks(clearHandlingReclaimRunnable)
+        mainHandler.removeCallbacks(deferredStartLockTaskRunnable)
         removeKioskOverlayBarrier()
         detachRoomSessionRealtimeListener()
         detachKioskConfigRealtimeListener()

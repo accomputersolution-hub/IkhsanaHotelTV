@@ -107,8 +107,11 @@ class HomeKeyInterceptorService : AccessibilityService() {
                 KeyEvent.KEYCODE_HOME,
                 KEYCODE_OEM_HOME,
                 -> {
+                    // Swallow immediately. Do NOT Handler.post + startActivity —
+                    // plain startActivity is throttled ~5s on Android TV while the
+                    // stock launcher paints. PendingIntent reclaim races ahead.
                     if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                        mainHandler.post { launchMainActivityFromHome() }
+                        reclaimHomeImmediately()
                     }
                     true
                 }
@@ -194,31 +197,65 @@ class HomeKeyInterceptorService : AccessibilityService() {
         }
     }
 
-    private fun launchMainActivityFromHome() {
+    /**
+     * HOME reclaim for Accessibility filter — prefer Physical-TV urgent PendingIntent
+     * (no ActivityManager startActivity throttle / GTPL flash).
+     */
+    private fun reclaimHomeImmediately() {
         try {
-            try {
-                KioskPolicy.clearExternalAppActive(this)
-                KioskPolicy.clearOttLaunchState(this)
-                KioskPolicy.clearUserMinimized(this)
-            } catch (_: Exception) {
-            }
+            KioskPolicy.clearExternalAppActive(this)
+            KioskPolicy.clearOttLaunchState(this)
+            KioskPolicy.clearUserMinimized(this)
+        } catch (_: Exception) {
+        }
 
+        val navigateHome =
+            !KioskPolicy.isStaffAdminUiActive() && !KioskPolicy.isExitingAppCleanly()
+
+        // Prefer PendingIntent path (0ms race vs stock launcher).
+        val sent = try {
+            KioskPolicy.forceBringToFrontPhysicalTvUrgent(
+                context = this,
+                navigateToHome = navigateHome,
+                bypassDuplicateGuard = true,
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "forceBringToFrontPhysicalTvUrgent from Home failed", e)
+            false
+        }
+
+        if (sent) {
+            Log.i(TAG, "HOME swallowed — PendingIntent reclaim sent")
+            return
+        }
+
+        // Last resort only if PendingIntent path refused (kiosk off / skip gate).
+        Log.w(TAG, "HOME PendingIntent reclaim skipped — fallback startActivity")
+        launchMainActivityFromHomeFallback(navigateHome)
+    }
+
+    private fun launchMainActivityFromHomeFallback(navigateHome: Boolean) {
+        try {
             val intent = Intent(this, MainActivity::class.java).apply {
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_NO_ANIMATION,
                 )
-                // Do not snap Secret Settings closed when staff is configuring the TV.
-                if (!KioskPolicy.isStaffAdminUiActive() && !KioskPolicy.isExitingAppCleanly()) {
+                if (navigateHome) {
                     putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
                 }
             }
             startActivity(intent)
-            Log.i(TAG, "Launched MainActivity from Home intercept (posted)")
+            Log.i(TAG, "Launched MainActivity from Home fallback startActivity")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch MainActivity", e)
+            Log.e(TAG, "Failed to launch MainActivity from Home", e)
         }
+    }
+
+    private fun launchMainActivityFromHome() {
+        reclaimHomeImmediately()
     }
 
     companion object {
