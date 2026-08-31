@@ -22,9 +22,16 @@ object RoomTvPairing {
     class AlreadyPairedException :
         IllegalStateException("Already paired with another TV. Please unpair first.")
 
+    /** Room must already exist (Super Admin inventory) — pairing never creates rooms. */
+    class RoomNotFoundException(room: String) :
+        IllegalStateException(
+            "Room \"$room\" is not configured. Ask Super Admin to create it first.",
+        )
+
     /**
-     * Transaction: abort if another device owns the room; otherwise mark paired
-     * and increment [activeTvScreens] once.
+     * Transaction: require an existing Super-Admin room doc; abort if another device
+     * owns the room; otherwise mark paired and increment [activeTvScreens] once.
+     * Never creates a missing Rooms/{room} document.
      */
     fun pairRoomOrThrow(
         firestore: FirebaseFirestore,
@@ -44,6 +51,10 @@ object RoomTvPairing {
         val task = firestore.runTransaction { tx ->
             val roomSnap = tx.get(roomRef)
             val hotelSnap = tx.get(hotelRef)
+
+            if (!roomSnap.exists()) {
+                throw RoomNotFoundException(room)
+            }
 
             val existingDevice = roomSnap.getString("pairedDeviceId")?.trim().orEmpty()
             val isPaired = roomSnap.getBoolean("isTvPaired") == true ||
@@ -87,12 +98,13 @@ object RoomTvPairing {
             Tasks.await(task, TX_TIMEOUT_SEC, TimeUnit.SECONDS)
             Log.i(TAG, "pairRoom OK hotel=$hotel room=$room device=$deviceId")
         } catch (e: Exception) {
-            val cause = e.cause ?: e
-            if (cause is AlreadyPairedException) throw cause
             // Tasks.await wraps exceptions
             var cursor: Throwable? = e
             while (cursor != null) {
-                if (cursor is AlreadyPairedException) throw cursor
+                when (cursor) {
+                    is AlreadyPairedException -> throw cursor
+                    is RoomNotFoundException -> throw cursor
+                }
                 cursor = cursor.cause
             }
             throw e

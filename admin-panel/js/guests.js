@@ -12,6 +12,8 @@ import { escapeHtml, toast, showConnectionError, hideConnectionError, openModal,
 import { normalizeRoom, formatRoomLabel, paths, logFirestoreWrite, logFirestoreListen } from './paths.js';
 import { flushRoomSession, newSessionKey } from './session-reset.js';
 import { getHotelId, onHotelChange } from './tenant-context.js';
+import { isSuperAdmin } from './auth.js';
+import { isSuperAdminManagedRoom, purgeUnmanagedRooms } from './room-inventory.js';
 
 const ROOM_STATUSES = {
   vacant: { label: 'Vacant', badge: 'room-status-vacant' },
@@ -23,13 +25,25 @@ const ROOM_STATUSES = {
 
 let roomsCache = [];
 let roomsUnsub = null;
+/** Hotels already scanned for orphan room purge this session (once per hotelId). */
+const purgedOrphanHotels = new Set();
 
 export function initGuests() {
   setupCheckInModal();
   setupAddRoomModal();
+  syncAddRoomButtonVisibility();
   onHotelChange(() => {
+    syncAddRoomButtonVisibility();
     listenRooms();
   });
+}
+
+function syncAddRoomButtonVisibility() {
+  const btn = document.getElementById('add-room-btn');
+  if (!btn) return;
+  // Room create is Super Admin only (Edit Hotel → Rooms). Hotel staff cannot add.
+  btn.classList.toggle('hidden', !isSuperAdmin());
+  btn.disabled = !isSuperAdmin();
 }
 
 function listenRooms() {
@@ -56,6 +70,22 @@ function listenRooms() {
       roomsCache = snapshot.docs
         .map((d) => ({ id: d.id, ...d.data() }))
         .sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
+
+      // Super Admin: delete pairing/PMS orphan rooms once per hotel (no Edit Hotel visit required).
+      if (isSuperAdmin() && !purgedOrphanHotels.has(hotelId)) {
+        purgedOrphanHotels.add(hotelId);
+        const hasOrphans = roomsCache.some((r) => !isSuperAdminManagedRoom(r));
+        if (hasOrphans) {
+          purgeUnmanagedRooms(hotelId, roomsCache)
+            .then((n) => {
+              if (n > 0) toast(`Removed ${n} room(s) not created by Super Admin`);
+            })
+            .catch((err) => {
+              purgedOrphanHotels.delete(hotelId);
+              console.warn('[guests] orphan room purge failed', err);
+            });
+        }
+      }
 
       updateSummaryCounters(roomsCache);
       renderRoomGrid(roomsCache);
@@ -157,8 +187,8 @@ function renderRoomGrid(rooms) {
   if (!rooms.length) {
     container.innerHTML = `
       <p class="empty-state col-span-full">
-        No rooms configured yet. Super Admin can generate rooms when creating/editing the property,
-        or click <strong>+ Add Room</strong> here.
+        No rooms configured yet. Ask Super Admin to create rooms under
+        <strong>Super Admin → Edit Hotel → Rooms by Category</strong>.
       </p>`;
     return;
   }
@@ -313,6 +343,10 @@ function setupAddRoomModal() {
   setupModalClose('add-room-modal', 'add-room-close');
 
   document.getElementById('add-room-btn')?.addEventListener('click', () => {
+    if (!isSuperAdmin()) {
+      toast('Only Super Admin can create rooms', 'error');
+      return;
+    }
     document.getElementById('add-room-form')?.reset();
     openModal('add-room-modal');
     document.getElementById('add-room-number')?.focus();
@@ -320,6 +354,10 @@ function setupAddRoomModal() {
 
   document.getElementById('add-room-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (!isSuperAdmin()) {
+      toast('Only Super Admin can create rooms', 'error');
+      return;
+    }
     const btn = e.target.querySelector('button[type="submit"]');
     btn.disabled = true;
     btn.textContent = 'Adding…';
@@ -345,6 +383,8 @@ function setupAddRoomModal() {
       await writeRoom(roomNumber, {
         roomNumber,
         roomType,
+        category: 'Uncategorized',
+        managedBy: 'super_admin',
         status: 'vacant',
         guestName: 'Guest',
         guestPhone: '',
