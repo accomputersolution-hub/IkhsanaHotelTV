@@ -118,6 +118,7 @@ class SplashActivity : AppCompatActivity() {
         }
 
         hotelConfig = HotelConfig(applicationContext)
+        KioskPolicy.restoreKioskAfterStaffLauncherExitIfNeeded(this)
         splashLogo = findViewById(R.id.splash_logo)
         splashWelcome = findViewById(R.id.splash_welcome)
         splashStatus = findViewById(R.id.splash_status)

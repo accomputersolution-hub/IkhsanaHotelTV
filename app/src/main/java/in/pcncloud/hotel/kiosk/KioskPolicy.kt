@@ -127,6 +127,11 @@ object KioskPolicy {
     private const val KEY_KIOSK_ENABLED_LEGACY = "kiosk_mode_enabled"
 
     private const val KEY_ADMIN_OVERRIDE = "kiosk_admin_override"
+    /**
+     * Set by [exitKioskModeCleanly] — cleared when the user intentionally re-opens
+     * the app so kiosk / Lock Task / HOME reclaim are restored.
+     */
+    private const val KEY_STAFF_LAUNCHER_EXIT_PENDING = "staff_launcher_exit_pending"
     private const val KEY_USER_MINIMIZED = "user_minimized"
     private const val KEY_EXITED_CLEANLY = "exited_cleanly"
     private const val KEY_PENDING_CRASH_RECOVERY = "pending_crash_recovery"
@@ -477,6 +482,7 @@ object KioskPolicy {
             .remove(KEY_KIOSK_ENABLED_CAMEL)
             .putBoolean(KEY_KIOSK_ENABLED, false)
             .remove(KEY_ADMIN_OVERRIDE)
+            .remove(KEY_STAFF_LAUNCHER_EXIT_PENDING)
             .remove(KEY_USER_MINIMIZED)
             .remove(KEY_EXTERNAL_APP_UNTIL)
             .remove(KEY_LAST_OTT_PACKAGE)
@@ -834,6 +840,9 @@ object KioskPolicy {
         Log.i(TAG, "exitKioskModeCleanly — begin")
         setExitingAppCleanly(true)
         suppressReclaimFor(120_000L, "exit_kiosk_cleanly")
+        prefs(activity).edit()
+            .putBoolean(KEY_STAFF_LAUNCHER_EXIT_PENDING, true)
+            .apply()
         markCleanExit(activity)
         markUserMinimized(activity)
         staffAdminUiActive = false
@@ -884,6 +893,39 @@ object KioskPolicy {
             "exitKioskModeCleanly — done home=$launchedHome moveTaskToBack=$moved",
         )
         return launchedHome || moved
+    }
+
+    /**
+     * Staff "Exit to launcher" is transient — re-opening the app must restore kiosk.
+     * Safe to call from Application ON_START, Splash, or MainActivity entry points.
+     *
+     * @return true when staff-exit transient state was consumed and kiosk re-enabled
+     */
+    fun restoreKioskAfterStaffLauncherExitIfNeeded(context: Context): Boolean {
+        val pending = prefs(context).getBoolean(KEY_STAFF_LAUNCHER_EXIT_PENDING, false)
+        if (!pending && !exitingAppCleanly) return false
+
+        Log.i(
+            TAG,
+            "restoreKioskAfterStaffLauncherExitIfNeeded — " +
+                "pending=$pending exitingAppCleanly=$exitingAppCleanly",
+        )
+
+        setExitingAppCleanly(false)
+        clearReclaimSuppression("staff_launcher_exit_restore")
+        staffAdminUiActive = false
+        prefs(context).edit()
+            .putBoolean(KEY_STAFF_LAUNCHER_EXIT_PENDING, false)
+            .apply()
+        clearUserMinimized(context)
+        clearAdminOverride(context)
+
+        setKioskModeEnabled(
+            context = context,
+            enabled = true,
+            source = KioskSource.SYSTEM_DEFAULT,
+        )
+        return true
     }
 
     private fun resolveActivity(context: Context): Activity? {

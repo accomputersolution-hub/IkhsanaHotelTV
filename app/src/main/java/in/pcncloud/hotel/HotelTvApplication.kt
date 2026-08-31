@@ -113,6 +113,9 @@ class HotelTvApplication : Application(), ImageLoaderFactory {
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
+                    KioskPolicy.restoreKioskAfterStaffLauncherExitIfNeeded(
+                        this@HotelTvApplication,
+                    )
                     KioskPolicy.clearUserMinimized(this@HotelTvApplication)
                     // In-foreground session — if we die now without onStop, treat as unclean.
                     KioskPolicy.markSessionActive(this@HotelTvApplication)

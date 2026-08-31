@@ -352,6 +352,14 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * Re-arm kiosk after Staff Settings → Exit to launcher when the user opens the app again.
+     */
+    private fun restoreKioskAfterStaffLauncherExitIfNeeded(reason: String) {
+        if (!KioskPolicy.restoreKioskAfterStaffLauncherExitIfNeeded(this)) return
+        applyKioskModeChangedLocally(true, "staff_exit_restore:$reason")
+    }
+
+    /**
      * Apply Lock Task from persisted state — never force-enable blindly.
      * Used by onCreate / onWindowFocusChanged / onNewIntent.
      */
@@ -570,6 +578,8 @@ class MainActivity : ComponentActivity() {
 
         // Instant Admin / RTDB kiosk toggles (no reboot).
         KioskPolicy.addKioskModeChangedListener(kioskModeChangedListener)
+
+        restoreKioskAfterStaffLauncherExitIfNeeded("onCreate")
 
         // Seed from last persisted RTDB value (default unlocked until cloud says otherwise).
         isKioskModeEnabled = resolveKioskEnabled()
@@ -1621,6 +1631,8 @@ class MainActivity : ComponentActivity() {
                 lastInteractionAt = System.currentTimeMillis()
             }
 
+            restoreKioskAfterStaffLauncherExitIfNeeded("onResume")
+
             val kioskOn = resolveKioskEnabled()
             // —— Aggressive foreground snap FIRST (before nav / async) ——
             if (kioskOn) {
@@ -1873,6 +1885,8 @@ class MainActivity : ComponentActivity() {
         try {
             super.onNewIntent(intent)
             setIntent(intent)
+
+            restoreKioskAfterStaffLauncherExitIfNeeded("onNewIntent")
 
             val isKioskActive = KioskPolicy.isKioskModeEnabled(this)
             isKioskModeEnabled = isKioskActive
