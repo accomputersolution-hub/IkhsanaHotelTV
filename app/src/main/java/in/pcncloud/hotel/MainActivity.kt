@@ -2109,7 +2109,13 @@ class MainActivity : ComponentActivity() {
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
 
-        if (KioskPolicy.shouldSkipKioskReclaim("onUserLeaveHint", this)) {
+        if (KioskPolicy.shouldSkipKioskReclaim(
+                "onUserLeaveHint",
+                this,
+                // Timed suppress (Home picker) must not block HOME leave reclaim.
+                ignoreTimedSuppress = true,
+            )
+        ) {
             Log.i(TAG, "onUserLeaveHint — staff/exit suppress, skip reclaim")
             super.onUserLeaveHint()
             return
@@ -2126,6 +2132,7 @@ class MainActivity : ComponentActivity() {
                 context = this,
                 navigateToHome = !KioskPolicy.isStaffAdminUiActive(),
                 bypassDuplicateGuard = true,
+                ignoreTimedSuppress = true,
             )
             @Suppress("DEPRECATION")
             overridePendingTransition(0, 0)

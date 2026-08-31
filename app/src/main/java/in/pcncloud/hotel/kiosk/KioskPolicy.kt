@@ -329,8 +329,16 @@ object KioskPolicy {
      * When [context] is provided, also skips while an intentional OTT / Live TV
      * session is active or [KioskLockTask.LIVE_TV_PACKAGE] is still visible —
      * Watchdog must never steal focus from EKTV Pro.
+     *
+     * @param ignoreTimedSuppress when true (Accessibility HOME), still reclaim
+     *   even if [suppressReclaimFor] (e.g. default Home picker) is active.
+     *   Staff Secret Settings and clean exit still block.
      */
-    fun shouldSkipKioskReclaim(reason: String = "", context: Context? = null): Boolean {
+    fun shouldSkipKioskReclaim(
+        reason: String = "",
+        context: Context? = null,
+        ignoreTimedSuppress: Boolean = false,
+    ): Boolean {
         if (exitingAppCleanly) {
             Log.d(TAG, "skip reclaim — exitingAppCleanly ($reason)")
             return true
@@ -339,7 +347,7 @@ object KioskPolicy {
             Log.d(TAG, "skip reclaim — staffAdminUiActive ($reason)")
             return true
         }
-        if (isReclaimSuppressed()) {
+        if (!ignoreTimedSuppress && isReclaimSuppressed()) {
             Log.d(TAG, "skip reclaim — suppress window ($reason)")
             return true
         }
@@ -1147,13 +1155,23 @@ object KioskPolicy {
      *
      * @param bypassDuplicateGuard when true (e.g. [android.app.Activity.onUserLeaveHint]),
      *   always send the PendingIntent immediately — no 50ms storm window skip.
+     * @param ignoreTimedSuppress when true (Accessibility HOME), reclaim even during
+     *   [suppressReclaimFor] windows such as the default-Home picker (180s).
      */
     fun forceBringToFrontPhysicalTvUrgent(
         context: Context,
         navigateToHome: Boolean = true,
         bypassDuplicateGuard: Boolean = false,
+        ignoreTimedSuppress: Boolean = false,
     ): Boolean {
-        if (shouldSkipKioskReclaim("forceBringToFrontPhysicalTvUrgent", context)) return false
+        if (shouldSkipKioskReclaim(
+                "forceBringToFrontPhysicalTvUrgent",
+                context,
+                ignoreTimedSuppress = ignoreTimedSuppress,
+            )
+        ) {
+            return false
+        }
         if (!isKioskModeEnabled(context)) return false
         if (isDeviceOwner(context)) {
             return forceBringToFrontSafely(
@@ -1162,7 +1180,8 @@ object KioskPolicy {
                 preferImmediateOptions = true,
             )
         }
-        if (isExternalAppActive(context)) {
+        // HOME key reclaim must interrupt OTT / suppress windows — guest pressed Home.
+        if (!ignoreTimedSuppress && isExternalAppActive(context)) {
             Log.d(TAG, "forceBringToFrontPhysicalTvUrgent skipped — OTT session")
             return false
         }

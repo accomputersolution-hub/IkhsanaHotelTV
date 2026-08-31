@@ -213,11 +213,21 @@ class HomeKeyInterceptorService : AccessibilityService() {
             !KioskPolicy.isStaffAdminUiActive() && !KioskPolicy.isExitingAppCleanly()
 
         // Prefer PendingIntent path (0ms race vs stock launcher).
+        // Bypass timed suppress (Home-picker 180s) — guest Home must always reclaim.
+        // Still blocked while Staff Secret Settings / clean exit are active.
+        if (KioskPolicy.isReclaimSuppressed() &&
+            !KioskPolicy.isStaffAdminUiActive() &&
+            !KioskPolicy.isExitingAppCleanly()
+        ) {
+            KioskPolicy.clearReclaimSuppression("accessibility_home")
+        }
+
         val sent = try {
             KioskPolicy.forceBringToFrontPhysicalTvUrgent(
                 context = this,
                 navigateToHome = navigateHome,
                 bypassDuplicateGuard = true,
+                ignoreTimedSuppress = true,
             )
         } catch (e: Exception) {
             Log.e(TAG, "forceBringToFrontPhysicalTvUrgent from Home failed", e)
