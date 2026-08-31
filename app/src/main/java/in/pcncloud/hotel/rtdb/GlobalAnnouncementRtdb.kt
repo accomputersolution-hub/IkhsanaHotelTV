@@ -98,7 +98,7 @@ object GlobalAnnouncementRtdb {
 
             override fun onCancelled(error: DatabaseError) {
                 Log.e(TAG, "RTDB ${path(id)} cancelled: ${error.message}", error.toException())
-                primaryText = ""
+                // Keep last primaryText — do not blank the ticker on transient cancel.
                 emitBest()
             }
         }
@@ -112,7 +112,7 @@ object GlobalAnnouncementRtdb {
 
             override fun onCancelled(error: DatabaseError) {
                 Log.w(TAG, "RTDB ${legacyPath(id)} cancelled: ${error.message}")
-                legacyText = ""
+                // Keep last legacyText — permission denied must not wipe a good primary ticker.
                 emitBest()
             }
         }

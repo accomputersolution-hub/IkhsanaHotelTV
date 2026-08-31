@@ -161,6 +161,7 @@ object KioskPolicy {
     enum class KioskSource {
         REMOTE_CONFIG,
         REALTIME_DATABASE,
+        FIRESTORE,
         LOCAL_ADMIN,
         SYSTEM_DEFAULT,
     }
@@ -219,14 +220,14 @@ object KioskPolicy {
 
     /**
      * Whether kiosk / custom-launcher lock is active.
-     * Default **true** when unset (first install / fresh prefs).
+     * Default **true** when unset (first install / after pairing wipe).
      */
     fun isKioskModeEnabled(context: Context): Boolean {
         migrateIfNeeded(context)
         val p = prefs(context)
-        // Prefer camelCase key written by MainActivity RTDB sync.
+        // Prefer camelCase key written by MainActivity RTDB / Firestore sync.
         if (p.contains(KEY_KIOSK_ENABLED_CAMEL)) {
-            return p.getBoolean(KEY_KIOSK_ENABLED_CAMEL, false)
+            return p.getBoolean(KEY_KIOSK_ENABLED_CAMEL, true)
         }
         return p.getBoolean(KEY_KIOSK_ENABLED, true)
     }
@@ -447,8 +448,9 @@ object KioskPolicy {
         prefs(context).edit()
             .remove(KEY_ALLOWED_PACKAGES)
             .remove(KEY_ALLOWED_PACKAGES_HOTEL_ID)
+            // Do NOT force kiosk OFF — after re-pair, default ON until cloud config arrives.
             .remove(KEY_KIOSK_ENABLED_CAMEL)
-            .putBoolean(KEY_KIOSK_ENABLED, false)
+            .remove(KEY_KIOSK_ENABLED)
             .remove(KEY_ADMIN_OVERRIDE)
             .remove(KEY_USER_MINIMIZED)
             .remove(KEY_EXTERNAL_APP_UNTIL)
@@ -464,7 +466,7 @@ object KioskPolicy {
         } catch (e: Exception) {
             Log.w(TAG, "Watchdog stop during clearTenantKioskCache failed", e)
         }
-        Log.i(TAG, "clearTenantKioskCache — hotel_tv_kiosk tenant state wiped")
+        Log.i(TAG, "clearTenantKioskCache — hotel_tv_kiosk tenant state wiped (kiosk default ON)")
     }
 
     /**

@@ -1147,7 +1147,22 @@ class FirestoreRepository(
             emergencyContacts = parseEmergencyContacts(data["emergency_contacts"]),
             dailyAgenda = parseDailyAgenda(data["daily_agenda"]),
             allowOverlayPopups = parseAllowOverlayPopups(data),
+            isKioskModeEnabled = parseOptionalBoolean(
+                data["isKioskModeEnabled"] ?: data["is_kiosk_mode_enabled"],
+            ),
         )
+    }
+
+    private fun parseOptionalBoolean(raw: Any?): Boolean? = when (raw) {
+        null -> null
+        is Boolean -> raw
+        is Number -> raw.toInt() != 0
+        is String -> when {
+            raw.equals("true", ignoreCase = true) -> true
+            raw.equals("false", ignoreCase = true) -> false
+            else -> null
+        }
+        else -> null
     }
 
     private fun parseAllowOverlayPopups(data: Map<String, Any?>): Boolean {

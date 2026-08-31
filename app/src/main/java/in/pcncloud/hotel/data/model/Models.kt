@@ -48,6 +48,11 @@ data class HotelBranding(
      * Hotels/{hotelId}.allowOverlayPopups (default true).
      */
     val allowOverlayPopups: Boolean = true,
+    /**
+     * Hotels/{hotelId}.isKioskModeEnabled — Super Admin kiosk toggle.
+     * Null when the field is absent (TV keeps local / RTDB value).
+     */
+    val isKioskModeEnabled: Boolean? = null,
 )
 
 /** One entry from Hotels/{hotelId}/Emergency_Contacts (admin Helpdesk Config). */

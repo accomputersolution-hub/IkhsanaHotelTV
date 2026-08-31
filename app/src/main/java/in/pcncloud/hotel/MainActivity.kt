@@ -287,7 +287,8 @@ class MainActivity : ComponentActivity() {
      * a stale [currentKioskState] on resume / Lock Task re-apply (Android 9/11).
      */
     private fun resolveKioskEnabled(): Boolean {
-        val fromPrefs = kioskPrefs().getBoolean(PREF_KIOSK_ENABLED, false)
+        // Single source of truth — default ON when unset (never default-false here).
+        val fromPrefs = KioskPolicy.isKioskModeEnabled(this)
         if (currentKioskState != fromPrefs) {
             currentKioskState = fromPrefs
             isKioskModeEnabled = fromPrefs
@@ -852,10 +853,10 @@ class MainActivity : ComponentActivity() {
                     if (!snapshot.exists()) {
                         Log.w(
                             TAG,
-                            "RTDB hotels/$hotelId/config missing — empty allowlist (no fallback)",
+                            "RTDB hotels/$hotelId/config missing — keep local kiosk=" +
+                                "${resolveKioskEnabled()} (Firestore hotel doc may still enable)",
                         )
-                        applyLockTaskPackages(emptyList())
-                        lastAppliedAllowedPackages = emptyList()
+                        // Do not force kiosk OFF or clear DPM solely because RTDB node is absent.
                         return
                     }
 
@@ -1174,8 +1175,8 @@ class MainActivity : ComponentActivity() {
                     } else if (!BuildConfig.IS_CORPORATE) {
                         Log.d(TAG, "Hotel flavor @ Home — Back consumed (no exit)")
                     } else {
-                        Log.d(TAG, "Kiosk off safety-net: moveTaskToBack")
-                        moveTaskToBack(true)
+                        // Corporate must never dump to the box launcher from Root Home.
+                        Log.w(TAG, "Corporate @ Home — Back consumed (kiosk flag off)")
                     }
                 }
             },

@@ -270,8 +270,9 @@ fun HotelNavGraph(
                 navigateToHomeView()
             }
             else -> {
-                Log.d(TAG, "Kiosk OFF — allowing leave task")
-                activity?.moveTaskToBack(true)
+                // Corporate + kiosk flag OFF: still never dump to the box launcher.
+                // Guest Back on Root Home must stay inside the hotel/corporate UI.
+                Log.w(TAG, "Kiosk flag OFF @ Home — Back consumed (no leave task)")
             }
         }
     }

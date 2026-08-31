@@ -11,6 +11,7 @@ import `in`.pcncloud.hotel.data.model.HotelBranding
 import `in`.pcncloud.hotel.data.model.RoomFeatureFlags
 import `in`.pcncloud.hotel.data.model.RoomStatus
 import `in`.pcncloud.hotel.data.repository.FirestoreRepository
+import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.rtdb.GlobalAnnouncementRtdb
 import `in`.pcncloud.hotel.ui.services.ServiceToastType
 import android.provider.Settings
@@ -98,6 +99,23 @@ class HomeViewModel(
                             rooms = rooms,
                             isLoading = false,
                         )
+                    }
+                    // Super Admin kiosk flag on Hotels/{id} — recover when RTDB was missing
+                    // or pairing wipe left local prefs stuck OFF.
+                    branding.isKioskModeEnabled?.let { cloudKiosk ->
+                        val local = KioskPolicy.isKioskModeEnabled(appContext)
+                        if (local != cloudKiosk) {
+                            Log.i(
+                                TAG,
+                                "Firestore Hotels/${branding.hotelId}.isKioskModeEnabled=" +
+                                    "$cloudKiosk (local was $local) — syncing",
+                            )
+                            KioskPolicy.setKioskModeEnabled(
+                                context = appContext,
+                                enabled = cloudKiosk,
+                                source = KioskPolicy.KioskSource.FIRESTORE,
+                            )
+                        }
                     }
                     // Admin disabled global overlays while one may be on screen.
                     if (previousAllow && !branding.allowOverlayPopups) {
