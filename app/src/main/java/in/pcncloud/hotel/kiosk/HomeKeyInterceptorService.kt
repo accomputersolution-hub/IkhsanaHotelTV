@@ -220,6 +220,22 @@ class HomeKeyInterceptorService : AccessibilityService() {
             !KioskPolicy.isExitingAppCleanly()
         ) {
             KioskPolicy.clearReclaimSuppression("accessibility_home")
+        } else if (KioskPolicy.isReclaimSuppressed()) {
+            Log.d(
+                TAG,
+                "HOME — timed suppress kept (staff=${KioskPolicy.isStaffAdminUiActive()} " +
+                    "exit=${KioskPolicy.isExitingAppCleanly()})",
+            )
+        }
+
+        val skipLabel = KioskPolicy.reclaimSkipLabel(
+            reason = "accessibility_home",
+            context = this,
+            ignoreTimedSuppress = true,
+        )
+        if (skipLabel != null) {
+            Log.i(TAG, "HOME swallowed — skip reclaim ($skipLabel)")
+            return
         }
 
         val sent = try {
@@ -239,7 +255,7 @@ class HomeKeyInterceptorService : AccessibilityService() {
             return
         }
 
-        // Last resort only if PendingIntent path refused (kiosk off / skip gate).
+        // Last resort only if PendingIntent path refused (kiosk off / throttle).
         Log.w(TAG, "HOME PendingIntent reclaim skipped — fallback startActivity")
         launchMainActivityFromHomeFallback(navigateHome)
     }

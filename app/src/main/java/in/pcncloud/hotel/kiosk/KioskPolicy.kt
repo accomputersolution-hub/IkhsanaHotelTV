@@ -288,6 +288,16 @@ object KioskPolicy {
         Log.d(TAG, "reclaim suppression cleared ($reason)")
     }
 
+    /**
+     * Clears a timed [suppressReclaimFor] window before HOME reclaim.
+     * Staff Secret Settings and clean exit keep their blocks intact.
+     */
+    fun clearTimedSuppressForHomeReclaim(caller: String) {
+        if (staffAdminUiActive || exitingAppCleanly) return
+        if (!isReclaimSuppressed()) return
+        clearReclaimSuppression("home_reclaim:$caller")
+    }
+
     /** True while [suppressReclaimFor] window is still active. */
     fun isReclaimSuppressed(): Boolean {
         val until = reclaimSuppressedUntilMs
@@ -334,29 +344,38 @@ object KioskPolicy {
      *   even if [suppressReclaimFor] (e.g. default Home picker) is active.
      *   Staff Secret Settings and clean exit still block.
      */
+    /**
+     * Human-readable skip reason for logging, or null when reclaim may proceed.
+     */
+    fun reclaimSkipLabel(
+        reason: String = "",
+        context: Context? = null,
+        ignoreTimedSuppress: Boolean = false,
+    ): String? {
+        if (exitingAppCleanly) {
+            Log.d(TAG, "skip reclaim — exitingAppCleanly ($reason)")
+            return "exitingAppCleanly"
+        }
+        if (staffAdminUiActive) {
+            Log.d(TAG, "skip reclaim — staffAdminUiActive ($reason)")
+            return "staffAdminUiActive"
+        }
+        if (!ignoreTimedSuppress && isReclaimSuppressed()) {
+            Log.d(TAG, "skip reclaim — suppress window ($reason)")
+            return "timedSuppress"
+        }
+        if (context != null && shouldProtectExternalAppSession(context)) {
+            Log.d(TAG, "skip reclaim — Live TV / OTT protected ($reason)")
+            return "ottSession"
+        }
+        return null
+    }
+
     fun shouldSkipKioskReclaim(
         reason: String = "",
         context: Context? = null,
         ignoreTimedSuppress: Boolean = false,
-    ): Boolean {
-        if (exitingAppCleanly) {
-            Log.d(TAG, "skip reclaim — exitingAppCleanly ($reason)")
-            return true
-        }
-        if (staffAdminUiActive) {
-            Log.d(TAG, "skip reclaim — staffAdminUiActive ($reason)")
-            return true
-        }
-        if (!ignoreTimedSuppress && isReclaimSuppressed()) {
-            Log.d(TAG, "skip reclaim — suppress window ($reason)")
-            return true
-        }
-        if (context != null && shouldProtectExternalAppSession(context)) {
-            Log.d(TAG, "skip reclaim — Live TV / OTT protected ($reason)")
-            return true
-        }
-        return false
-    }
+    ): Boolean = reclaimSkipLabel(reason, context, ignoreTimedSuppress) != null
 
     /**
      * True while guest is intentionally in Live TV / OTT, or EKTV Pro is still
@@ -1100,8 +1119,16 @@ object KioskPolicy {
         context: Context,
         navigateToHome: Boolean = true,
         preferImmediateOptions: Boolean = false,
+        ignoreTimedSuppress: Boolean = false,
     ): Boolean {
-        if (shouldSkipKioskReclaim("forceBringToFrontSafely", context)) return false
+        if (shouldSkipKioskReclaim(
+                "forceBringToFrontSafely",
+                context,
+                ignoreTimedSuppress = ignoreTimedSuppress,
+            )
+        ) {
+            return false
+        }
         val guardMs = loopGuardMs(context)
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastForceBringAtMs < guardMs) {
@@ -1135,6 +1162,7 @@ object KioskPolicy {
             navigateToHome = home,
             skipDebounce = preferImmediateOptions,
             applyLoopGuard = false, // already applied above
+            ignoreTimedSuppress = ignoreTimedSuppress,
         )
     }
 
@@ -1567,10 +1595,18 @@ object KioskPolicy {
         skipDebounce: Boolean = false,
         applyLoopGuard: Boolean = true,
         ignoreLifecycleBusy: Boolean = false,
+        ignoreTimedSuppress: Boolean = false,
     ): Boolean {
-        if (shouldSkipKioskReclaim("forceBringToFront", context)) return false
+        if (shouldSkipKioskReclaim(
+                "forceBringToFront",
+                context,
+                ignoreTimedSuppress = ignoreTimedSuppress,
+            )
+        ) {
+            return false
+        }
         if (!isKioskModeEnabled(context)) return false
-        if (isExternalAppActive(context)) {
+        if (!ignoreTimedSuppress && isExternalAppActive(context)) {
             Log.d(TAG, "forceBringToFront skipped — OTT/external session active")
             return false
         }

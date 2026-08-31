@@ -234,6 +234,9 @@ class MainActivity : ComponentActivity() {
     private var lastReclaimTimeMs: Long = 0L
     private var reclaimInFlight: Boolean = false
 
+    /** Wall-clock when [onUserLeaveHint] last issued a HOME reclaim (onStop fallback debounce). */
+    private var homeLeaveReclaimIssuedMs: Long = 0L
+
     /** Avoid repeatedly opening overlay settings when SYSTEM_ALERT_WINDOW is missing. */
     private var overlayPromptShown: Boolean = false
 
@@ -1496,8 +1499,9 @@ class MainActivity : ComponentActivity() {
 
         if (!hasFocus) {
             if (!KioskPolicy.isKioskModeEnabled(this)) return
-            if (KioskPolicy.shouldSkipKioskReclaim("onWindowFocusChanged", this)) {
-                Log.d(TAG, "onWindowFocusChanged — staff/exit suppress, skip reclaim")
+            val skipLabel = KioskPolicy.reclaimSkipLabel("onWindowFocusChanged", this)
+            if (skipLabel != null) {
+                Log.d(TAG, "onWindowFocusChanged — skip reclaim ($skipLabel)")
                 return
             }
             if (KioskPolicy.isExternalAppActive(this)) {
@@ -1769,9 +1773,10 @@ class MainActivity : ComponentActivity() {
         if (KioskPolicy.shouldSkipKioskReclaim("onStop", this)) return
         if (KioskPolicy.isExternalAppActive(this)) return
 
-        // Physical TV: reclaim only from onUserLeaveHint (same reason as onPause).
+        // Physical TV: onUserLeaveHint is primary; onStop is fallback when leave-hint
+        // reclaim was skipped or never sent (Accessibility off, surface gone, etc.).
         if (KioskPolicy.needsPhysicalTvFallback(this)) {
-            Log.d(TAG, "onStop — skip reclaim (Physical TV; onUserLeaveHint only)")
+            attemptHomeReclaimOnStopFallback()
             return
         }
 
@@ -1806,7 +1811,55 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Receives reclaim / Home-interceptor launches
+     * Physical TV fallback when [onUserLeaveHint] did not reclaim (timed suppress on
+     * older paths, Accessibility off, or surface-gone skip). Debounced so staff flows
+     * are not fought.
+     */
+    private fun attemptHomeReclaimOnStopFallback() {
+        if (isFinishing) {
+            Log.d(TAG, "onStop — skip HOME fallback (finishing)")
+            return
+        }
+        val skipLabel = KioskPolicy.reclaimSkipLabel(
+            reason = "onStop_home_fallback",
+            context = this,
+            ignoreTimedSuppress = true,
+        )
+        if (skipLabel != null) {
+            Log.d(TAG, "onStop — skip HOME fallback ($skipLabel)")
+            return
+        }
+        if (KioskPolicy.isExternalAppActive(this)) {
+            Log.d(TAG, "onStop — skip HOME fallback (OTT session)")
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        if (now - homeLeaveReclaimIssuedMs < HOME_LEAVE_FALLBACK_DEBOUNCE_MS) {
+            Log.d(TAG, "onStop — skip HOME fallback (leaveHint reclaim recent)")
+            return
+        }
+        if (KioskPolicy.wasReclaimIssuedRecently(HOME_LEAVE_FALLBACK_DEBOUNCE_MS)) {
+            Log.d(TAG, "onStop — skip HOME fallback (PendingIntent reclaim recent)")
+            return
+        }
+
+        KioskPolicy.clearTimedSuppressForHomeReclaim("onStop_home_fallback")
+        Log.i(TAG, "onStop — HOME fallback reclaim (physical TV)")
+        val sent = KioskPolicy.forceBringToFrontPhysicalTvUrgent(
+            context = this,
+            navigateToHome = !KioskPolicy.isStaffAdminUiActive(),
+            bypassDuplicateGuard = false,
+            ignoreTimedSuppress = true,
+        )
+        if (sent) {
+            homeLeaveReclaimIssuedMs = now
+        } else {
+            Log.w(TAG, "onStop — HOME fallback PendingIntent not sent")
+        }
+    }
+
+    /**
      * ([HomeKeyInterceptorService] uses NEW_TASK | CLEAR_TOP | SINGLE_TOP +
      * [EXTRA_NAVIGATE_TO_HOME]). Instantly hides guest overlays and re-pins via
      * [snapKioskSurfaceImmediate] so the kiosk channel restores after YouTube.
@@ -2064,10 +2117,13 @@ class MainActivity : ComponentActivity() {
      * API 29–30 bypasses this (see [KioskPolicy.forceBringToFront]).
      * API 31+ never enters here.
      */
-    private fun tryLegacyKioskReclaim(reason: String): Boolean {
+    private fun tryLegacyKioskReclaim(
+        reason: String,
+        ignoreTimedSuppress: Boolean = false,
+    ): Boolean {
         if (Build.VERSION.SDK_INT >= 29) return false
         if (!KioskPolicy.isKioskModeEnabled(this)) return false
-        if (KioskPolicy.isExternalAppActive(this)) {
+        if (!ignoreTimedSuppress && KioskPolicy.isExternalAppActive(this)) {
             Log.d(TAG, "KioskInterceptor — OTT session, skip reclaim ($reason)")
             return false
         }
@@ -2092,7 +2148,10 @@ class MainActivity : ComponentActivity() {
         isAppInForeground = false
         KioskPolicy.setMainActivityForeground(this, false)
         Log.d(TAG, "KioskInterceptor — legacy reclaim ($reason)")
-        val ok = KioskPolicy.forceBringToFrontSafely(this)
+        val ok = KioskPolicy.forceBringToFrontSafely(
+            context = this,
+            ignoreTimedSuppress = ignoreTimedSuppress,
+        )
         if (!ok) {
             reclaimInFlight = false
         }
@@ -2109,31 +2168,38 @@ class MainActivity : ComponentActivity() {
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
 
-        if (KioskPolicy.shouldSkipKioskReclaim(
-                "onUserLeaveHint",
-                this,
-                // Timed suppress (Home picker) must not block HOME leave reclaim.
-                ignoreTimedSuppress = true,
-            )
-        ) {
-            Log.i(TAG, "onUserLeaveHint — staff/exit suppress, skip reclaim")
+        val skipLabel = KioskPolicy.reclaimSkipLabel(
+            reason = "onUserLeaveHint",
+            context = this,
+            // Timed suppress (Home picker) must not block HOME leave reclaim.
+            ignoreTimedSuppress = true,
+        )
+        if (skipLabel != null) {
+            Log.i(TAG, "onUserLeaveHint — skip reclaim ($skipLabel)")
             super.onUserLeaveHint()
             return
         }
 
         val kioskOn = KioskPolicy.isKioskModeEnabled(this)
+        if (kioskOn) {
+            KioskPolicy.clearTimedSuppressForHomeReclaim("onUserLeaveHint")
+        }
+
         val ottActive = KioskPolicy.isExternalAppActive(this)
         val physicalTv = KioskPolicy.needsPhysicalTvFallback(this)
 
         // Fire reclaim payload FIRST (before super) — zero debounce, main thread.
         if (kioskOn && !ottActive && physicalTv && !isActivitySurfaceGone()) {
             Log.i(TAG, "onUserLeaveHint — PendingIntent reclaim PRE-super (0ms, bypass guard)")
-            KioskPolicy.forceBringToFrontPhysicalTvUrgent(
+            val sent = KioskPolicy.forceBringToFrontPhysicalTvUrgent(
                 context = this,
                 navigateToHome = !KioskPolicy.isStaffAdminUiActive(),
                 bypassDuplicateGuard = true,
                 ignoreTimedSuppress = true,
             )
+            if (sent) {
+                homeLeaveReclaimIssuedMs = System.currentTimeMillis()
+            }
             @Suppress("DEPRECATION")
             overridePendingTransition(0, 0)
         }
@@ -2161,26 +2227,36 @@ class MainActivity : ComponentActivity() {
 
         if (Build.VERSION.SDK_INT in 29..30) {
             Log.d(TAG, "KioskInterceptor — API 29/30 onUserLeaveHint reclaim")
-            KioskPolicy.forceBringToFrontSafely(
+            val sent = KioskPolicy.forceBringToFrontSafely(
                 context = this,
                 preferImmediateOptions = true,
+                ignoreTimedSuppress = true,
             )
+            if (sent) {
+                homeLeaveReclaimIssuedMs = System.currentTimeMillis()
+            }
             @Suppress("DEPRECATION")
             overridePendingTransition(0, 0)
             return
         }
 
         if (Build.VERSION.SDK_INT < 29) {
-            tryLegacyKioskReclaim("onUserLeaveHint")
+            if (tryLegacyKioskReclaim("onUserLeaveHint", ignoreTimedSuppress = true)) {
+                homeLeaveReclaimIssuedMs = System.currentTimeMillis()
+            }
             return
         }
 
         // API 31+ Device Owner — immediate reclaim (no deferred post).
         Log.d(TAG, "KioskInterceptor — onUserLeaveHint immediate reclaim")
-        KioskPolicy.forceBringToFrontSafely(
+        val sent = KioskPolicy.forceBringToFrontSafely(
             context = this,
             preferImmediateOptions = true,
+            ignoreTimedSuppress = true,
         )
+        if (sent) {
+            homeLeaveReclaimIssuedMs = System.currentTimeMillis()
+        }
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
     }
@@ -2338,6 +2414,8 @@ class MainActivity : ComponentActivity() {
         private const val PREF_KIOSK_ENABLED = "isKioskModeEnabled"
         /** API &lt; 30: min gap between reclaim attempts (breaks pause/resume storms). */
         private const val RECLAIM_DEBOUNCE_MS = 50L
+        /** onStop HOME fallback debounce — avoids fighting onUserLeaveHint / staff flows. */
+        private const val HOME_LEAVE_FALLBACK_DEBOUNCE_MS = 400L
         /** Must match admin-panel RTDB region (google-services.json may still list us-central). */
         private const val RTDB_URL =
             "https://ikhsana-hotel-tv-default-rtdb.asia-southeast1.firebasedatabase.app"
