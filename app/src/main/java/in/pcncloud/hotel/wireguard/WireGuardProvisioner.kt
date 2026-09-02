@@ -89,11 +89,12 @@ object WireGuardProvisioner {
 
             val dns = store.assignedDns()
             val includedApps = WireGuardSplitTunnel.resolveIncludedApplications(app)
+            val endpoint = WireGuardCredentials.ENDPOINT
             val config = WireGuardTunnelConfig(
                 address = address,
                 privateKey = keys.privateKeyBase64,
                 peerPublicKey = serverPub,
-                endpoint = WireGuardCredentials.ENDPOINT,
+                endpoint = endpoint,
                 allowedIps = WireGuardCredentials.ALLOWED_IPS,
                 dns = dns,
                 persistentKeepalive = WireGuardCredentials.PERSISTENT_KEEPALIVE,

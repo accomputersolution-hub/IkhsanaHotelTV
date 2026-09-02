@@ -16,8 +16,9 @@ import java.util.concurrent.TimeUnit
  * { "publicKey": "<device>", "deviceId": "<ANDROID_ID or UUID>" }
  * ```
  *
- * Server allocates (or reuses by deviceId) a `10.0.0.x` from `wg0.conf` and
- * returns `{ clientIp, address, dns, serverPublicKey }`.
+ * Server allocates (or reuses by deviceId) a client IP from `wg0.conf` and
+ * returns one of: `clientIp` / `assignedIP` / `address`, plus optional
+ * `dns`, `serverPublicKey`, `endpoint`.
  */
 class WireGuardPeerApi(
     private val client: OkHttpClient = defaultClient(),
@@ -29,6 +30,7 @@ class WireGuardPeerApi(
         val address: String? = null,
         val dns: String? = null,
         val serverPublicKey: String? = null,
+        val endpoint: String? = null,
         val message: String? = null,
     )
 
@@ -56,7 +58,15 @@ class WireGuardPeerApi(
                 val parsed = raw.takeIf { it.isNotBlank() }?.let {
                     runCatching { JSONObject(it) }.getOrNull()
                 }
-                val clientIp = listOf("clientIp", "client_ip", "ip")
+                // Live server returns assignedIP; older builds used clientIp / address.
+                val clientIp = listOf(
+                    "clientIp",
+                    "client_ip",
+                    "assignedIP",
+                    "assigned_ip",
+                    "ip",
+                    "address",
+                )
                     .firstNotNullOfOrNull { key ->
                         parsed?.optString(key)?.trim()?.takeIf { it.isNotBlank() }
                     }
@@ -73,6 +83,10 @@ class WireGuardPeerApi(
                     .firstNotNullOfOrNull { key ->
                         parsed?.optString(key)?.trim()?.takeIf { it.isNotBlank() }
                     }
+                val endpoint = listOf("endpoint", "Endpoint")
+                    .firstNotNullOfOrNull { key ->
+                        parsed?.optString(key)?.trim()?.takeIf { it.isNotBlank() }
+                    }
                 AddPeerResult(
                     success = response.isSuccessful && !clientIp.isNullOrBlank(),
                     httpCode = response.code,
@@ -80,6 +94,7 @@ class WireGuardPeerApi(
                     address = address,
                     dns = dns,
                     serverPublicKey = serverKey,
+                    endpoint = endpoint,
                     message = parsed?.optString("message")?.takeIf { it.isNotBlank() }
                         ?: raw.takeIf { it.isNotBlank() },
                 )
