@@ -181,7 +181,7 @@
     <string name="alert_overlay_eyebrow">Hotel Message</string>
     <string name="alert_overlay_close">Close</string>
     <string name="screensaver_press_any_key">Press any button to continue</string>
-    <string name="screensaver_logo_cd">Hotel logo</string>
+    <string name="screensaver_logo_cd">Brand logo</string>
     <string name="admin_title">Staff Settings</string>
     <string name="admin_subtitle_pin">Enter the Master PIN to continue</string>
     <string name="admin_subtitle_settings">Admin Mode — device controls for this TV</string>
