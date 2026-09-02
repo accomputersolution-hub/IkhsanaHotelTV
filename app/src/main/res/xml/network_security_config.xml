@@ -8,6 +8,6 @@
         </trust-anchors>
     </base-config>
     <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">103.29.99.61</domain>
+        <domain includeSubdomains="false">103.29.99.58</domain>
     </domain-config>
 </network-security-config>

@@ -39,7 +39,7 @@ If Android still gets:
 ```json
 {"error":"PublicKey and clientIp are required"}
 ```
-the **old** `server.js` is still running on `103.29.99.61:3001`. Copy this
+the **old** `server.js` is still running on `103.29.99.58:3001`. Copy this
 folder’s `server.js` onto the VPS and restart Node (systemd / pm2 / screen).
 
 Quick check after deploy:

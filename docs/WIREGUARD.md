@@ -7,7 +7,7 @@ Corporate Android TV builds establish a native WireGuard tunnel via
 ## Flow
 
 1. **Keygen** — `KeyPair()` (official crypto)
-2. **POST** `http://103.29.99.61:3001/api/add-peer` with
+2. **POST** `http://103.29.99.58:3001/api/add-peer` with
    `{ "publicKey": "…", "deviceId": "<ANDROID_ID or UUID>" }`  
    Server remembers `deviceId` so app reinstalls keep the same `10.0.0.x`;
    otherwise reads `/etc/wireguard/wg0.conf`, takes the highest `10.0.0.x`, assigns **next** IP
@@ -16,8 +16,8 @@ Corporate Android TV builds establish a native WireGuard tunnel via
    - `DNS = 8.8.8.8, 8.8.4.4` (required for Android TV name resolution on full tunnel)
    - `PersistentKeepalive = 25`
    - local private key
-   - server public key `eGIDnt4o1QVDVxm/t0jqeWpPrvy3QKY8RHhJIucGhmU=`
-   - `endpoint = 103.29.99.61:51820`
+   - server public key `pvRrIXRM4EaVis/q+RSbGjoBF741FC+ENP71nR6KzUU=`
+   - `endpoint = 103.29.99.58:51820`
    - `allowedIps = 0.0.0.0/0`
    - **Split tunnel** `IncludedApplications` = **Pro TV only**
      (`KioskLockTask.LIVE_TV_PACKAGE` / `com.ektv.pro`). This app stays off-VPN
@@ -54,7 +54,7 @@ also requests prepare.
 
 ## Cleartext
 
-`network_security_config.xml` allows HTTP cleartext only to `103.29.99.61` for the peer API.
+`network_security_config.xml` allows HTTP cleartext only to `103.29.99.58` for the peer API.
 
 ## libwg-go UAPI path (corporate)
 

@@ -8,16 +8,16 @@ package `in`.pcncloud.hotel.wireguard
  */
 object WireGuardCredentials {
     /** HTTP API that registers this device's public key as a WireGuard peer. */
-    const val ADD_PEER_URL = "http://103.29.99.61:3001/api/add-peer"
+    const val ADD_PEER_URL = "http://103.29.99.58:3001/api/add-peer"
 
     /**
      * Server WireGuard public key (base64, 44 chars).
      * If add-peer returns `serverPublicKey`, that value is preferred and persisted.
      */
-    const val SERVER_PUBLIC_KEY = "eGIDnt4o1QVDVxm/t0jqeWpPrvy3QKY8RHhJIucGhmU="
+    const val SERVER_PUBLIC_KEY = "pvRrIXRM4EaVis/q+RSbGjoBF741FC+ENP71nR6KzUU="
 
     /** UDP endpoint host:port. */
-    const val ENDPOINT = "103.29.99.61:51820"
+    const val ENDPOINT = "103.29.99.58:51820"
 
     const val ALLOWED_IPS = "0.0.0.0/0"
 
