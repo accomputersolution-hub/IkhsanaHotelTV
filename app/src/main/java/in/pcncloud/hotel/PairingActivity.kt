@@ -452,6 +452,14 @@ class PairingActivity : AppCompatActivity() {
                     showError(getString(R.string.pairing_already_paired))
                     showSlugStep()
                 }
+            } catch (e: RoomTvPairing.RoomNotFoundException) {
+                Log.w(TAG, "Room not configured: $roomNumber", e)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    pairingInFlight = false
+                    showError(getString(R.string.pairing_room_not_found, roomNumber))
+                    showSlugStep()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "pairRoom transaction failed", e)
                 runOnUiThread {

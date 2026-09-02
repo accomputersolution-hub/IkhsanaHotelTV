@@ -7,6 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Build
 import android.util.Log
 
@@ -14,12 +15,16 @@ import android.util.Log
  * Device-owner Lock Task helpers for hotel kiosk.
  *
  * Keeps Home/Back from escaping to the stock Android TV launcher while kiosk is ON.
- * Streaming OTT apps (YouTube, Netflix, …) are allowlisted via RTDB `allowedPackages`
- * for the current hotel. Live TV (EKTV Pro) is always in the Lock Task baseline.
+ * Any OTT app may be launched; each launch is added to a **session** DPM whitelist so
+ * RTDB/idle refreshes cannot shrink Lock Task packages and leak HOME to the box launcher.
+ * Live TV (EKTV Pro) stays in the baseline.
  */
 object KioskLockTask {
 
     private const val TAG = "KioskLockTask"
+    private const val PREFS = "hotel_tv_kiosk"
+    /** Packages launched this kiosk session — merged into every setLockTaskPackages call. */
+    private const val KEY_SESSION_LOCK_TASK_PACKAGES = "sessionLockTaskPackages"
 
     /** YouTube TV package id — used only for leanback URI fallback when launching. */
     const val YOUTUBE_TV_PACKAGE = "com.google.android.youtube.tv"
@@ -30,7 +35,6 @@ object KioskLockTask {
     /**
      * Essential Lock Task packages always merged with the hotel launcher.
      * Live TV is included so Lock Task Mode does not silently block IPTV.
-     * Other OTT apps still come from Admin `allowedPackages` only.
      */
     val BASELINE_LOCK_TASK_PACKAGES: List<String> = listOf(
         LIVE_TV_PACKAGE,
@@ -39,27 +43,84 @@ object KioskLockTask {
     fun adminComponent(context: Context): ComponentName =
         MyDeviceAdminReceiver.getComponentName(context)
 
+    private fun prefs(context: Context): SharedPreferences =
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /** Packages opened via Entertainment / Live TV during this kiosk session. */
+    fun getSessionLockTaskPackages(context: Context): List<String> =
+        prefs(context).getStringSet(KEY_SESSION_LOCK_TASK_PACKAGES, emptySet())
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.distinct()
+            .orEmpty()
+
+    fun rememberSessionLockTaskPackage(context: Context, packageName: String) {
+        val pkg = packageName.trim()
+        if (pkg.isEmpty() || pkg == context.packageName) return
+        val next = (getSessionLockTaskPackages(context) + pkg).toSet()
+        prefs(context).edit()
+            .putStringSet(KEY_SESSION_LOCK_TASK_PACKAGES, next)
+            .apply()
+        Log.i(TAG, "sessionLockTaskPackages += $pkg → $next")
+    }
+
+    fun clearSessionLockTaskPackages(context: Context) {
+        prefs(context).edit().remove(KEY_SESSION_LOCK_TASK_PACKAGES).apply()
+        Log.i(TAG, "sessionLockTaskPackages cleared")
+    }
+
     /**
-     * Lock Task package set = hotel app + [extraPackages] (RTDB allowlist) + baseline.
+     * Full DPM whitelist: hotel app + Live TV + Admin RTDB list + session-launched OTTs
+     * + any [extraPackages] for this call.
+     *
+     * Never shrink to "idle baseline only" — that dropped OTT from Lock Task and let
+     * HOME escape to the Android box launcher.
      */
-    fun buildLockTaskPackageArray(context: Context, extraPackages: List<String> = emptyList()): Array<String> =
-        (listOf(context.packageName) + extraPackages + baselineLockTaskPackages())
+    fun buildEffectiveLockTaskPackages(
+        context: Context,
+        extraPackages: List<String> = emptyList(),
+    ): Array<String> {
+        val adminList = runCatching {
+            KioskPolicy.getAllowedPackagesList(context)
+        }.getOrDefault(emptyList())
+        val session = getSessionLockTaskPackages(context)
+        return (
+            listOf(context.packageName) +
+                adminList +
+                session +
+                extraPackages +
+                baselineLockTaskPackages()
+            )
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .distinct()
             .toTypedArray()
+    }
+
+    /**
+     * Lock Task package set = hotel app + [extraPackages] + baseline + session + RTDB.
+     */
+    fun buildLockTaskPackageArray(context: Context, extraPackages: List<String> = emptyList()): Array<String> =
+        buildEffectiveLockTaskPackages(context, extraPackages)
+
+    /** DPM whitelist including [targetPackage] (also remembered for the session). */
+    fun buildLockTaskPackageArrayForLaunch(context: Context, targetPackage: String): Array<String> {
+        rememberSessionLockTaskPackage(context, targetPackage)
+        return buildEffectiveLockTaskPackages(context, listOf(targetPackage.trim()))
+    }
 
     /** Live TV baseline lock-task packages. */
     fun baselineLockTaskPackages(): List<String> = BASELINE_LOCK_TASK_PACKAGES
 
     /**
-     * Registers Lock Task packages from the hotel's RTDB `allowedPackages`,
-     * this hotel launcher package, and [BASELINE_LOCK_TASK_PACKAGES] (Live TV).
+     * Push the effective Lock Task whitelist (never drops session OTTs).
+     * [firebasePackages] are merged in addition to the persisted Admin list / session.
      */
     fun applyAllowlist(context: Context, firebasePackages: List<String>) {
         // Never re-pin a DPM whitelist while kiosk is OFF (Android 9/11 OTT block).
         if (!KioskPolicy.isKioskModeEnabled(context)) {
             KioskPolicy.clearDeviceOwnerLockTaskPackages(context)
+            clearSessionLockTaskPackages(context)
             Log.d(TAG, "applyAllowlist skipped — kiosk OFF, DPM packages cleared")
             return
         }
@@ -73,10 +134,13 @@ object KioskLockTask {
                 return
             }
 
-            val allowedApps = buildLockTaskPackageArray(context, firebasePackages)
+            val allowedApps = buildEffectiveLockTaskPackages(context, firebasePackages)
 
             dpm.setLockTaskPackages(adminName, allowedApps)
-            Log.i(TAG, "setLockTaskPackages (RTDB allowlist only) 뿯↽ ${allowedApps.toList()}")
+            Log.i(
+                TAG,
+                "setLockTaskPackages (effective) → ${allowedApps.toList()}",
+            )
 
             // API 28+: hide status / nav / home affordances that can leak native TV UI.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -115,7 +179,7 @@ object KioskLockTask {
      */
     fun ensureLockTaskActive(context: Context) {
         if (!KioskPolicy.isKioskModeEnabled(context) &&
-            !context.getSharedPreferences("hotel_tv_kiosk", Context.MODE_PRIVATE)
+            !context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .getBoolean("isKioskModeEnabled", false)
         ) {
             return
@@ -144,26 +208,28 @@ object KioskLockTask {
         KioskPolicy.canLaunchApp(context, targetPackageName)
 
     /**
-     * Launch an allowlisted package under Lock Task with safe Intent flags.
+     * Launch any installed package under Lock Task with safe Intent flags.
      * @return true if startActivity was attempted successfully
      */
     fun launchAllowlistedPackage(context: Context, targetPackage: String): Boolean {
         return try {
-            if (!canLaunchApp(context, targetPackage)) {
-                Log.w(TAG, "Refusing launch — kiosk ON and $targetPackage not whitelisted (silent)")
+            val target = targetPackage.trim()
+            if (target.isEmpty()) return false
+            if (!canLaunchApp(context, target)) {
+                Log.w(TAG, "Refusing launch — invalid/empty package under kiosk")
                 KioskPolicy.denyExternalLaunchSilently(context, targetPackage)
                 return false
             }
 
             // Mark OTT session BEFORE leaving MainActivity so watchdog / onUserLeaveHint skip reclaim.
-            KioskPolicy.markOttLaunched(context, targetPackage)
+            KioskPolicy.markOttLaunched(context, target)
 
-            // Ensure target (e.g. YouTube) is Lock-Task allowlisted before launch.
-            applyAllowlistForLaunch(context, targetPackage)
+            // Add target to DPM Lock Task so Android 9/11 do not block with "Unauthorized by Admin".
+            applyLockTaskForLaunch(context, target)
 
             ensureLockTaskActive(context)
 
-            val intent = buildSafeLaunchIntent(context, targetPackage)
+            val intent = buildSafeLaunchIntent(context, target)
 
             if (intent == null) {
                 Log.w(TAG, "No launch intent for $targetPackage")
@@ -173,7 +239,7 @@ object KioskLockTask {
 
             try {
                 context.startActivity(intent)
-                Log.i(TAG, "Launched allowlisted package under Lock Task 뿯↽ $targetPackage")
+                Log.i(TAG, "Launched package under Lock Task → $target")
                 true
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to launch $targetPackage", e)
@@ -217,27 +283,39 @@ object KioskLockTask {
     }
 
     /**
-     * Immediately sets Lock Task packages from the hotel Admin allowlist + baseline.
-     * [targetPackage] must be in Admin allowlist **or** [BASELINE_LOCK_TASK_PACKAGES].
+     * Remember [targetPackage] for the session and push the full effective whitelist.
      */
-    private fun applyAllowlistForLaunch(context: Context, targetPackage: String) {
+    fun applyLockTaskForLaunch(context: Context, targetPackage: String) {
         try {
             val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             val adminName = adminComponent(context)
             if (!dpm.isDeviceOwnerApp(context.packageName)) return
 
-            val target = targetPackage.trim()
-            val adminList = KioskPolicy.getAllowedPackagesList(context)
-            if (!adminList.contains(target) && target !in BASELINE_LOCK_TASK_PACKAGES) {
-                Log.w(TAG, "applyAllowlistForLaunch skipped — $targetPackage not allowlisted")
-                return
-            }
-            val packages = buildLockTaskPackageArray(context, adminList)
+            val packages = buildLockTaskPackageArrayForLaunch(context, targetPackage)
             dpm.setLockTaskPackages(adminName, packages)
             MyDeviceAdminReceiver.applyStrictLockTaskFeatures(context)
             Log.i(TAG, "Pre-launch setLockTaskPackages → ${packages.toList()}")
         } catch (e: Exception) {
-            Log.w(TAG, "applyAllowlistForLaunch failed for $targetPackage", e)
+            Log.w(TAG, "applyLockTaskForLaunch failed for $targetPackage", e)
+        }
+    }
+
+    /**
+     * Re-assert DPM whitelist + features after HOME reclaim so Lock Task stays pinned
+     * on the hotel app (never empty / baseline-only shrink).
+     */
+    fun reassertLockTaskPackages(context: Context) {
+        if (!KioskPolicy.isKioskModeEnabled(context)) return
+        try {
+            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val adminName = adminComponent(context)
+            if (!dpm.isDeviceOwnerApp(context.packageName)) return
+            val packages = buildEffectiveLockTaskPackages(context)
+            dpm.setLockTaskPackages(adminName, packages)
+            MyDeviceAdminReceiver.applyStrictLockTaskFeatures(context)
+            Log.i(TAG, "reassertLockTaskPackages → ${packages.toList()}")
+        } catch (e: Exception) {
+            Log.w(TAG, "reassertLockTaskPackages failed", e)
         }
     }
 

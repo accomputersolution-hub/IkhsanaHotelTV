@@ -20,6 +20,11 @@ import { escapeHtml, toast, openModal, closeModal, setupModalClose } from './uti
 import { navigateTo } from './router.js';
 import { normalizeHotelId } from './firebase-config.js';
 import { normalizeRoom, formatRoomLabel, isNumericRoomId } from './paths.js';
+import {
+  SUPER_ADMIN_ROOM_MANAGER,
+  isSuperAdminManagedRoom,
+  purgeUnmanagedRooms,
+} from './room-inventory.js';
 
 const HOTEL_SUBCOLLECTIONS = [
   'Rooms',
@@ -805,6 +810,7 @@ function vacantRoomPayload(roomId, category = '') {
   return {
     roomNumber: id,
     category: cat,
+    managedBy: SUPER_ADMIN_ROOM_MANAGER,
     roomType: 'deluxe',
     status: 'vacant',
     guestName: 'Guest',
@@ -1075,8 +1081,10 @@ async function loadEditingHotelRooms(hotelId) {
   }
   try {
     const snap = await getDocs(collection(db, 'Hotels', hotelId, 'Rooms'));
-    editingHotelRooms = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
+    const allRooms = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const purged = await purgeUnmanagedRooms(hotelId, allRooms);
+    editingHotelRooms = allRooms
+      .filter((r) => isSuperAdminManagedRoom(r))
       .sort((a, b) => {
         const catCmp = roomCategoryOf(a).localeCompare(roomCategoryOf(b), undefined, {
           sensitivity: 'base',
@@ -1085,6 +1093,10 @@ async function loadEditingHotelRooms(hotelId) {
         return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
       });
     renderEditingHotelRooms();
+    if (purged > 0) {
+      await syncHotelTotalRooms(hotelId, editingHotelRooms.length);
+      toast(`Removed ${purged} room(s) not created by Super Admin`);
+    }
   } catch (err) {
     console.error('[super-admin] load rooms failed', err);
     toast('Failed to load rooms', 'error');
@@ -1254,6 +1266,7 @@ async function onRenameRoomClick(oldId) {
     if (newId === oldId) {
       await updateDoc(oldRef, {
         category: newCategory,
+        managedBy: SUPER_ADMIN_ROOM_MANAGER,
         roomNumber: oldId,
         updatedAt: serverTimestamp(),
       });
@@ -1265,6 +1278,7 @@ async function onRenameRoomClick(oldId) {
           ...rest,
           roomNumber: newId,
           category: newCategory,
+          managedBy: SUPER_ADMIN_ROOM_MANAGER,
           updatedAt: serverTimestamp(),
         },
         { merge: false },

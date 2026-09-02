@@ -206,6 +206,9 @@ class HomeKeyInterceptorService : AccessibilityService() {
             KioskPolicy.clearExternalAppActive(this)
             KioskPolicy.clearOttLaunchState(this)
             KioskPolicy.clearUserMinimized(this)
+            // Keep Lock Task whitelist intact (session OTTs) so HOME cannot
+            // fall through to the Android box launcher while we reclaim.
+            KioskLockTask.reassertLockTaskPackages(this)
         } catch (_: Exception) {
         }
 

@@ -41,14 +41,6 @@ object AppLauncherUtils {
                 return
             }
 
-            if (!KioskPolicy.canLaunchApp(context, packageName)) {
-                Log.w(TAG, "Blocked by kiosk whitelist → $packageName")
-                KioskPolicy.denyExternalLaunchSilently(context, packageName)
-                showAppUnavailableToast(context)
-                context.findMainActivity()?.onExternalLaunchBlocked(packageName)
-                return
-            }
-
             // Resolve launch intent BEFORE leaving the Entertainment screen.
             val launchIntent = resolveLaunchIntent(context, packageName)
             if (launchIntent == null) {
@@ -112,6 +104,8 @@ object AppLauncherUtils {
             }
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             KioskPolicy.markOttLaunched(context, packageName)
+            KioskLockTask.applyLockTaskForLaunch(context, packageName)
+            KioskLockTask.ensureLockTaskActive(context)
             context.startActivity(intent)
             Log.i(TAG, "Launched $packageName (fallback)")
             // Intentionally no code after startActivity.

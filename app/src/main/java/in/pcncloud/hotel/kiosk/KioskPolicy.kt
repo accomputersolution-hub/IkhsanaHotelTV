@@ -491,6 +491,7 @@ object KioskPolicy {
             .putBoolean(KEY_MAIN_FOREGROUND, false)
             .putBoolean(KEY_ON_GUEST_HOME, false)
             .apply()
+        KioskLockTask.clearSessionLockTaskPackages(context)
         try {
             KioskWatchdogService.stop(context.applicationContext)
         } catch (e: Exception) {
@@ -522,25 +523,14 @@ object KioskPolicy {
     /**
      * Validates whether an external app may be launched.
      * When Kiosk Mode is OFF → allow everything.
-     * When Kiosk Mode is ON → hotel Admin `allowedPackages` **or** Lock Task baseline
-     * (Live TV / EKTV Pro).
+     * When Kiosk Mode is ON → any non-empty package (Admin `allowedPackages` is
+     * persisted for the panel but no longer blocks guest launches).
      * Never throws — a prefs / parse failure fails closed (deny) under kiosk.
      */
     fun canLaunchApp(context: Context, targetPackageName: String): Boolean {
         return try {
             if (!isKioskModeEnabled(context)) return true
-            val target = targetPackageName.trim()
-            if (target.isEmpty()) return false
-            if (target in KioskLockTask.baselineLockTaskPackages()) return true
-            val allowed = getAllowedPackagesList(context)
-            val ok = allowed.contains(target)
-            if (!ok) {
-                Log.w(
-                    TAG,
-                    "Blocked launch of $target — not in hotel allowedPackages ($allowed)",
-                )
-            }
-            ok
+            targetPackageName.trim().isNotEmpty()
         } catch (t: Throwable) {
             Log.e(TAG, "canLaunchApp failed — denying under kiosk (safe)", t)
             isKioskModeEnabled(context).not()
@@ -761,6 +751,7 @@ object KioskPolicy {
             }
             // Empty array: no restricted Lock Task allowlist (OTT launches freely).
             dpm.setLockTaskPackages(adminComponent, arrayOf())
+            KioskLockTask.clearSessionLockTaskPackages(context)
             Log.i(TAG, "clearDeviceOwnerLockTaskPackages → setLockTaskPackages([])")
         } catch (e: Exception) {
             Log.e(TAG, "clearDeviceOwnerLockTaskPackages failed", e)
