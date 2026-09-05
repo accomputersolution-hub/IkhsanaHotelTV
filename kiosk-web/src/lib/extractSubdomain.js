@@ -35,7 +35,7 @@ export function normalizePublicSlug(raw) {
 /**
  * Extract public marketing slug from hostname.
  * ikhsana.pcncloud.in → "ikhsana"
- * go.pcncloud.in / www.pcncloud.in → null
+ * go.pcncloud.in / www.pcncloud.in / admin.pcncloud.in → null
  * localhost → null
  */
 export function extractPublicSlug(hostname, opts = {}) {

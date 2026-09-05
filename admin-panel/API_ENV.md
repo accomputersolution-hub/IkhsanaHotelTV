@@ -22,7 +22,7 @@ Optional:
 
 ```
 FIREBASE_DATABASE_URL=https://ikhsana-hotel-tv-default-rtdb.asia-southeast1.firebasedatabase.app
-PASSWORD_RESET_CONTINUE_URL=https://www.pcncloud.in/#/login
+PASSWORD_RESET_CONTINUE_URL=https://admin.pcncloud.in/#/login
 ```
 
 ## Required (custom reset mailer)

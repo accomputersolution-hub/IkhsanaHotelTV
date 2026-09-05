@@ -1,92 +1,74 @@
-# Domain cutover — hostity.in → pcncloud.in
+# Domain map — pcncloud.in
 
-All app code now defaults to **`pcncloud.in`**. Point DNS + Vercel + Firebase
-the same way `hostity.in` was wired before.
+Production hostnames for Hostity / PCN Cloud.
 
-## Hostname map (was → now)
+## Live map
 
-| Role | Old | New | Vercel root |
-|------|-----|-----|-------------|
-| Master admin | `www.hostity.in` | **`www.pcncloud.in`** | `admin-panel` |
-| Apex redirect (optional) | `hostity.in` → www | **`pcncloud.in` → www** | same admin project |
-| Marketing / “go” site | `go.hostity.in` | **`go.pcncloud.in`** | `go-site` |
-| Hotel / tenant public | `{slug}.hostity.in` | **`{slug}.pcncloud.in`** | kiosk or admin tenant host |
-| Mail from | `noreply@hostity.in` | **`noreply@pcncloud.in`** | Vercel env |
+| Role | Hostname | Vercel project root |
+|------|----------|---------------------|
+| **Marketing site** | **`www.pcncloud.in`** | `go-site` |
+| Apex → marketing | **`pcncloud.in`** → 308 → `www.pcncloud.in` | `go-site` |
+| **Master admin** | **`admin.pcncloud.in`** | `admin-panel` |
+| Hotel / tenant public | **`{slug}.pcncloud.in`** | usually same as admin (wildcard) or kiosk |
 
-Reserved platform subdomains (not hotels): `www`, `go`, `admin`, `app`, `api`, `mail`, …
+Optional alias: `go.pcncloud.in` → marketing (only if you still want the old “go” host).
 
-## DNS records (registrar for pcncloud.in)
+Reserved platform subdomains (never hotel slugs): `www`, `admin`, `go`, `app`, `api`, `mail`, …
+
+## Vercel setup (matches your Domains screen)
+
+You currently have **one** project holding `admin`, `www`, apex, and `*`. Split them:
+
+### Project A — Admin (`admin-panel`)
+
+**Keep / add**
+- `admin.pcncloud.in` → Production
+- `*.pcncloud.in` → Production (hotel tenants)
+
+**Remove from this project**
+- `www.pcncloud.in`
+- `pcncloud.in` (apex redirect)
+
+### Project B — Marketing (`go-site`)
+
+**Add**
+- `www.pcncloud.in` → Production
+- `pcncloud.in` → Redirect **308** → `www.pcncloud.in`
+
+Root Directory for Project B: **`go-site`**.
+
+## DNS (registrar)
 
 ```
-# Admin
-A / ALIAS   @       → Vercel (or CNAME to cname.vercel-dns.com if supported)
-CNAME       www     → cname.vercel-dns.com
-
-# Marketing
-CNAME       go      → cname.vercel-dns.com
-
-# Wildcard tenants (hotel public / kiosk)
-CNAME       *       → cname.vercel-dns.com
+CNAME   www     → cname.vercel-dns.com     # marketing project
+CNAME   admin   → cname.vercel-dns.com     # admin project
+CNAME   *       → cname.vercel-dns.com     # admin (or kiosk) project
+# apex: A/ALIAS per Vercel instructions for pcncloud.in → www redirect on marketing project
 ```
 
-Exact Vercel CNAME target is shown in each project → Domains.
+Use the exact CNAME target Vercel shows for each project.
 
-## Vercel projects
+## Firebase
 
-### 1) Admin (was www.hostity.in)
-
-1. Project root: **`admin-panel`**
-2. Domains: `www.pcncloud.in`, optionally `pcncloud.in`
-3. Env (Production) — update any old hostity values:
-
-```
-PASSWORD_RESET_CONTINUE_URL=https://www.pcncloud.in/#/login
-SMTP_FROM="Hostity Admin <noreply@pcncloud.in>"
-# or RESEND_FROM=...
-RESET_LINK_DEST_DOMAINS=pcncloud.in,company.com
-```
-
-Redeploy after env changes.
-
-### 2) Marketing go-site
-
-1. New or existing project root: **`go-site`**
-2. Domain: **`go.pcncloud.in`** only (do not attach www here)
-
-### 3) Tenant / kiosk host (if separate)
-
-1. Attach **`*.pcncloud.in`** (and remove old `*.hostity.in`)
-2. Ensure `rootDomain` is `pcncloud.in` (code default already)
-
-## Firebase Console
-
-Authentication → Settings → **Authorized domains** — add:
-
+Authorized domains:
 - `pcncloud.in`
 - `www.pcncloud.in`
-- `go.pcncloud.in`
-- any `{slug}.pcncloud.in` you use in browsers (wildcard not always listed; add as needed)
+- `admin.pcncloud.in`
+- tenant hosts as needed
 
-Remove `hostity.in` / `www.hostity.in` when traffic has moved.
+## Admin env (Vercel → admin project)
 
-## Mail / DNS extras
-
-- SPF / DKIM for `pcncloud.in` on the SMTP/Resend provider
-- Update `SMTP_FROM` / `RESEND_FROM` to `@pcncloud.in`
-- Google Workspace / mailbox: `hello@pcncloud.in`, `noreply@pcncloud.in`
-
-## Android TV
-
-No Hostity web domain is baked into the APK for admin. WireGuard still uses the
-VPN host IP (`103.29.99.58`), unrelated to this cutover.
+```
+PASSWORD_RESET_CONTINUE_URL=https://admin.pcncloud.in/#/login
+SMTP_FROM="Hostity Admin <noreply@pcncloud.in>"
+RESET_LINK_DEST_DOMAINS=pcncloud.in,company.com
+```
 
 ## Verify
 
 ```bash
-rg 'hostity\.in'   # must be empty in repo
-curl -I https://www.pcncloud.in
-curl -I https://go.pcncloud.in
-curl -I https://{your-hotel-slug}.pcncloud.in
+curl -I https://www.pcncloud.in      # marketing (go-site)
+curl -I https://admin.pcncloud.in    # admin panel
+curl -I https://pcncloud.in          # 308 → www
+curl -I https://{hotel-slug}.pcncloud.in
 ```
-
-Admin login, create/open a hotel slug URL, send a password-reset mail, open go-site.

@@ -85,8 +85,8 @@ js/app.js               Shell switching by role/route
 
 | Host | App |
 |------|-----|
-| `www.pcncloud.in` | This admin panel (Vercel root `admin-panel`) |
-| `go.pcncloud.in` | Marketing site (`go-site`) |
-| `{slug}.pcncloud.in` | Hotel/tenant public host |
+| **`admin.pcncloud.in`** | This admin panel (Vercel root `admin-panel`) |
+| **`www.pcncloud.in`** | Marketing site (`go-site`) |
+| `{slug}.pcncloud.in` | Hotel/tenant public host (wildcard) |
 
-Full DNS + Vercel + Firebase checklist: [`docs/DOMAIN_PCNCLOUD.md`](../docs/DOMAIN_PCNCLOUD.md).
+Full DNS + Vercel split: [`docs/DOMAIN_PCNCLOUD.md`](../docs/DOMAIN_PCNCLOUD.md).
