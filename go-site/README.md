@@ -2,9 +2,9 @@
 
 Premium public landing for the Hostity hotel & corporate TV platform.
 
-- **Admin panel:** `www.pcncloud.in` (unchanged)
+- **Admin panel:** `www.pcncloud.in`
 - **This showcase:** `go.pcncloud.in`
-- **Future brand:** `pcncloud.in`
+- **Root domain:** `pcncloud.in`
 
 ## Local preview
 
