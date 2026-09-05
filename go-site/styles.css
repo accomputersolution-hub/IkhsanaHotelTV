@@ -589,6 +589,10 @@ a {
   color: var(--champagne);
 }
 
+.foot__meta {
+  color: var(--champagne-dim);
+}
+
 .reveal {
   opacity: 0;
   transform: translateY(28px);
