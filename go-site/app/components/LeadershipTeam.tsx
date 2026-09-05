@@ -14,7 +14,7 @@ const founders = [
     name: "Mohammed Chaudhary",
     role: "Co-Founder / Chief Technology Officer (CTO)",
     image: "/cto-photo.png",
-    alt: "Mohammed Chaudhary, Co-Founder and CTO of PCN Cloud",
+    alt: "Mohammed Chaudhary, Co-Founder and Chief Technology Officer of PCN Cloud",
   },
 ];
 
@@ -35,7 +35,7 @@ export function LeadershipTeam() {
           <div className="mx-auto max-w-3xl text-center">
             <p className="eyebrow">People behind the stack</p>
             <h2 className="mt-4 font-display text-4xl font-semibold tracking-tight text-bone sm:text-5xl md:text-6xl">
-              <span className="text-gradient">Leadership Team</span>
+              <span className="text-gradient">LEADERSHIP TEAM</span>
             </h2>
             <p className="mx-auto mt-8 max-w-2xl text-base leading-relaxed text-bone/70 sm:text-lg">
               PCN Cloud was founded with a unified vision: to eliminate the IT and
