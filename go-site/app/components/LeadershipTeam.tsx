@@ -5,10 +5,10 @@ import { Reveal } from "./Reveal";
 
 const founders = [
   {
-    name: "Ahad",
+    name: "Linga Bhandari",
     role: "Co-Founder / Managing Director (MD)",
     image: "/md-photo.jpg",
-    alt: "Ahad, Co-Founder and Managing Director of PCN Cloud",
+    alt: "Linga Bhandari, Co-Founder and Managing Director of PCN Cloud",
   },
   {
     name: "Mohammed Chaudhary",
