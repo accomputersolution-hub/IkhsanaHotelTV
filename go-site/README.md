@@ -2,9 +2,13 @@
 
 Premium public landing for the Hostity hotel & corporate TV platform.
 
-- **Admin panel:** `www.pcncloud.in`
-- **This showcase:** `go.pcncloud.in`
-- **Root domain:** `pcncloud.in`
+| Host | Purpose |
+|------|---------|
+| `www.pcncloud.in` | Master admin (`admin-panel`) |
+| `go.pcncloud.in` | This showcase |
+| `{slug}.pcncloud.in` | Hotel / corporate public tenant |
+
+Full cutover notes: [`docs/DOMAIN_PCNCLOUD.md`](../docs/DOMAIN_PCNCLOUD.md).
 
 ## Local preview
 
@@ -20,7 +24,7 @@ Open http://localhost:4173
 1. Vercel → **Add New Project** → this repo  
 2. **Root Directory:** `go-site`  
 3. Framework preset: **Other** (static)  
-4. Domains → add **`go.pcncloud.in`**  
-5. DNS: `CNAME` name `go` → `cname.vercel-dns.com` (or value Vercel shows)
+4. Domains → add **`go.pcncloud.in`** only  
+5. DNS: `CNAME` name `go` → value Vercel shows  
 
-Keep the admin project bound only to `www.pcncloud.in`.
+Do **not** attach `www.pcncloud.in` here — that stays on the admin project.

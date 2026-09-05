@@ -3,6 +3,26 @@
  * Subdomain maps to public_hotels/{slug} — never to Hotels/{docId} directly.
  */
 
+/** Platform hosts that must never resolve as a hotel public slug. */
+const RESERVED_SUBDOMAINS = new Set([
+  'www',
+  'go',
+  'admin',
+  'app',
+  'api',
+  'mail',
+  'smtp',
+  'ftp',
+  'cdn',
+  'static',
+  'status',
+  'docs',
+  'dev',
+  'staging',
+  'preview',
+  'vercel',
+]);
+
 export function normalizePublicSlug(raw) {
   return String(raw ?? '')
     .trim()
@@ -43,7 +63,7 @@ export function extractTenantSlug(hostname = getWindowHostname(), opts = {}) {
   if (host.endsWith(suffix)) {
     const sub = host.slice(0, -suffix.length);
     const label = sub.split('.').filter(Boolean)[0];
-    if (!label || label === 'www') return null;
+    if (!label || RESERVED_SUBDOMAINS.has(label)) return null;
     return normalizePublicSlug(label);
   }
 

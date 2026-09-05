@@ -22,7 +22,7 @@ Optional:
 
 ```
 FIREBASE_DATABASE_URL=https://ikhsana-hotel-tv-default-rtdb.asia-southeast1.firebasedatabase.app
-PASSWORD_RESET_CONTINUE_URL=https://your-admin.example.com/#/login
+PASSWORD_RESET_CONTINUE_URL=https://www.pcncloud.in/#/login
 ```
 
 ## Required (custom reset mailer)
@@ -36,22 +36,24 @@ SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USER=...
 SMTP_PASS=...
-SMTP_FROM="Hostity Admin <noreply@yourdomain.com>"
+SMTP_FROM="Hostity Admin <noreply@pcncloud.in>"
 ```
 
 **Resend**
 
 ```
 RESEND_API_KEY=re_...
-RESEND_FROM="Hostity Admin <noreply@yourdomain.com>"
+RESEND_FROM="Hostity Admin <noreply@pcncloud.in>"
 ```
 
 ## Optional (restrict Forgot Password destination)
 
 ```
 RESET_LINK_DEST_ALLOWLIST=it@company.com,security@company.com
-RESET_LINK_DEST_DOMAINS=company.com,pcncloud.in
+RESET_LINK_DEST_DOMAINS=pcncloud.in,company.com
 ```
+
+Production domain map: see [`docs/DOMAIN_PCNCLOUD.md`](../docs/DOMAIN_PCNCLOUD.md).
 
 ## Endpoints
 

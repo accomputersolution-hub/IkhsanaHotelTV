@@ -80,3 +80,13 @@ js/app.js               Shell switching by role/route
 - Keep `Hotels` capitalization in sync with Android `FirestorePaths.kt`.
 - Canonical demo slug is **`ikhsana_001`** (underscore). Hyphenated ids like `ikhsana-001` are normalized to underscores on both Android and Web Admin.
 - Enable Auth + update Firestore rules before production (see `firestore.rules.example`).
+
+## Production domains (`pcncloud.in`)
+
+| Host | App |
+|------|-----|
+| `www.pcncloud.in` | This admin panel (Vercel root `admin-panel`) |
+| `go.pcncloud.in` | Marketing site (`go-site`) |
+| `{slug}.pcncloud.in` | Hotel/tenant public host |
+
+Full DNS + Vercel + Firebase checklist: [`docs/DOMAIN_PCNCLOUD.md`](../docs/DOMAIN_PCNCLOUD.md).

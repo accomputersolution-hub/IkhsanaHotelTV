@@ -3,6 +3,26 @@
  * Avoids IDOR: kiosk never needs the private hotel document id in the URL.
  */
 
+/** Platform hosts that must never resolve as a hotel public slug. */
+const RESERVED_SUBDOMAINS = new Set([
+  'www',
+  'go',
+  'admin',
+  'app',
+  'api',
+  'mail',
+  'smtp',
+  'ftp',
+  'cdn',
+  'static',
+  'status',
+  'docs',
+  'dev',
+  'staging',
+  'preview',
+  'vercel',
+]);
+
 export function normalizePublicSlug(raw) {
   return String(raw ?? '')
     .trim()
@@ -15,6 +35,7 @@ export function normalizePublicSlug(raw) {
 /**
  * Extract public marketing slug from hostname.
  * ikhsana.pcncloud.in → "ikhsana"
+ * go.pcncloud.in / www.pcncloud.in → null
  * localhost → null
  */
 export function extractPublicSlug(hostname, opts = {}) {
@@ -49,7 +70,7 @@ export function extractPublicSlug(hostname, opts = {}) {
 
   const sub = host.slice(0, -suffix.length);
   const label = sub.split('.').filter(Boolean)[0];
-  if (!label || label === 'www') return null;
+  if (!label || RESERVED_SUBDOMAINS.has(label)) return null;
   return normalizePublicSlug(label);
 }
 
