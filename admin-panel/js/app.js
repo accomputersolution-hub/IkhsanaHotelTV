@@ -621,7 +621,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Show boot loader immediately — hide login flash until Auth resolves
   setAuthBootUi(true);
 
-  // Multi-tenant: *.hostity.in → bind Hotels/{slug} branding before Auth paints.
+  // Multi-tenant: *.pcncloud.in → bind Hotels/{slug} branding before Auth paints.
   // Localhost is unchanged (no forced default); use ?hotel=slug when testing.
   const hostSlug = extractTenantSlug(window.location.hostname);
   if (hostSlug || new URLSearchParams(window.location.search).get('hotel')) {

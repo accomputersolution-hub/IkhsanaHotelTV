@@ -60,7 +60,7 @@ export function TenantErrorScreen({ status, slug, error, onRetry }) {
     error ||
     (status === 'not_found'
       ? `No public_hotels/${slug || '…'} document.`
-      : 'Open https://{slug}.hostity.in');
+      : 'Open https://{slug}.pcncloud.in');
 
   return (
     <div
@@ -126,7 +126,7 @@ export function TenantErrorScreen({ status, slug, error, onRetry }) {
  */
 export function HotelTenantGate({
   db,
-  rootDomain = 'hostity.in',
+  rootDomain = 'pcncloud.in',
   fallback = null,
   requirePairing = true,
   children,

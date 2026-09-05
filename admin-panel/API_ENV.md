@@ -50,7 +50,7 @@ RESEND_FROM="Hostity Admin <noreply@yourdomain.com>"
 
 ```
 RESET_LINK_DEST_ALLOWLIST=it@company.com,security@company.com
-RESET_LINK_DEST_DOMAINS=company.com,hostity.in
+RESET_LINK_DEST_DOMAINS=company.com,pcncloud.in
 ```
 
 ## Endpoints

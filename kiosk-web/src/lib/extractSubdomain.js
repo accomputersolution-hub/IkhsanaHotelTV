@@ -14,11 +14,11 @@ export function normalizePublicSlug(raw) {
 
 /**
  * Extract public marketing slug from hostname.
- * ikhsana.hostity.in → "ikhsana"
+ * ikhsana.pcncloud.in → "ikhsana"
  * localhost → null
  */
 export function extractPublicSlug(hostname, opts = {}) {
-  const rootDomain = String(opts.rootDomain || 'hostity.in')
+  const rootDomain = String(opts.rootDomain || 'pcncloud.in')
     .trim()
     .toLowerCase()
     .replace(/^www\./, '');

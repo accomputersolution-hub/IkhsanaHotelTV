@@ -13,7 +13,7 @@ function fromAddress() {
     process.env.SMTP_FROM ||
     process.env.RESEND_FROM ||
     process.env.SMTP_USER ||
-    'noreply@hostity.in'
+    'noreply@pcncloud.in'
   );
 }
 

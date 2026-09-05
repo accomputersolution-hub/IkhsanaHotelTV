@@ -10,7 +10,7 @@ import { fetchPublicHotelConfig } from '../lib/fetchPublicHotelConfig.js';
  */
 export function useHotelTenant({
   db,
-  rootDomain = 'hostity.in',
+  rootDomain = 'pcncloud.in',
   fallback = null,
   useDefaultOnLocal = false,
 } = {}) {
@@ -43,7 +43,7 @@ export function useHotelTenant({
             slug: null,
             hotel: null,
             error:
-              'No public hotel slug. Open https://{slug}.hostity.in or use ?slug=ikhsana on localhost.',
+              'No public hotel slug. Open https://{slug}.pcncloud.in or use ?slug=ikhsana on localhost.',
           });
         }
         return;

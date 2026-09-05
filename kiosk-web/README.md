@@ -3,12 +3,12 @@
 ## Why not `Hotels/{subdomain}`?
 
 Using the Firestore document id as the subdomain is an **IDOR** risk: anyone who
-guesses `ikhsana_001.hostity.in` can probe your private hotel id space, and a
+guesses `ikhsana_001.pcncloud.in` can probe your private hotel id space, and a
 direct `get(Hotels/{id})` often returns sensitive fields.
 
 ## Secure flow
 
-1. **Subdomain** `ikhsana.hostity.in` → public slug `ikhsana`
+1. **Subdomain** `ikhsana.pcncloud.in` → public slug `ikhsana`
 2. **Read** `public_hotels/ikhsana` (name, logo, theme, wallpaper, internal `hotelId`)
 3. **Pairing** — kiosk shows a random **6-digit code** (no room number typed on device)
 4. **Reception** claims the code in Admin → binds `roomNumber`
@@ -26,7 +26,7 @@ Hotels/{hotelId}/pairing_codes/{6}  ← kiosk create; staff claim
 ```jsx
 import { HotelTenantGate } from './components/HotelTenantGate.jsx';
 
-<HotelTenantGate db={db} rootDomain="hostity.in">
+<HotelTenantGate db={db} rootDomain="pcncloud.in">
   {(hotel, session) => (
     <KioskApp hotel={hotel} roomNumber={session.roomNumber} />
   )}

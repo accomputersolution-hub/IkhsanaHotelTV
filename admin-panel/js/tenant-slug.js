@@ -13,7 +13,7 @@ export function normalizePublicSlug(raw) {
 }
 
 export function extractTenantSlug(hostname = getWindowHostname(), opts = {}) {
-  const rootDomain = String(opts.rootDomain || 'hostity.in')
+  const rootDomain = String(opts.rootDomain || 'pcncloud.in')
     .trim()
     .toLowerCase()
     .replace(/^www\./, '');

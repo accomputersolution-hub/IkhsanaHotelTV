@@ -11,7 +11,7 @@ const db = getFirestore(app);
 
 export default function App() {
   return (
-    <HotelTenantGate db={db} rootDomain="hostity.in">
+    <HotelTenantGate db={db} rootDomain="pcncloud.in">
       {(hotel, session) => (
         <main
           style={{
