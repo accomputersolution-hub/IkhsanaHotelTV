@@ -282,6 +282,11 @@ a {
   max-width: var(--wide);
 }
 
+.section--story,
+.section--who {
+  /* layout hooks used from HTML */
+}
+
 .eyebrow {
   margin: 0 0 0.85rem;
   font-size: 0.72rem;
