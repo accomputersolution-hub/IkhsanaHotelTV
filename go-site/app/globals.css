@@ -46,10 +46,6 @@ body {
       transparent
     );
   }
-
-  .glass-strong {
-    @apply border border-white/15 bg-white/[0.08] backdrop-blur-2xl;
-  }
 }
 
 @layer components {
