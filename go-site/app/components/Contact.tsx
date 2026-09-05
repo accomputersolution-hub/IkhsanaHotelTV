@@ -3,7 +3,16 @@
 import Image from "next/image";
 import { Reveal } from "./Reveal";
 import { Logo } from "./Logo";
+import { WhatsAppIcon } from "./WhatsAppFloat";
 import { Mail, MapPin, Phone } from "lucide-react";
+import {
+  COVERAGE_LINE,
+  EMAIL_SALES,
+  LOCATION_LINE,
+  PHONE_DISPLAY,
+  PHONE_TEL,
+  WHATSAPP_URL,
+} from "@/lib/contact";
 
 export function Contact() {
   return (
@@ -31,18 +40,16 @@ export function Contact() {
             </p>
             <div className="mt-9 flex flex-wrap gap-3">
               <a
-                href="mailto:hello@pcncloud.in?subject=PCN%20Cloud%20consultation"
-                className="btn-primary"
-              >
-                Email hello@pcncloud.in
-              </a>
-              <a
-                href="https://admin.pcncloud.in"
+                href={WHATSAPP_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn-secondary"
+                className="btn-primary"
               >
-                Client Login
+                <WhatsAppIcon className="h-4 w-4" />
+                WhatsApp us
+              </a>
+              <a href={`tel:${PHONE_TEL}`} className="btn-secondary">
+                Call {PHONE_DISPLAY}
               </a>
             </div>
           </Reveal>
@@ -52,23 +59,42 @@ export function Contact() {
               <Logo size="lg" className="mb-2" />
               {[
                 {
+                  icon: Phone,
+                  title: "Phone & WhatsApp",
+                  body: (
+                    <div className="space-y-1">
+                      <a href={`tel:${PHONE_TEL}`} className="block hover:text-signal-bright">
+                        {PHONE_DISPLAY}
+                      </a>
+                      <a
+                        href={WHATSAPP_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block text-signal-bright hover:underline"
+                      >
+                        Chat on WhatsApp
+                      </a>
+                    </div>
+                  ),
+                },
+                {
                   icon: Mail,
                   title: "Sales & support",
                   body: (
-                    <a href="mailto:hello@pcncloud.in" className="hover:text-signal-bright">
-                      hello@pcncloud.in
+                    <a href={`mailto:${EMAIL_SALES}`} className="hover:text-signal-bright">
+                      {EMAIL_SALES}
                     </a>
                   ),
                 },
                 {
-                  icon: Phone,
-                  title: "Consultations",
-                  body: "Remote or on-property walkthroughs",
-                },
-                {
                   icon: MapPin,
-                  title: "Coverage",
-                  body: "Hotels, resorts & campuses across India",
+                  title: "Base & coverage",
+                  body: (
+                    <div className="space-y-1">
+                      <p>{LOCATION_LINE}</p>
+                      <p className="text-bone/50">{COVERAGE_LINE}</p>
+                    </div>
+                  ),
                 },
               ].map((row) => {
                 const Icon = row.icon;

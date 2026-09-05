@@ -14,7 +14,9 @@ import {
 import { motion, useReducedMotion } from "framer-motion";
 import type { Service } from "@/lib/services";
 import { serviceIcons } from "@/lib/icons";
+import { WHATSAPP_URL } from "@/lib/contact";
 import { Reveal } from "./Reveal";
+import { WhatsAppIcon } from "./WhatsAppFloat";
 
 type Props = {
   service: Service;
@@ -76,8 +78,14 @@ export function ServiceDetail({ service }: Props) {
               {service.heroDescription}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <a href="#contact-sales" className="btn-primary">
-                Contact Sales
+              <a
+                href={WHATSAPP_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-primary"
+              >
+                <WhatsAppIcon className="h-4 w-4" />
+                WhatsApp us
               </a>
               <Link href="/#opex" className="btn-secondary">
                 View pricing model
@@ -268,12 +276,13 @@ export function ServiceDetail({ service }: Props) {
               </p>
               <div className="mt-8 flex flex-wrap justify-center gap-3">
                 <a
-                  href={`mailto:hello@pcncloud.in?subject=${encodeURIComponent(
-                    `PCN Cloud — ${service.shortTitle}`,
-                  )}`}
+                  href={WHATSAPP_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="btn-primary"
                 >
-                  Contact Sales
+                  <WhatsAppIcon className="h-4 w-4" />
+                  WhatsApp us
                 </a>
                 <Link href="/#services" className="btn-secondary">
                   All services

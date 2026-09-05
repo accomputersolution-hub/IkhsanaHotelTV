@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Navbar } from "@/app/components/Navbar";
 import { Footer } from "@/app/components/Footer";
 import { ServiceDetail } from "@/app/components/ServiceDetail";
+import { WhatsAppFloat } from "@/app/components/WhatsAppFloat";
 import { getAllServiceSlugs, getServiceBySlug } from "@/lib/services";
 
 type PageProps = {
@@ -40,6 +41,7 @@ export default async function ServicePage({ params }: PageProps) {
       <Navbar />
       <ServiceDetail service={service} />
       <Footer />
+      <WhatsAppFloat />
     </>
   );
 }

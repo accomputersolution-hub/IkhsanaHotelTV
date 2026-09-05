@@ -3,6 +3,8 @@
 import Image from "next/image";
 import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
 import { useRef } from "react";
+import { WHATSAPP_URL } from "@/lib/contact";
+import { WhatsAppIcon } from "./WhatsAppFloat";
 
 export function Hero() {
   const reduce = useReducedMotion();
@@ -83,8 +85,14 @@ export function Hero() {
               <a href="#services" className="btn-primary">
                 See the stack
               </a>
-              <a href="#contact" className="btn-secondary">
-                Book a walkthrough
+              <a
+                href={WHATSAPP_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary"
+              >
+                <WhatsAppIcon className="h-4 w-4" />
+                WhatsApp us
               </a>
             </motion.div>
           </div>

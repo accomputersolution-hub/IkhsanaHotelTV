@@ -1,5 +1,13 @@
 import Link from "next/link";
 import { Logo } from "./Logo";
+import {
+  EMAIL_SALES,
+  EMAIL_SUPPORT,
+  LOCATION_LINE,
+  PHONE_DISPLAY,
+  PHONE_TEL,
+  WHATSAPP_URL,
+} from "@/lib/contact";
 
 const footerLinks = [
   { href: "/#services", label: "Services" },
@@ -20,15 +28,27 @@ export function Footer() {
             stack — screens, networks, security, and care.
           </p>
           <div className="mt-5 space-y-1 text-sm">
-            <a href="mailto:hello@pcncloud.in" className="block text-signal-bright hover:underline">
-              hello@pcncloud.in
+            <a href={`tel:${PHONE_TEL}`} className="block text-signal-bright hover:underline">
+              {PHONE_DISPLAY}
             </a>
             <a
-              href="mailto:support@pcncloud.in"
+              href={WHATSAPP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-bone/70 hover:text-signal-bright"
+            >
+              WhatsApp chat
+            </a>
+            <a href={`mailto:${EMAIL_SALES}`} className="block text-bone/45 hover:text-signal-bright">
+              {EMAIL_SALES}
+            </a>
+            <a
+              href={`mailto:${EMAIL_SUPPORT}`}
               className="block text-bone/45 hover:text-signal-bright"
             >
-              support@pcncloud.in
+              {EMAIL_SUPPORT}
             </a>
+            <p className="pt-2 text-bone/45">{LOCATION_LINE}</p>
           </div>
         </div>
 
@@ -62,7 +82,7 @@ export function Footer() {
         </div>
       </div>
       <div className="border-t border-bone/5 py-5 text-center text-xs text-bone/35">
-        © {new Date().getFullYear()} PCN Cloud · pcncloud.in · Crafted for hospitality ops
+        © {new Date().getFullYear()} PCN Cloud · {LOCATION_LINE} · pcncloud.in
       </div>
     </footer>
   );
