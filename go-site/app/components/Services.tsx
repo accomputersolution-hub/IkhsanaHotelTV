@@ -12,6 +12,8 @@ export function Services() {
 
   return (
     <section id="services" className="section-pad relative">
+      <div className="pointer-events-none absolute -right-24 top-10 h-72 w-72 rounded-full bg-violet-500/10 blur-[100px]" />
+
       <Reveal>
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neon-cyan">
           Core offerings
@@ -22,8 +24,7 @@ export function Services() {
         </h2>
         <p className="mt-4 max-w-2xl text-slate-300">
           From the guest-room TV to the backbone network, PCN Cloud designs, deploys, and
-          maintains the stack hotels and enterprises actually rely on. Click any card for a
-          deeper dive.
+          maintains the stack hotels actually rely on. Open any card for full package detail.
         </p>
       </Reveal>
 
@@ -37,23 +38,24 @@ export function Services() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-8%" }}
               transition={{ duration: 0.5, delay: i * 0.06 }}
-              whileHover={reduce ? undefined : { y: -8, scale: 1.02 }}
+              whileHover={reduce ? undefined : { y: -8, scale: 1.015 }}
               className="h-full"
             >
               <Link
                 href={`/services/${service.slug}`}
-                className="group relative flex h-full flex-col overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-glass backdrop-blur-xl transition duration-300 hover:border-neon-blue/50 hover:shadow-glow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+                className="group relative flex h-full flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-white/[0.035] p-6 shadow-glass backdrop-blur-xl transition duration-300 hover:border-sky-400/45 hover:shadow-glow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
               >
+                <div className="absolute inset-x-0 top-0 h-px opacity-0 transition group-hover:opacity-100 glow-line" />
                 <div
                   className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${service.accent} opacity-0 transition duration-300 group-hover:opacity-100`}
                 />
                 <div className="relative flex flex-1 flex-col">
                   <div className="mb-5 flex items-start justify-between gap-3">
-                    <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-ink-800 text-neon-cyan shadow-glow transition group-hover:border-neon-cyan/40 group-hover:text-white">
+                    <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-ink-800 text-neon-cyan shadow-glow transition group-hover:border-cyan-400/40 group-hover:text-white">
                       <Icon className="h-6 w-6" aria-hidden />
                     </div>
-                    <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-slate-400 transition group-hover:border-neon-blue/40 group-hover:text-neon-cyan">
-                      Learn more
+                    <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-slate-400 transition group-hover:border-sky-400/40 group-hover:text-neon-cyan">
+                      Details
                       <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
                     </span>
                   </div>
@@ -63,10 +65,10 @@ export function Services() {
                   <p className="mt-3 flex-1 text-sm leading-relaxed text-slate-300">
                     {service.summary}
                   </p>
-                  <ul className="mt-5 space-y-2">
-                    {service.points.map((p) => (
+                  <ul className="mt-5 space-y-2 border-t border-white/5 pt-4">
+                    {service.points.slice(0, 4).map((p) => (
                       <li key={p} className="flex items-center gap-2 text-xs text-slate-400">
-                        <span className="h-1.5 w-1.5 rounded-full bg-neon-blue" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
                         {p}
                       </li>
                     ))}

@@ -10,7 +10,8 @@ const footerLinks = [
 
 export function Footer() {
   return (
-    <footer className="border-t border-white/10 bg-ink-950/80">
+    <footer className="relative border-t border-white/10 bg-ink-950/90">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px glow-line opacity-50" />
       <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-12 sm:px-6 lg:flex-row lg:items-start lg:justify-between lg:px-8">
         <div>
           <Link href="/" className="font-display text-xl font-semibold text-white">

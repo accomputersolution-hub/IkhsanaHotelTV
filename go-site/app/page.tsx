@@ -1,5 +1,6 @@
 import { Navbar } from "./components/Navbar";
 import { Hero } from "./components/Hero";
+import { Showcase } from "./components/Showcase";
 import { Services } from "./components/Services";
 import { OpexAdvantage } from "./components/OpexAdvantage";
 import { TechStack } from "./components/TechStack";
@@ -12,6 +13,7 @@ export default function HomePage() {
       <Navbar />
       <main>
         <Hero />
+        <Showcase />
         <Services />
         <OpexAdvantage />
         <TechStack />

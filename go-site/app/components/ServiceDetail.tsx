@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowLeft,
   BadgeIndianRupee,
@@ -19,13 +20,34 @@ type Props = {
   service: Service;
 };
 
+const heroBySlug: Record<string, string> = {
+  "smart-tv-kiosk": "/images/pcncloud-hotel-room.jpg",
+  "enterprise-wifi": "/images/pcncloud-corporate-lobby.jpg",
+  "security-surveillance": "/images/pcncloud-admin-control.jpg",
+  "hotel-communications": "/images/pcncloud-corporate-lobby.jpg",
+  "smart-access": "/images/pcncloud-hotel-room.jpg",
+  "it-maintenance": "/images/pcncloud-admin-control.jpg",
+};
+
 export function ServiceDetail({ service }: Props) {
   const reduce = useReducedMotion();
   const HeroIcon = serviceIcons[service.icon];
+  const heroImage = heroBySlug[service.slug] ?? "/images/pcncloud-hotel-room.jpg";
 
   return (
     <main>
       <section className="relative isolate overflow-hidden pt-24">
+        <div className="absolute inset-0 -z-20">
+          <Image
+            src={heroImage}
+            alt=""
+            fill
+            priority
+            className="object-cover object-center opacity-35"
+            sizes="100vw"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-ink-950/70 via-ink-950/85 to-ink-950" />
+        </div>
         <div className="pointer-events-none absolute -left-24 top-20 h-72 w-72 rounded-full bg-neon-blue/25 blur-[100px]" />
         <div className="pointer-events-none absolute -right-16 top-40 h-80 w-80 rounded-full bg-neon-purple/20 blur-[110px]" />
 

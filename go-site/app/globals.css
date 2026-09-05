@@ -8,15 +8,16 @@ html {
 
 body {
   @apply bg-ink-950 text-slate-200 antialiased;
+  background-color: #05070f;
   background-image:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.16), transparent),
-    radial-gradient(ellipse 50% 40% at 100% 50%, rgba(168, 85, 247, 0.1), transparent),
-    radial-gradient(ellipse 40% 30% at 0% 80%, rgba(34, 211, 238, 0.06), transparent);
+    radial-gradient(ellipse 90% 55% at 50% -25%, rgba(56, 189, 248, 0.18), transparent 55%),
+    radial-gradient(ellipse 55% 45% at 100% 20%, rgba(168, 85, 247, 0.12), transparent 50%),
+    radial-gradient(ellipse 45% 35% at 0% 75%, rgba(34, 211, 238, 0.07), transparent 45%);
   background-attachment: fixed;
 }
 
 ::selection {
-  @apply bg-neon-blue/30 text-white;
+  @apply bg-sky-500/30 text-white;
 }
 
 @layer utilities {
@@ -25,21 +26,35 @@ body {
   }
 
   .glass {
-    @apply border border-white/10 bg-white/[0.04] backdrop-blur-xl;
+    @apply border border-white/10 bg-white/[0.045] backdrop-blur-xl;
   }
 
   .glass-strong {
-    @apply border border-white/15 bg-white/[0.07] backdrop-blur-2xl;
+    @apply border border-white/15 bg-white/[0.08] backdrop-blur-2xl;
   }
 
   .section-pad {
     @apply mx-auto max-w-6xl px-4 py-20 sm:px-6 md:py-28 lg:px-8;
   }
+
+  .glow-line {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(56, 189, 248, 0.55),
+      rgba(168, 85, 247, 0.55),
+      transparent
+    );
+  }
+
+  .glass-strong {
+    @apply border border-white/15 bg-white/[0.08] backdrop-blur-2xl;
+  }
 }
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-violet-500 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-sky-500/25 transition hover:brightness-110 hover:shadow-sky-400/35 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-violet-500 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-sky-500/25 transition hover:brightness-110 hover:shadow-sky-400/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400;
   }
 
   .btn-secondary {

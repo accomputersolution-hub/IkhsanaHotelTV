@@ -24,17 +24,27 @@ const pillars = [
 
 export function TechStack() {
   return (
-    <section id="tech" className="section-pad">
+    <section id="tech" className="section-pad relative">
+      <div className="pointer-events-none absolute -left-20 top-1/3 h-64 w-64 rounded-full bg-sky-500/10 blur-[100px]" />
+
       <div className="grid items-center gap-10 lg:grid-cols-2">
-        <Reveal className="relative order-2 overflow-hidden rounded-3xl border border-white/10 shadow-glow lg:order-1">
+        <Reveal className="relative order-2 overflow-hidden rounded-[1.75rem] border border-white/10 shadow-glow lg:order-1">
           <Image
             src="/images/pcncloud-corporate-lobby.jpg"
-            alt="Enterprise lobby display representing PCN Cloud secure infrastructure"
+            alt="Enterprise lobby representing PCN Cloud secure infrastructure"
             width={1200}
             height={800}
-            className="h-full w-full object-cover"
+            className="h-full min-h-[22rem] w-full object-cover"
           />
-          <div className="absolute inset-0 bg-gradient-to-tr from-ink-950/80 via-transparent to-neon-violet/20" />
+          <div className="absolute inset-0 bg-gradient-to-tr from-ink-950/85 via-ink-950/25 to-violet-500/20" />
+          <div className="absolute bottom-5 left-5 right-5 glass-strong rounded-2xl p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neon-cyan">
+              Always-on architecture
+            </p>
+            <p className="mt-1 text-sm text-slate-200">
+              VPN, provisioning, and policy designed for hotel uptime — not lab demos.
+            </p>
+          </div>
         </Reveal>
 
         <div className="order-1 lg:order-2">
@@ -57,8 +67,8 @@ export function TechStack() {
               const Icon = p.icon;
               return (
                 <Reveal key={p.title} delay={0.1 * i}>
-                  <div className="glass flex gap-4 rounded-2xl p-4">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-neon-blue/15 text-neon-cyan">
+                  <div className="glass flex gap-4 rounded-2xl p-4 transition hover:border-sky-400/35">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 text-neon-cyan">
                       <Icon className="h-5 w-5" aria-hidden />
                     </div>
                     <div>
