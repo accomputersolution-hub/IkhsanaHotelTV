@@ -19,6 +19,10 @@ export const metadata: Metadata = {
   description:
     "PCN Cloud is the single-point vendor for hotel TV kiosks, enterprise Wi-Fi rental, CCTV, EPABX, smart locks, and 24/7 IT maintenance.",
   metadataBase: new URL("https://www.pcncloud.in"),
+  icons: {
+    icon: [{ url: "/images/pcncloud-logo.jpg", type: "image/jpeg" }],
+    apple: [{ url: "/images/pcncloud-logo.jpg", type: "image/jpeg" }],
+  },
   openGraph: {
     title: "PCN Cloud — Elevate Your Hotel's Tech & Security",
     description:
@@ -26,6 +30,7 @@ export const metadata: Metadata = {
     url: "https://www.pcncloud.in",
     siteName: "PCN Cloud",
     type: "website",
+    images: [{ url: "/images/pcncloud-logo.jpg", width: 1254, height: 1254, alt: "PCN Cloud" }],
   },
 };
 

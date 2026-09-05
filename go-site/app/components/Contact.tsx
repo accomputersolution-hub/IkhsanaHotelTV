@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { Reveal } from "./Reveal";
+import { Logo } from "./Logo";
 import { Mail, MapPin, Phone } from "lucide-react";
 
 export function Contact() {
@@ -48,6 +49,7 @@ export function Contact() {
 
           <Reveal delay={0.1}>
             <div className="space-y-8 border-t border-bone/15 pt-8 lg:border-l lg:border-t-0 lg:pl-10 lg:pt-0">
+              <Logo size="lg" className="mb-2" />
               {[
                 {
                   icon: Mail,

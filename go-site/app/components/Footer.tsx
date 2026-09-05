@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Logo } from "./Logo";
 
 const footerLinks = [
   { href: "/#services", label: "Services" },
@@ -13,10 +14,8 @@ export function Footer() {
     <footer className="relative border-t border-bone/10 bg-void">
       <div className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-14 sm:px-6 lg:flex-row lg:justify-between lg:px-8">
         <div>
-          <Link href="/" className="font-display text-2xl font-semibold text-bone">
-            PCN Cloud
-          </Link>
-          <p className="mt-3 max-w-sm text-sm leading-relaxed text-bone/50">
+          <Logo size="md" showWordmark />
+          <p className="mt-4 max-w-sm text-sm leading-relaxed text-bone/50">
             The hospitality infrastructure partner for hotels that want one accountable
             stack — screens, networks, security, and care.
           </p>

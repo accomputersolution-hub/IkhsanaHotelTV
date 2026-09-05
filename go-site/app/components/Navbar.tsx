@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X } from "lucide-react";
+import { Logo } from "./Logo";
 
 const links = [
   { href: "/#services", label: "Services" },
@@ -32,9 +33,7 @@ export function Navbar() {
       }`}
     >
       <div className="mx-auto flex h-[4.25rem] max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link href="/" className="font-display text-xl font-semibold tracking-tight text-bone sm:text-2xl">
-          PCN Cloud
-        </Link>
+        <Logo size="sm" priority />
 
         <nav className="hidden items-center gap-1 md:flex">
           {links.map((l) => (
