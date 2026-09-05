@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
-import { DM_Sans, Syne } from "next/font/google";
+import { Fraunces, Outfit } from "next/font/google";
 import "./globals.css";
 
-const sans = DM_Sans({
+const sans = Outfit({
   subsets: ["latin"],
   variable: "--font-sans",
   display: "swap",
 });
 
-const display = Syne({
+const display = Fraunces({
   subsets: ["latin"],
   variable: "--font-display",
   display: "swap",
@@ -36,7 +36,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${sans.variable} ${display.variable}`}>
-      <body className="min-h-screen bg-ink-950 font-sans text-slate-200 antialiased">
+      <body className="min-h-screen bg-void font-sans text-bone antialiased">
         {children}
       </body>
     </html>

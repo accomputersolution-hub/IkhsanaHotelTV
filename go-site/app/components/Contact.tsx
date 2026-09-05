@@ -6,33 +6,29 @@ import { Mail, MapPin, Phone } from "lucide-react";
 
 export function Contact() {
   return (
-    <section id="contact" className="section-pad">
-      <div className="relative overflow-hidden rounded-[2rem] border border-white/10 shadow-lift">
-        <div className="absolute inset-0">
-          <Image
-            src="/images/pcncloud-hotel-room.jpg"
-            alt=""
-            fill
-            className="object-cover opacity-40"
-            sizes="100vw"
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-ink-950 via-ink-950/90 to-ink-950/70" />
-        </div>
-        <div className="pointer-events-none absolute -right-16 top-0 h-72 w-72 rounded-full bg-neon-cyan/15 blur-[100px]" />
-        <div className="pointer-events-none absolute -left-10 bottom-0 h-64 w-64 rounded-full bg-neon-violet/15 blur-[90px]" />
+    <section id="contact" className="relative">
+      <div className="relative min-h-[70svh] overflow-hidden">
+        <Image
+          src="/images/pcncloud-hotel-room.jpg"
+          alt=""
+          fill
+          className="object-cover"
+          sizes="100vw"
+        />
+        <div className="absolute inset-0 bg-void/80" />
+        <div className="absolute inset-0 film-grain" aria-hidden />
 
-        <div className="relative grid gap-10 p-8 sm:p-12 lg:grid-cols-[1.2fr_0.8fr] lg:p-14">
+        <div className="relative mx-auto grid max-w-6xl gap-12 px-4 py-24 sm:px-6 md:py-32 lg:grid-cols-[1.2fr_0.8fr] lg:px-8">
           <Reveal>
             <p className="eyebrow">Let&apos;s scope it</p>
-            <h2 className="mt-4 font-display text-3xl font-semibold tracking-tight text-white sm:text-5xl">
+            <h2 className="mt-4 font-display text-4xl font-semibold tracking-tight text-bone sm:text-5xl md:text-6xl">
               Ready when your property is.
-              <span className="text-gradient"> We&apos;ll bring the stack.</span>
             </h2>
-            <p className="mt-5 max-w-xl text-slate-300">
+            <p className="mt-5 max-w-xl text-lg text-bone/65">
               Tell us rooms, current Wi‑Fi/CCTV pain, or your TV rollout. One conversation —
               a single-vendor plan for kiosk, network rental, security, and IT.
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
+            <div className="mt-9 flex flex-wrap gap-3">
               <a
                 href="mailto:hello@pcncloud.in?subject=PCN%20Cloud%20consultation"
                 className="btn-primary"
@@ -51,13 +47,13 @@ export function Contact() {
           </Reveal>
 
           <Reveal delay={0.1}>
-            <div className="glass-strong space-y-5 rounded-[1.5rem] p-6">
+            <div className="space-y-8 border-t border-bone/15 pt-8 lg:border-l lg:border-t-0 lg:pl-10 lg:pt-0">
               {[
                 {
                   icon: Mail,
                   title: "Sales & support",
                   body: (
-                    <a href="mailto:hello@pcncloud.in" className="hover:text-neon-cyan">
+                    <a href="mailto:hello@pcncloud.in" className="hover:text-signal-bright">
                       hello@pcncloud.in
                     </a>
                   ),
@@ -75,13 +71,11 @@ export function Contact() {
               ].map((row) => {
                 const Icon = row.icon;
                 return (
-                  <div key={row.title} className="flex items-start gap-3 text-sm text-slate-300">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-neon-cyan/10 text-neon-cyan">
-                      <Icon className="h-4 w-4" aria-hidden />
-                    </div>
+                  <div key={row.title} className="flex items-start gap-4 text-sm text-bone/70">
+                    <Icon className="mt-0.5 h-5 w-5 shrink-0 text-brass" aria-hidden />
                     <div>
-                      <p className="font-semibold text-white">{row.title}</p>
-                      <div className="mt-0.5">{row.body}</div>
+                      <p className="font-display text-lg font-semibold text-bone">{row.title}</p>
+                      <div className="mt-1">{row.body}</div>
                     </div>
                   </div>
                 );

@@ -50,7 +50,7 @@ export const services: Service[] = [
       "Live TV + approved apps",
       "Announcements & tickers",
     ],
-    accent: "from-neon-blue/30 to-transparent",
+    accent: "from-signal/30 to-transparent",
     icon: "tv",
     idealFor: [
       "Hotels & resorts (guest rooms)",
@@ -153,7 +153,7 @@ export const services: Service[] = [
       "Proactive monitoring",
       "Free hardware replacements",
     ],
-    accent: "from-neon-cyan/30 to-transparent",
+    accent: "from-signal-bright/30 to-transparent",
     icon: "wifi",
     idealFor: [
       "Hotels opening or renovating wings",
@@ -256,7 +256,7 @@ export const services: Service[] = [
       "Role-based access",
       "Multi-property ready",
     ],
-    accent: "from-neon-violet/30 to-transparent",
+    accent: "from-brass/30 to-transparent",
     icon: "cctv",
     idealFor: [
       "Hotels needing lobby / corridor coverage",
@@ -359,7 +359,7 @@ export const services: Service[] = [
       "Night mode routing",
       "QoS for clear voice",
     ],
-    accent: "from-neon-purple/30 to-transparent",
+    accent: "from-brass/25 to-transparent",
     icon: "phone",
     idealFor: [
       "Hotels replacing aging EPABX boards",
@@ -462,7 +462,7 @@ export const services: Service[] = [
       "Staff access windows",
       "Audit-ready entry logs",
     ],
-    accent: "from-neon-blue/25 to-transparent",
+    accent: "from-signal/25 to-transparent",
     icon: "key",
     idealFor: [
       "Hotels modernizing metal-key workflows",
@@ -565,7 +565,7 @@ export const services: Service[] = [
       "Patching & backups",
       "Single accountable partner",
     ],
-    accent: "from-neon-cyan/25 to-transparent",
+    accent: "from-signal-bright/25 to-transparent",
     icon: "server",
     idealFor: [
       "Hotels without a full-time IT team",

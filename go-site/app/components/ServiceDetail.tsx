@@ -43,18 +43,17 @@ export function ServiceDetail({ service }: Props) {
             alt=""
             fill
             priority
-            className="object-cover object-center opacity-35"
+            className="object-cover object-center"
             sizes="100vw"
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-ink-950/70 via-ink-950/85 to-ink-950" />
+          <div className="absolute inset-0 veil" />
+          <div className="absolute inset-0 film-grain" aria-hidden />
         </div>
-        <div className="pointer-events-none absolute -left-24 top-20 h-72 w-72 rounded-full bg-neon-blue/25 blur-[100px]" />
-        <div className="pointer-events-none absolute -right-16 top-40 h-80 w-80 rounded-full bg-neon-purple/20 blur-[110px]" />
 
-        <div className="section-pad relative pb-12 pt-6 md:pb-16">
+        <div className="section-pad relative pb-14 pt-6 md:pb-20">
           <Link
             href="/#services"
-            className="inline-flex items-center gap-2 text-sm font-medium text-slate-300 transition hover:text-neon-cyan"
+            className="inline-flex items-center gap-2 text-sm font-medium text-bone/70 transition hover:text-signal-bright"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden />
             Back to Home
@@ -66,14 +65,14 @@ export function ServiceDetail({ service }: Props) {
             transition={{ duration: 0.55 }}
             className="mt-8 max-w-3xl"
           >
-            <div className="mb-6 inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-ink-800 text-neon-cyan shadow-glow">
+            <div className="mb-6 inline-flex h-14 w-14 items-center justify-center rounded-md border border-bone/15 bg-void-mute text-signal-bright">
               <HeroIcon className="h-7 w-7" aria-hidden />
             </div>
             <p className="eyebrow">Service detail</p>
-            <h1 className="mt-4 font-display text-4xl font-semibold tracking-tight text-white sm:text-5xl lg:text-6xl">
+            <h1 className="mt-4 font-display text-4xl font-semibold tracking-tight text-bone sm:text-5xl lg:text-6xl">
               {service.title}
             </h1>
-            <p className="mt-6 text-base leading-relaxed text-slate-300 sm:text-lg">
+            <p className="mt-6 text-base leading-relaxed text-bone/70 sm:text-lg">
               {service.heroDescription}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
@@ -88,10 +87,10 @@ export function ServiceDetail({ service }: Props) {
         </div>
       </section>
 
-      <section className="section-pad pt-2 md:pt-4">
-        <Reveal>
-          <div className="glass rounded-3xl p-6 sm:p-8">
-            <div className="mb-4 flex items-center gap-2 text-neon-cyan">
+      <section className="bg-bone text-void">
+        <div className="section-pad !py-14 md:!py-16">
+          <Reveal>
+            <div className="mb-4 flex items-center gap-2 text-signal-dim">
               <Users className="h-5 w-5" aria-hidden />
               <p className="text-xs font-semibold uppercase tracking-[0.2em]">Ideal for</p>
             </div>
@@ -99,34 +98,33 @@ export function ServiceDetail({ service }: Props) {
               {service.idealFor.map((item) => (
                 <span
                   key={item}
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-slate-200"
+                  className="rounded-md border border-void/15 bg-void/[0.04] px-3 py-1.5 text-sm text-void/80"
                 >
                   {item}
                 </span>
               ))}
             </div>
-          </div>
-        </Reveal>
+          </Reveal>
+        </div>
       </section>
 
-      <section className="section-pad pt-8 md:pt-12">
-        <div className="grid gap-8 lg:grid-cols-2">
+      <section className="section-pad">
+        <div className="grid gap-12 lg:grid-cols-2">
           <Reveal>
-            <div className="glass h-full rounded-3xl p-6 sm:p-8">
-              <div className="mb-5 flex items-center gap-2 text-neon-cyan">
+            <div className="border-t border-bone/15 pt-8">
+              <div className="mb-5 flex items-center gap-2 text-brass">
                 <ClipboardList className="h-5 w-5" aria-hidden />
                 <p className="text-xs font-semibold uppercase tracking-[0.2em]">
                   What&apos;s included
                 </p>
               </div>
-              <h2 className="font-display text-2xl font-semibold text-white">
-                Package details for{" "}
-                <span className="text-gradient">{service.shortTitle}</span>
+              <h2 className="font-display text-2xl font-semibold text-bone sm:text-3xl">
+                Package details for {service.shortTitle}
               </h2>
               <ul className="mt-6 space-y-3">
                 {service.included.map((item) => (
-                  <li key={item} className="flex items-start gap-3 text-sm text-slate-300">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-neon-cyan" aria-hidden />
+                  <li key={item} className="flex items-start gap-3 text-sm text-bone/65">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-signal-bright" aria-hidden />
                     <span>{item}</span>
                   </li>
                 ))}
@@ -135,20 +133,20 @@ export function ServiceDetail({ service }: Props) {
           </Reveal>
 
           <Reveal delay={0.08}>
-            <div className="glass h-full rounded-3xl p-6 sm:p-8">
-              <div className="mb-5 flex items-center gap-2 text-neon-violet">
+            <div className="border-t border-bone/15 pt-8">
+              <div className="mb-5 flex items-center gap-2 text-brass">
                 <Sparkles className="h-5 w-5" aria-hidden />
                 <p className="text-xs font-semibold uppercase tracking-[0.2em]">
                   Common use cases
                 </p>
               </div>
-              <h2 className="font-display text-2xl font-semibold text-white">
+              <h2 className="font-display text-2xl font-semibold text-bone sm:text-3xl">
                 Where this service pays off
               </h2>
               <ul className="mt-6 space-y-3">
                 {service.useCases.map((item) => (
-                  <li key={item} className="flex items-start gap-3 text-sm text-slate-300">
-                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-neon-violet" />
+                  <li key={item} className="flex items-start gap-3 text-sm text-bone/65">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-signal" />
                     <span>{item}</span>
                   </li>
                 ))}
@@ -158,30 +156,27 @@ export function ServiceDetail({ service }: Props) {
         </div>
       </section>
 
-      <section className="section-pad pt-4 md:pt-8">
+      <section className="section-pad !pt-4 md:!pt-8">
         <Reveal>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neon-violet">
-            Key features &amp; benefits
-          </p>
-          <h2 className="mt-3 max-w-2xl font-display text-3xl font-semibold text-white">
-            What you get with{" "}
-            <span className="text-gradient">{service.shortTitle}</span>
+          <p className="eyebrow">Key features &amp; benefits</p>
+          <h2 className="mt-3 max-w-2xl font-display text-3xl font-semibold text-bone sm:text-4xl">
+            What you get with {service.shortTitle}
           </h2>
         </Reveal>
 
-        <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {service.features.map((feature, i) => {
             const Icon = serviceIcons[feature.icon];
             return (
               <Reveal key={feature.title} delay={0.05 * i}>
-                <article className="glass h-full rounded-3xl p-6 transition hover:border-neon-blue/40 hover:shadow-glow">
-                  <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-neon-blue/15 text-neon-cyan">
+                <article className="border-t border-bone/15 pt-5">
+                  <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-md border border-bone/10 bg-void-mute text-signal-bright">
                     <Icon className="h-5 w-5" aria-hidden />
                   </div>
-                  <h3 className="font-display text-lg font-semibold text-white">
+                  <h3 className="font-display text-lg font-semibold text-bone">
                     {feature.title}
                   </h3>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-300">
+                  <p className="mt-2 text-sm leading-relaxed text-bone/55">
                     {feature.description}
                   </p>
                 </article>
@@ -191,80 +186,83 @@ export function ServiceDetail({ service }: Props) {
         </div>
       </section>
 
-      <section className="section-pad pt-4 md:pt-8">
-        <Reveal>
-          <div className="mb-8 flex items-center gap-2 text-neon-cyan">
-            <Route className="h-5 w-5" aria-hidden />
-            <p className="text-xs font-semibold uppercase tracking-[0.2em]">How we deliver</p>
-          </div>
-          <h2 className="max-w-2xl font-display text-3xl font-semibold text-white">
-            A clear path from survey to steady-state
-          </h2>
-        </Reveal>
+      <section className="bg-bone text-void">
+        <div className="section-pad">
+          <Reveal>
+            <div className="mb-8 flex items-center gap-2 text-signal-dim">
+              <Route className="h-5 w-5" aria-hidden />
+              <p className="text-xs font-semibold uppercase tracking-[0.2em]">How we deliver</p>
+            </div>
+            <h2 className="max-w-2xl font-display text-3xl font-semibold sm:text-4xl">
+              A clear path from survey to steady-state
+            </h2>
+          </Reveal>
 
-        <div className="mt-10 grid gap-5 sm:grid-cols-2">
-          {service.process.map((step, i) => (
-            <Reveal key={step.title} delay={0.06 * i}>
-              <article className="glass relative h-full overflow-hidden rounded-3xl p-6">
-                <span className="font-display text-4xl font-semibold text-white/10">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <h3 className="mt-2 font-display text-lg font-semibold text-white">
-                  {step.title}
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed text-slate-300">
-                  {step.description}
-                </p>
-              </article>
-            </Reveal>
-          ))}
+          <div className="mt-10 grid gap-8 sm:grid-cols-2">
+            {service.process.map((step, i) => (
+              <Reveal key={step.title} delay={0.06 * i}>
+                <article className="border-t border-void/15 pt-5">
+                  <span className="font-display text-4xl font-semibold text-void/15">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <h3 className="mt-2 font-display text-xl font-semibold">{step.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-void/60">{step.description}</p>
+                </article>
+              </Reveal>
+            ))}
+          </div>
         </div>
       </section>
 
-      <section className="section-pad py-10 md:py-14">
+      <section className="section-pad">
         <Reveal>
-          <div className="glass-strong relative overflow-hidden rounded-[2rem] p-8 sm:p-10">
-            <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-neon-violet/25 blur-[80px]" />
-            <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-              <div className="max-w-2xl">
-                <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-neon-violet/20 text-neon-violet">
-                  <BadgeIndianRupee className="h-6 w-6" aria-hidden />
-                </div>
-                <h2 className="font-display text-2xl font-semibold text-white sm:text-3xl">
-                  OpEx advantage —{" "}
-                  <span className="text-gradient">monthly, not massive CapEx</span>
-                </h2>
-                <p className="mt-3 text-slate-300">{service.opexNote}</p>
-                <ul className="mt-5 space-y-2">
-                  {[
-                    "Zero heavy upfront cost",
-                    "Hardware replacements under rental/maintenance",
-                    "Continuous proactive care included",
-                  ].map((item) => (
-                    <li key={item} className="flex items-center gap-2 text-sm text-slate-300">
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-neon-cyan" aria-hidden />
-                      {item}
-                    </li>
-                  ))}
-                </ul>
+          <div className="flex flex-col gap-8 border-t border-bone/15 pt-10 md:flex-row md:items-center md:justify-between">
+            <div className="max-w-2xl">
+              <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-md border border-bone/10 bg-void-mute text-brass">
+                <BadgeIndianRupee className="h-6 w-6" aria-hidden />
               </div>
-              <Link href="/#opex" className="btn-secondary shrink-0 self-start md:self-center">
-                Explore OpEx model
-              </Link>
+              <h2 className="font-display text-2xl font-semibold text-bone sm:text-3xl">
+                OpEx advantage — monthly, not massive CapEx
+              </h2>
+              <p className="mt-3 text-bone/65">{service.opexNote}</p>
+              <ul className="mt-5 space-y-2">
+                {[
+                  "Zero heavy upfront cost",
+                  "Hardware replacements under rental/maintenance",
+                  "Continuous proactive care included",
+                ].map((item) => (
+                  <li key={item} className="flex items-center gap-2 text-sm text-bone/65">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-signal-bright" aria-hidden />
+                    {item}
+                  </li>
+                ))}
+              </ul>
             </div>
+            <Link href="/#opex" className="btn-secondary shrink-0 self-start md:self-center">
+              Explore OpEx model
+            </Link>
           </div>
         </Reveal>
       </section>
 
-      <section id="contact-sales" className="section-pad pb-24 pt-6">
-        <Reveal>
-          <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-sky-500/20 via-ink-900/80 to-violet-500/20 p-8 text-center sm:p-12">
-            <div className="pointer-events-none absolute inset-0 bg-hero-grid bg-grid opacity-30" />
-            <div className="relative mx-auto max-w-2xl">
-              <h2 className="font-display text-3xl font-semibold text-white sm:text-4xl">
+      <section id="contact-sales" className="relative overflow-hidden">
+        <div className="absolute inset-0">
+          <Image
+            src={heroImage}
+            alt=""
+            fill
+            className="object-cover opacity-40"
+            sizes="100vw"
+          />
+          <div className="absolute inset-0 bg-void/85" />
+        </div>
+        <div className="section-pad relative text-center">
+          <Reveal>
+            <div className="mx-auto max-w-2xl">
+              <h2 className="font-display text-3xl font-semibold text-bone sm:text-5xl">
                 Ready to upgrade your hotel?
               </h2>
-              <p className="mt-4 text-slate-300">
+              <p className="mt-4 text-bone/65">
                 Talk to PCN Cloud about {service.shortTitle.toLowerCase()} for your property —
                 scoping, rental options, and a single accountable rollout plan.
               </p>
@@ -282,8 +280,8 @@ export function ServiceDetail({ service }: Props) {
                 </Link>
               </div>
             </div>
-          </div>
-        </Reveal>
+          </Reveal>
+        </div>
       </section>
     </main>
   );

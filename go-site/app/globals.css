@@ -7,62 +7,56 @@ html {
 }
 
 body {
-  background-color: #04060c;
-  background-image:
-    radial-gradient(ellipse 100% 60% at 50% -30%, rgba(56, 189, 248, 0.14), transparent 55%),
-    radial-gradient(ellipse 50% 40% at 100% 0%, rgba(167, 139, 250, 0.11), transparent 50%),
-    radial-gradient(ellipse 40% 35% at 0% 80%, rgba(94, 234, 212, 0.06), transparent 45%);
-  background-attachment: fixed;
+  background-color: #0c0b0a;
+  color: #efece6;
 }
 
 ::selection {
-  @apply bg-neon-cyan/30 text-white;
+  background: rgba(46, 196, 182, 0.35);
+  color: #0c0b0a;
 }
 
 @layer utilities {
   .text-gradient {
-    @apply bg-gradient-to-r from-neon-cyan via-sky-300 to-neon-violet bg-clip-text text-transparent;
-  }
-
-  .glass {
-    @apply border border-white/[0.08] bg-white/[0.035] backdrop-blur-xl;
-  }
-
-  .glass-strong {
-    @apply border border-white/[0.12] bg-white/[0.07] backdrop-blur-2xl;
+    @apply bg-gradient-to-r from-brass-soft via-bone to-signal-bright bg-clip-text text-transparent;
   }
 
   .section-pad {
     @apply mx-auto max-w-6xl px-4 py-20 sm:px-6 md:py-28 lg:px-8;
   }
 
-  .glow-line {
-    background: linear-gradient(
-      90deg,
-      transparent,
-      rgba(94, 234, 212, 0.55),
-      rgba(167, 139, 250, 0.45),
-      transparent
-    );
+  .film-grain {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+    background-size: 180px 180px;
+    opacity: 0.07;
+    mix-blend-mode: overlay;
   }
 
-  .bg-noise-fade {
-    background-image:
-      radial-gradient(circle at 18% 20%, rgba(94, 234, 212, 0.08), transparent 32%),
-      radial-gradient(circle at 82% 12%, rgba(167, 139, 250, 0.1), transparent 38%);
+  .veil {
+    background:
+      linear-gradient(180deg, rgba(12, 11, 10, 0.35) 0%, rgba(12, 11, 10, 0.72) 48%, rgba(12, 11, 10, 0.96) 100%),
+      linear-gradient(90deg, rgba(12, 11, 10, 0.7) 0%, rgba(12, 11, 10, 0.2) 55%, rgba(12, 11, 10, 0.45) 100%);
   }
 }
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-sky-300 via-cyan-300 to-violet-300 px-7 py-3.5 text-sm font-semibold text-ink-950 shadow-glow-cyan transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neon-cyan;
+    @apply inline-flex items-center justify-center gap-2 rounded-md bg-signal px-7 py-3.5 text-sm font-semibold tracking-wide text-bone-mist transition duration-300 hover:bg-signal-bright focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-7 py-3.5 text-sm font-semibold text-white backdrop-blur-md transition hover:border-neon-cyan/40 hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neon-cyan;
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-bone/25 bg-transparent px-7 py-3.5 text-sm font-semibold tracking-wide text-bone transition duration-300 hover:border-brass/60 hover:bg-bone/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass;
+  }
+
+  .btn-dark {
+    @apply inline-flex items-center justify-center gap-2 rounded-md bg-void px-7 py-3.5 text-sm font-semibold tracking-wide text-bone transition duration-300 hover:bg-void-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-void;
   }
 
   .eyebrow {
-    @apply text-[11px] font-semibold uppercase tracking-[0.28em] text-neon-cyan;
+    @apply text-[11px] font-semibold uppercase tracking-[0.32em] text-brass;
+  }
+
+  .eyebrow-dark {
+    @apply text-[11px] font-semibold uppercase tracking-[0.32em] text-signal-dim;
   }
 }

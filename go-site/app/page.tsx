@@ -1,5 +1,6 @@
 import { Navbar } from "./components/Navbar";
 import { Hero } from "./components/Hero";
+import { Marquee } from "./components/Marquee";
 import { Showcase } from "./components/Showcase";
 import { PromiseStrip } from "./components/PromiseStrip";
 import { Services } from "./components/Services";
@@ -14,6 +15,7 @@ export default function HomePage() {
       <Navbar />
       <main>
         <Hero />
+        <Marquee />
         <Showcase />
         <PromiseStrip />
         <Services />

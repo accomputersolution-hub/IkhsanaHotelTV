@@ -17,7 +17,7 @@ export function Navbar() {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 10);
+    const onScroll = () => setScrolled(window.scrollY > 12);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -27,18 +27,13 @@ export function Navbar() {
     <header
       className={`fixed inset-x-0 top-0 z-50 transition-all duration-500 ${
         scrolled
-          ? "border-b border-white/10 bg-ink-950/75 backdrop-blur-2xl"
+          ? "border-b border-bone/10 bg-void/80 backdrop-blur-xl"
           : "bg-transparent"
       }`}
     >
       <div className="mx-auto flex h-[4.25rem] max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link href="/" className="group flex items-center gap-3">
-          <span className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-neon-cyan/30 bg-neon-cyan/10">
-            <span className="h-2.5 w-2.5 rounded-full bg-neon-cyan shadow-glow-cyan" />
-          </span>
-          <span className="font-display text-lg font-semibold tracking-tight text-white sm:text-xl">
-            PCN <span className="text-gradient">Cloud</span>
-          </span>
+        <Link href="/" className="font-display text-xl font-semibold tracking-tight text-bone sm:text-2xl">
+          PCN Cloud
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
@@ -46,7 +41,7 @@ export function Navbar() {
             <Link
               key={l.href}
               href={l.href}
-              className="rounded-full px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-white/5 hover:text-white"
+              className="rounded-md px-3.5 py-2 text-sm font-medium text-bone/70 transition hover:bg-bone/5 hover:text-bone"
             >
               {l.label}
             </Link>
@@ -63,7 +58,7 @@ export function Navbar() {
 
         <button
           type="button"
-          className="rounded-xl border border-white/10 p-2 text-white md:hidden"
+          className="rounded-md border border-bone/15 p-2 text-bone md:hidden"
           aria-label={open ? "Close menu" : "Open menu"}
           onClick={() => setOpen((v) => !v)}
         >
@@ -77,7 +72,7 @@ export function Navbar() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="border-t border-white/10 bg-ink-950/95 backdrop-blur-xl md:hidden"
+            className="border-t border-bone/10 bg-void/95 backdrop-blur-xl md:hidden"
           >
             <div className="flex flex-col gap-1 px-4 py-4">
               {links.map((l) => (
@@ -85,7 +80,7 @@ export function Navbar() {
                   key={l.href}
                   href={l.href}
                   onClick={() => setOpen(false)}
-                  className="rounded-xl px-3 py-3 text-sm font-medium text-slate-200 hover:bg-white/5"
+                  className="rounded-md px-3 py-3 text-sm font-medium text-bone hover:bg-bone/5"
                 >
                   {l.label}
                 </Link>
