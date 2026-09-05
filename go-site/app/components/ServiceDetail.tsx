@@ -69,10 +69,8 @@ export function ServiceDetail({ service }: Props) {
             <div className="mb-6 inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-ink-800 text-neon-cyan shadow-glow">
               <HeroIcon className="h-7 w-7" aria-hidden />
             </div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neon-cyan">
-              Service detail
-            </p>
-            <h1 className="mt-3 font-display text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+            <p className="eyebrow">Service detail</p>
+            <h1 className="mt-4 font-display text-4xl font-semibold tracking-tight text-white sm:text-5xl lg:text-6xl">
               {service.title}
             </h1>
             <p className="mt-6 text-base leading-relaxed text-slate-300 sm:text-lg">
