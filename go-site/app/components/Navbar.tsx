@@ -7,9 +7,9 @@ import { Menu, X } from "lucide-react";
 
 const links = [
   { href: "/#services", label: "Services" },
-  { href: "/#opex", label: "Pricing Model" },
-  { href: "/#tech", label: "Tech & Security" },
-  { href: "/#contact", label: "Contact Us" },
+  { href: "/#opex", label: "Pricing" },
+  { href: "/#tech", label: "Platform" },
+  { href: "/#contact", label: "Contact" },
 ];
 
 export function Navbar() {
@@ -17,7 +17,7 @@ export function Navbar() {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 12);
+    const onScroll = () => setScrolled(window.scrollY > 10);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -25,26 +25,28 @@ export function Navbar() {
 
   return (
     <header
-      className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
+      className={`fixed inset-x-0 top-0 z-50 transition-all duration-500 ${
         scrolled
-          ? "border-b border-white/10 bg-ink-950/80 shadow-[0_10px_40px_rgba(0,0,0,0.35)] backdrop-blur-2xl"
+          ? "border-b border-white/10 bg-ink-950/75 backdrop-blur-2xl"
           : "bg-transparent"
       }`}
     >
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:h-[4.25rem] lg:px-8">
-        <Link
-          href="/"
-          className="font-display text-lg font-semibold tracking-tight text-white sm:text-xl"
-        >
-          PCN <span className="text-gradient">Cloud</span>
+      <div className="mx-auto flex h-[4.25rem] max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
+        <Link href="/" className="group flex items-center gap-3">
+          <span className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-neon-cyan/30 bg-neon-cyan/10">
+            <span className="h-2.5 w-2.5 rounded-full bg-neon-cyan shadow-glow-cyan" />
+          </span>
+          <span className="font-display text-lg font-semibold tracking-tight text-white sm:text-xl">
+            PCN <span className="text-gradient">Cloud</span>
+          </span>
         </Link>
 
-        <nav className="hidden items-center gap-8 md:flex">
+        <nav className="hidden items-center gap-1 md:flex">
           {links.map((l) => (
             <Link
               key={l.href}
               href={l.href}
-              className="text-sm font-medium text-slate-300 transition hover:text-white"
+              className="rounded-full px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-white/5 hover:text-white"
             >
               {l.label}
             </Link>
@@ -53,7 +55,7 @@ export function Navbar() {
             href="https://admin.pcncloud.in"
             target="_blank"
             rel="noopener noreferrer"
-            className="btn-primary !px-5 !py-2.5 text-xs"
+            className="btn-primary ml-3 !px-5 !py-2.5 text-xs"
           >
             Client Login
           </a>
@@ -61,7 +63,7 @@ export function Navbar() {
 
         <button
           type="button"
-          className="rounded-lg border border-white/10 p-2 text-white md:hidden"
+          className="rounded-xl border border-white/10 p-2 text-white md:hidden"
           aria-label={open ? "Close menu" : "Open menu"}
           onClick={() => setOpen((v) => !v)}
         >
@@ -83,7 +85,7 @@ export function Navbar() {
                   key={l.href}
                   href={l.href}
                   onClick={() => setOpen(false)}
-                  className="rounded-lg px-3 py-3 text-sm font-medium text-slate-200 hover:bg-white/5"
+                  className="rounded-xl px-3 py-3 text-sm font-medium text-slate-200 hover:bg-white/5"
                 >
                   {l.label}
                 </Link>

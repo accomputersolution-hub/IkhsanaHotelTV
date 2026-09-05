@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
-import { Outfit, Plus_Jakarta_Sans } from "next/font/google";
+import { DM_Sans, Syne } from "next/font/google";
 import "./globals.css";
 
-const sans = Plus_Jakarta_Sans({
+const sans = DM_Sans({
   subsets: ["latin"],
   variable: "--font-sans",
   display: "swap",
 });
 
-const display = Outfit({
+const display = Syne({
   subsets: ["latin"],
   variable: "--font-display",
   display: "swap",
@@ -36,7 +36,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${sans.variable} ${display.variable}`}>
-      <body className="min-h-screen font-sans">{children}</body>
+      <body className="min-h-screen bg-ink-950 font-sans text-slate-200 antialiased">
+        {children}
+      </body>
     </html>
   );
 }

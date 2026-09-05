@@ -9,33 +9,38 @@ module.exports = {
     extend: {
       colors: {
         ink: {
-          950: "#05070f",
-          900: "#0a0e1a",
-          800: "#111827",
-          700: "#1a2236",
+          950: "#04060c",
+          900: "#080c16",
+          850: "#0c1220",
+          800: "#121a2b",
+          700: "#1c2740",
         },
         neon: {
-          blue: "#3b82f6",
-          cyan: "#22d3ee",
-          violet: "#8b5cf6",
-          purple: "#a855f7",
+          cyan: "#5eead4",
+          blue: "#38bdf8",
+          violet: "#a78bfa",
+        },
+        champagne: {
+          DEFAULT: "#e8d5b5",
+          dim: "#c4b09a",
         },
       },
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
-        display: ["var(--font-display)", "Georgia", "serif"],
+        display: ["var(--font-display)", "Georgia", "sans-serif"],
       },
       boxShadow: {
-        glow: "0 0 40px rgba(59, 130, 246, 0.25)",
-        "glow-violet": "0 0 40px rgba(139, 92, 246, 0.28)",
-        glass: "0 8px 32px rgba(0, 0, 0, 0.35)",
+        glow: "0 0 50px rgba(56, 189, 248, 0.22)",
+        "glow-cyan": "0 0 40px rgba(94, 234, 212, 0.22)",
+        "glow-violet": "0 0 40px rgba(167, 139, 250, 0.22)",
+        lift: "0 24px 80px rgba(0, 0, 0, 0.45)",
       },
       backgroundImage: {
         "hero-grid":
-          "linear-gradient(rgba(59,130,246,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(59,130,246,0.06) 1px, transparent 1px)",
+          "linear-gradient(rgba(94,234,212,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(94,234,212,0.045) 1px, transparent 1px)",
       },
       backgroundSize: {
-        grid: "48px 48px",
+        grid: "56px 56px",
       },
     },
   },
