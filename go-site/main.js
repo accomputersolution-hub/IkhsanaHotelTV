@@ -1,12 +1,8 @@
 (() => {
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (reduce) {
-    document.querySelectorAll(".reveal").forEach((el) => el.classList.add("is-in"));
-    return;
-  }
-
   const nodes = document.querySelectorAll(".reveal");
-  if (!("IntersectionObserver" in window)) {
+
+  if (reduce || !("IntersectionObserver" in window)) {
     nodes.forEach((el) => el.classList.add("is-in"));
     return;
   }
@@ -20,7 +16,7 @@
         }
       });
     },
-    { rootMargin: "0px 0px -8% 0px", threshold: 0.12 },
+    { rootMargin: "0px 0px -10% 0px", threshold: 0.12 },
   );
 
   nodes.forEach((el) => io.observe(el));
