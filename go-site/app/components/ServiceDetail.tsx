@@ -1,7 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, BadgeIndianRupee, CheckCircle2 } from "lucide-react";
+import {
+  ArrowLeft,
+  BadgeIndianRupee,
+  CheckCircle2,
+  ClipboardList,
+  Route,
+  Sparkles,
+  Users,
+} from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
 import type { Service } from "@/lib/services";
 import { serviceIcons } from "@/lib/icons";
@@ -21,7 +29,7 @@ export function ServiceDetail({ service }: Props) {
         <div className="pointer-events-none absolute -left-24 top-20 h-72 w-72 rounded-full bg-neon-blue/25 blur-[100px]" />
         <div className="pointer-events-none absolute -right-16 top-40 h-80 w-80 rounded-full bg-neon-purple/20 blur-[110px]" />
 
-        <div className="section-pad relative pb-16 pt-6 md:pb-20">
+        <div className="section-pad relative pb-12 pt-6 md:pb-16">
           <Link
             href="/#services"
             className="inline-flex items-center gap-2 text-sm font-medium text-slate-300 transition hover:text-neon-cyan"
@@ -60,6 +68,76 @@ export function ServiceDetail({ service }: Props) {
         </div>
       </section>
 
+      <section className="section-pad pt-2 md:pt-4">
+        <Reveal>
+          <div className="glass rounded-3xl p-6 sm:p-8">
+            <div className="mb-4 flex items-center gap-2 text-neon-cyan">
+              <Users className="h-5 w-5" aria-hidden />
+              <p className="text-xs font-semibold uppercase tracking-[0.2em]">Ideal for</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {service.idealFor.map((item) => (
+                <span
+                  key={item}
+                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-slate-200"
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        </Reveal>
+      </section>
+
+      <section className="section-pad pt-8 md:pt-12">
+        <div className="grid gap-8 lg:grid-cols-2">
+          <Reveal>
+            <div className="glass h-full rounded-3xl p-6 sm:p-8">
+              <div className="mb-5 flex items-center gap-2 text-neon-cyan">
+                <ClipboardList className="h-5 w-5" aria-hidden />
+                <p className="text-xs font-semibold uppercase tracking-[0.2em]">
+                  What&apos;s included
+                </p>
+              </div>
+              <h2 className="font-display text-2xl font-semibold text-white">
+                Package details for{" "}
+                <span className="text-gradient">{service.shortTitle}</span>
+              </h2>
+              <ul className="mt-6 space-y-3">
+                {service.included.map((item) => (
+                  <li key={item} className="flex items-start gap-3 text-sm text-slate-300">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-neon-cyan" aria-hidden />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </Reveal>
+
+          <Reveal delay={0.08}>
+            <div className="glass h-full rounded-3xl p-6 sm:p-8">
+              <div className="mb-5 flex items-center gap-2 text-neon-violet">
+                <Sparkles className="h-5 w-5" aria-hidden />
+                <p className="text-xs font-semibold uppercase tracking-[0.2em]">
+                  Common use cases
+                </p>
+              </div>
+              <h2 className="font-display text-2xl font-semibold text-white">
+                Where this service pays off
+              </h2>
+              <ul className="mt-6 space-y-3">
+                {service.useCases.map((item) => (
+                  <li key={item} className="flex items-start gap-3 text-sm text-slate-300">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-neon-violet" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
       <section className="section-pad pt-4 md:pt-8">
         <Reveal>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neon-violet">
@@ -90,6 +168,36 @@ export function ServiceDetail({ service }: Props) {
               </Reveal>
             );
           })}
+        </div>
+      </section>
+
+      <section className="section-pad pt-4 md:pt-8">
+        <Reveal>
+          <div className="mb-8 flex items-center gap-2 text-neon-cyan">
+            <Route className="h-5 w-5" aria-hidden />
+            <p className="text-xs font-semibold uppercase tracking-[0.2em]">How we deliver</p>
+          </div>
+          <h2 className="max-w-2xl font-display text-3xl font-semibold text-white">
+            A clear path from survey to steady-state
+          </h2>
+        </Reveal>
+
+        <div className="mt-10 grid gap-5 sm:grid-cols-2">
+          {service.process.map((step, i) => (
+            <Reveal key={step.title} delay={0.06 * i}>
+              <article className="glass relative h-full overflow-hidden rounded-3xl p-6">
+                <span className="font-display text-4xl font-semibold text-white/10">
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <h3 className="mt-2 font-display text-lg font-semibold text-white">
+                  {step.title}
+                </h3>
+                <p className="mt-2 text-sm leading-relaxed text-slate-300">
+                  {step.description}
+                </p>
+              </article>
+            </Reveal>
+          ))}
         </div>
       </section>
 
