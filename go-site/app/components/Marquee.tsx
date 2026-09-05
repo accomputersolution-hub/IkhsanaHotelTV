@@ -9,7 +9,9 @@ const items = [
   "Hotel Communications",
   "Smart Access",
   "24/7 IT Care",
-  "India-wide rollout",
+  "Live at Regenta Lonavala",
+  "Live at Kumar Resort",
+  "Kaivalyadhama — under process",
   "Single throat to choke",
 ];
 

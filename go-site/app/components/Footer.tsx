@@ -10,6 +10,7 @@ import {
 } from "@/lib/contact";
 
 const footerLinks = [
+  { href: "/#properties", label: "Properties" },
   { href: "/#services", label: "Services" },
   { href: "/#opex", label: "Pricing" },
   { href: "/#tech", label: "Platform" },

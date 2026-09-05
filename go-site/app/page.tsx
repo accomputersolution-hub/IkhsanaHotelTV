@@ -3,6 +3,7 @@ import { Hero } from "./components/Hero";
 import { Marquee } from "./components/Marquee";
 import { Showcase } from "./components/Showcase";
 import { PromiseStrip } from "./components/PromiseStrip";
+import { Properties } from "./components/Properties";
 import { Services } from "./components/Services";
 import { OpexAdvantage } from "./components/OpexAdvantage";
 import { TechStack } from "./components/TechStack";
@@ -19,6 +20,7 @@ export default function HomePage() {
         <Marquee />
         <Showcase />
         <PromiseStrip />
+        <Properties />
         <Services />
         <OpexAdvantage />
         <TechStack />
