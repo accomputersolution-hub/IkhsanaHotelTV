@@ -6,27 +6,28 @@ import { useReducedMotion } from "framer-motion";
 const logos = [
   {
     src: "/images/logo-regenta.png",
-    alt: "Regenta / Royal Orchid Hotels",
-    href: "#properties",
+    alt: "Regenta Hotels / Royal Orchid Hotels",
     status: "Live",
   },
   {
     src: "/images/logo-kumar-resort.png",
     alt: "Kumar Resort by Turtle",
-    href: "#properties",
     status: "Live",
   },
   {
     src: "/images/logo-kaivalyadhama.png",
     alt: "Kaivalyadhama",
-    href: "#properties",
+    status: "Under process",
+  },
+  {
+    src: "/images/logo-lt-lda.png",
+    alt: "Larsen & Toubro Leadership Development Academy",
     status: "Under process",
   },
 ];
 
 export function PropertyLogoMarquee() {
   const reduce = useReducedMotion();
-  // Repeat so the strip feels continuous even with only 3 marks.
   const row = [...logos, ...logos, ...logos, ...logos];
 
   return (
@@ -38,27 +39,27 @@ export function PropertyLogoMarquee() {
         className={`flex w-max items-center gap-5 sm:gap-8 ${
           reduce ? "" : "animate-marquee"
         }`}
-        style={reduce ? undefined : { animationDuration: "28s" }}
+        style={reduce ? undefined : { animationDuration: "32s" }}
       >
         {row.map((logo, i) => (
           <a
             key={`${logo.alt}-${i}`}
-            href={logo.href}
-            className="group inline-flex shrink-0 items-center gap-3 rounded-md border border-bone/10 bg-bone px-5 py-3 transition hover:border-brass/40"
+            href="#properties"
+            className="group inline-flex shrink-0 items-center gap-3 rounded-md border border-bone/10 bg-black px-5 py-3 transition hover:border-brass/40"
             aria-label={`${logo.alt} — ${logo.status}`}
           >
-            <span className="relative h-10 w-[9.5rem] sm:h-11 sm:w-44">
+            <span className="relative h-11 w-[10.5rem] sm:h-12 sm:w-48">
               <Image
                 src={logo.src}
                 alt={logo.alt}
                 fill
                 className="object-contain object-center"
-                sizes="180px"
+                sizes="200px"
               />
             </span>
             <span
               className={`hidden text-[10px] font-semibold uppercase tracking-[0.16em] sm:inline ${
-                logo.status === "Live" ? "text-signal-dim" : "text-brass"
+                logo.status === "Live" ? "text-signal-bright" : "text-brass-soft"
               }`}
             >
               {logo.status}

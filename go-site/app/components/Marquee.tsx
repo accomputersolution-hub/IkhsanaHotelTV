@@ -10,8 +10,9 @@ const items = [
   "Smart Access",
   "24/7 IT Care",
   "Live at Regenta Lonavala",
-  "Live at Kumar Resort",
+  "Live at Kumar Resort by Turtle",
   "Kaivalyadhama — under process",
+  "L&T LDA Lonavala — under process",
   "Single throat to choke",
 ];
 

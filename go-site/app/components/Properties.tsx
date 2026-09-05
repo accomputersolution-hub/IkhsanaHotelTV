@@ -29,6 +29,14 @@ const properties = [
     note: "Rollout under process — scoping and deployment in motion.",
     logo: "/images/logo-kaivalyadhama.png",
   },
+  {
+    n: "04",
+    name: "Larsen & Toubro Leadership Development Academy",
+    place: "Lonavala, Maharashtra",
+    status: "process" as const,
+    note: "L&T LDA Lonavala — PCN Cloud rollout under process.",
+    logo: "/images/logo-lt-lda.png",
+  },
 ];
 
 export function Properties() {
@@ -42,8 +50,8 @@ export function Properties() {
             <span className="text-brass-soft">more going live.</span>
           </h2>
           <p className="mt-5 max-w-xl text-bone/65">
-            Two flagship properties are running PCN Cloud today. Kaivalyadhama is next —
-            under process.
+            Two properties are live with PCN Cloud. Kaivalyadhama and Larsen &amp; Toubro
+            Leadership Development Academy (LDA) are under process.
           </p>
         </Reveal>
       </div>
@@ -54,17 +62,17 @@ export function Properties() {
         <div className="divide-y divide-bone/10 border-y border-bone/10">
           {properties.map((p, i) => (
             <Reveal key={p.n} delay={0.06 * i}>
-              <article className="grid gap-5 py-8 sm:grid-cols-[4.5rem_7.5rem_1fr_auto] sm:items-center sm:gap-8">
+              <article className="grid gap-5 py-8 sm:grid-cols-[4.5rem_8rem_1fr_auto] sm:items-center sm:gap-8">
                 <span className="font-display text-sm tracking-[0.2em] text-brass">
                   {p.n}
                 </span>
-                <div className="relative flex h-14 w-[7.5rem] items-center justify-center overflow-hidden rounded-md border border-bone/10 bg-bone p-2">
+                <div className="relative flex h-16 w-32 items-center justify-center overflow-hidden rounded-md border border-bone/10 bg-black p-2">
                   <Image
                     src={p.logo}
                     alt={`${p.name} logo`}
                     width={140}
-                    height={48}
-                    className="max-h-10 w-auto object-contain"
+                    height={56}
+                    className="max-h-12 w-auto object-contain"
                   />
                 </div>
                 <div>
