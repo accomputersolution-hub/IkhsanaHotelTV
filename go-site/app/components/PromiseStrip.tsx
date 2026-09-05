@@ -26,20 +26,20 @@ export function PromiseStrip() {
       <div className="section-pad !py-16 md:!py-20">
         <Reveal>
           <p className="eyebrow-dark">Why owners switch</p>
-          <h2 className="mt-4 max-w-3xl font-display text-3xl font-semibold tracking-tight sm:text-5xl">
+          <h2 className="mt-4 max-w-3xl text-balance font-display text-[1.75rem] font-semibold tracking-tight sm:text-5xl">
             Less vendor theatre.{" "}
             <span className="text-signal-dim">More sold-out calm.</span>
           </h2>
         </Reveal>
-        <div className="mt-12 grid gap-10 md:grid-cols-3 md:gap-8">
+        <div className="mt-10 grid gap-8 sm:mt-12 md:grid-cols-3 md:gap-8">
           {promises.map((p, i) => (
             <Reveal key={p.n} delay={0.08 * i}>
-              <div className="border-t border-void/15 pt-6">
+              <div className="border-t border-void/15 pt-5 sm:pt-6">
                 <p className="font-display text-sm font-semibold tracking-[0.2em] text-signal-dim">
                   {p.n}
                 </p>
-                <h3 className="mt-4 font-display text-2xl font-semibold">{p.title}</h3>
-                <p className="mt-3 text-sm leading-relaxed text-void/65">{p.text}</p>
+                <h3 className="mt-3 font-display text-xl font-semibold sm:mt-4 sm:text-2xl">{p.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-void/65 sm:mt-3">{p.text}</p>
               </div>
             </Reveal>
           ))}

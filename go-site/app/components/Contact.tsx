@@ -28,17 +28,17 @@ export function Contact() {
         <div className="absolute inset-0 bg-void/80" />
         <div className="absolute inset-0 film-grain" aria-hidden />
 
-        <div className="relative mx-auto grid max-w-6xl gap-12 px-4 py-24 sm:px-6 md:py-32 lg:grid-cols-[1.2fr_0.8fr] lg:px-8">
+        <div className="relative mx-auto grid max-w-6xl gap-10 px-4 py-16 sm:gap-12 sm:px-6 sm:py-24 md:py-32 lg:grid-cols-[1.2fr_0.8fr] lg:px-8">
           <Reveal>
             <p className="eyebrow">Let&apos;s scope it</p>
-            <h2 className="mt-4 font-display text-4xl font-semibold tracking-tight text-bone sm:text-5xl md:text-6xl">
+            <h2 className="mt-4 text-balance font-display text-[2rem] font-semibold tracking-tight text-bone sm:text-5xl md:text-6xl">
               Ready when your property is.
             </h2>
-            <p className="mt-5 max-w-xl text-lg text-bone/65">
+            <p className="mt-4 max-w-xl text-base text-bone/65 sm:mt-5 sm:text-lg">
               Tell us rooms, current Wi‑Fi/CCTV pain, or your TV rollout. One conversation —
               a single-vendor plan for kiosk, network rental, security, and IT.
             </p>
-            <div className="mt-9 flex flex-wrap gap-3">
+            <div className="mt-8 flex w-full max-w-md flex-col gap-3 sm:mt-9 sm:max-w-none sm:flex-row sm:flex-wrap">
               <a
                 href={WHATSAPP_URL}
                 target="_blank"

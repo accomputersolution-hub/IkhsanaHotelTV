@@ -9,6 +9,9 @@ html {
 body {
   background-color: #0c0b0a;
   color: #efece6;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 ::selection {
@@ -22,7 +25,16 @@ body {
   }
 
   .section-pad {
-    @apply mx-auto max-w-6xl px-4 py-20 sm:px-6 md:py-28 lg:px-8;
+    @apply mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20 md:py-28 lg:px-8;
+  }
+
+  .safe-px {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+
+  .safe-pb {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
   }
 
   .film-grain {
@@ -41,15 +53,15 @@ body {
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-md bg-signal px-7 py-3.5 text-sm font-semibold tracking-wide text-bone-mist transition duration-300 hover:bg-signal-bright focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal;
+    @apply inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-signal px-6 py-3.5 text-sm font-semibold tracking-wide text-bone-mist transition duration-300 hover:bg-signal-bright focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal sm:w-auto sm:min-w-[10.5rem] sm:px-7;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-md border border-bone/25 bg-transparent px-7 py-3.5 text-sm font-semibold tracking-wide text-bone transition duration-300 hover:border-brass/60 hover:bg-bone/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass;
+    @apply inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-bone/25 bg-transparent px-6 py-3.5 text-sm font-semibold tracking-wide text-bone transition duration-300 hover:border-brass/60 hover:bg-bone/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass sm:w-auto sm:min-w-[10.5rem] sm:px-7;
   }
 
   .btn-dark {
-    @apply inline-flex items-center justify-center gap-2 rounded-md bg-void px-7 py-3.5 text-sm font-semibold tracking-wide text-bone transition duration-300 hover:bg-void-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-void;
+    @apply inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-void px-6 py-3.5 text-sm font-semibold tracking-wide text-bone transition duration-300 hover:bg-void-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-void sm:w-auto sm:px-7;
   }
 
   .eyebrow {

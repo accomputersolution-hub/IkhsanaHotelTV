@@ -34,10 +34,10 @@ export function LeadershipTeam() {
         <Reveal>
           <div className="mx-auto max-w-3xl text-center">
             <p className="eyebrow">People behind the stack</p>
-            <h2 className="mt-4 font-display text-4xl font-semibold tracking-tight text-bone sm:text-5xl md:text-6xl">
+            <h2 className="mt-4 font-display text-[2rem] font-semibold tracking-tight text-bone sm:text-5xl md:text-6xl">
               <span className="text-gradient">LEADERSHIP TEAM</span>
             </h2>
-            <p className="mx-auto mt-8 max-w-2xl text-base leading-relaxed text-bone/70 sm:text-lg">
+            <p className="mx-auto mt-5 max-w-2xl text-[0.95rem] leading-relaxed text-bone/70 sm:mt-8 sm:text-lg">
               PCN Cloud was founded with a unified vision: to eliminate the IT and
               networking headaches of the hospitality industry. By combining strong
               strategic backing with deep, hands-on expertise in network architecture and
@@ -49,13 +49,13 @@ export function LeadershipTeam() {
           </div>
         </Reveal>
 
-        <div className="mx-auto mt-14 grid max-w-5xl gap-6 md:grid-cols-2 md:gap-8">
+        <div className="mx-auto mt-10 grid max-w-5xl gap-5 sm:mt-14 sm:gap-6 md:grid-cols-2 md:gap-8">
           {founders.map((person, i) => (
             <Reveal key={person.name} delay={0.08 * i}>
-              <article className="group relative overflow-hidden rounded-2xl border border-bone/10 bg-white/[0.04] p-4 shadow-deep backdrop-blur-xl transition duration-500 hover:-translate-y-1 hover:scale-[1.02] hover:border-signal/35 hover:bg-white/[0.06] hover:shadow-[0_0_40px_rgba(46,196,182,0.12)] sm:p-5">
+              <article className="group relative overflow-hidden rounded-2xl border border-bone/10 bg-white/[0.04] p-3 shadow-deep backdrop-blur-xl transition duration-500 hover:-translate-y-1 hover:scale-[1.02] hover:border-signal/35 hover:bg-white/[0.06] hover:shadow-[0_0_40px_rgba(46,196,182,0.12)] sm:p-5">
                 <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-signal/50 to-transparent opacity-60 transition group-hover:opacity-100" />
 
-                <div className="relative aspect-[4/5] overflow-hidden rounded-xl border border-bone/10 bg-void-mute">
+                <div className="relative aspect-[4/5] max-h-[28rem] overflow-hidden rounded-xl border border-bone/10 bg-void-mute sm:max-h-none">
                   <Image
                     src={person.image}
                     alt={person.alt}
@@ -67,11 +67,11 @@ export function LeadershipTeam() {
                   <div className="absolute inset-0 bg-gradient-to-t from-void via-void/20 to-transparent" />
                 </div>
 
-                <div className="relative px-1 pb-1 pt-5 text-center sm:pt-6">
-                  <h3 className="font-display text-2xl font-semibold tracking-tight text-bone sm:text-3xl">
+                <div className="relative px-1 pb-1 pt-4 text-center sm:pt-6">
+                  <h3 className="font-display text-xl font-semibold tracking-tight text-bone sm:text-3xl">
                     {person.name}
                   </h3>
-                  <p className="mt-2 text-xs font-semibold uppercase tracking-[0.2em] text-brass-soft sm:text-[13px]">
+                  <p className="mt-2 text-[11px] font-semibold uppercase leading-snug tracking-[0.16em] text-brass-soft sm:text-[13px] sm:tracking-[0.2em]">
                     {person.role}
                   </p>
                 </div>

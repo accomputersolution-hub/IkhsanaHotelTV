@@ -71,13 +71,13 @@ export function ServiceDetail({ service }: Props) {
               <HeroIcon className="h-7 w-7" aria-hidden />
             </div>
             <p className="eyebrow">Service detail</p>
-            <h1 className="mt-4 font-display text-4xl font-semibold tracking-tight text-bone sm:text-5xl lg:text-6xl">
+            <h1 className="mt-4 text-balance font-display text-[2rem] font-semibold tracking-tight text-bone sm:text-5xl lg:text-6xl">
               {service.title}
             </h1>
-            <p className="mt-6 text-base leading-relaxed text-bone/70 sm:text-lg">
+            <p className="mt-5 text-[0.95rem] leading-relaxed text-bone/70 sm:mt-6 sm:text-lg">
               {service.heroDescription}
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
+            <div className="mt-7 flex w-full max-w-md flex-col gap-3 sm:mt-8 sm:max-w-none sm:flex-row sm:flex-wrap">
               <a
                 href={WHATSAPP_URL}
                 target="_blank"

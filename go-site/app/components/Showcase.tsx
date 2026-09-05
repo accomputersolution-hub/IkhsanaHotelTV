@@ -66,7 +66,7 @@ function Chapter({
   return (
     <article
       ref={ref}
-      className="relative mx-auto h-[70svh] max-w-[100rem] overflow-hidden md:h-[78svh]"
+      className="relative mx-auto h-[58svh] max-w-[100rem] overflow-hidden sm:h-[70svh] md:h-[78svh]"
     >
       <motion.div style={{ y }} className="absolute inset-0 scale-110">
         <Image
@@ -81,12 +81,12 @@ function Chapter({
       <div className="absolute inset-0 bg-gradient-to-t from-void via-void/45 to-void/20" />
       <div className="absolute inset-0 film-grain" aria-hidden />
 
-      <div className="absolute inset-x-0 bottom-0 p-6 sm:p-10 md:p-14">
+      <div className="absolute inset-x-0 bottom-0 p-5 sm:p-10 md:p-14">
         <Reveal delay={0.05}>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-brass">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-brass sm:text-[11px] sm:tracking-[0.28em]">
             {chapter.n} — {chapter.place}
           </p>
-          <h3 className="mt-3 max-w-3xl font-display text-3xl font-semibold leading-tight text-bone sm:text-4xl md:text-5xl">
+          <h3 className="mt-2 max-w-3xl text-balance font-display text-[1.55rem] font-semibold leading-tight text-bone sm:mt-3 sm:text-4xl md:text-5xl">
             {chapter.title}
           </h3>
         </Reveal>

@@ -26,16 +26,27 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
   return (
     <header
       className={`fixed inset-x-0 top-0 z-50 transition-all duration-500 ${
-        scrolled
-          ? "border-b border-bone/10 bg-void/80 backdrop-blur-xl"
+        scrolled || open
+          ? "border-b border-bone/10 bg-void/90 backdrop-blur-xl"
           : "bg-transparent"
       }`}
+      style={{ paddingTop: "env(safe-area-inset-top)" }}
     >
-      <div className="mx-auto flex h-[4.25rem] max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Logo size="md" priority />
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:h-[4.25rem] sm:px-6 lg:px-8">
+        <Logo size="sm" className="sm:hidden" priority />
+        <Logo size="md" className="hidden sm:inline-flex" priority />
 
         <nav className="hidden items-center gap-1 md:flex">
           {links.map((l) => (
@@ -51,7 +62,7 @@ export function Navbar() {
             href="https://admin.pcncloud.in"
             target="_blank"
             rel="noopener noreferrer"
-            className="btn-primary ml-3 !px-5 !py-2.5 text-xs"
+            className="btn-primary ml-3 !w-auto !px-5 !py-2.5 text-xs"
           >
             Client Login
           </a>
@@ -59,7 +70,8 @@ export function Navbar() {
 
         <button
           type="button"
-          className="rounded-md border border-bone/15 p-2 text-bone md:hidden"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-bone/15 text-bone md:hidden"
+          aria-expanded={open}
           aria-label={open ? "Close menu" : "Open menu"}
           onClick={() => setOpen((v) => !v)}
         >
@@ -73,15 +85,18 @@ export function Navbar() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="border-t border-bone/10 bg-void/95 backdrop-blur-xl md:hidden"
+            className="overflow-hidden border-t border-bone/10 bg-void/98 backdrop-blur-xl md:hidden"
           >
-            <div className="flex flex-col gap-1 px-4 py-4">
+            <nav
+              className="flex max-h-[calc(100svh-3.5rem-env(safe-area-inset-top))] flex-col gap-1 overflow-y-auto px-4 py-3 safe-pb"
+              aria-label="Mobile"
+            >
               {links.map((l) => (
                 <Link
                   key={l.href}
                   href={l.href}
                   onClick={() => setOpen(false)}
-                  className="rounded-md px-3 py-3 text-sm font-medium text-bone hover:bg-bone/5"
+                  className="rounded-md px-3 py-3.5 text-base font-medium text-bone hover:bg-bone/5"
                 >
                   {l.label}
                 </Link>
@@ -95,7 +110,7 @@ export function Navbar() {
               >
                 Client Login
               </a>
-            </div>
+            </nav>
           </motion.div>
         )}
       </AnimatePresence>
