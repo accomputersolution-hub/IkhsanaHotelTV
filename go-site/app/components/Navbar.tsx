@@ -33,7 +33,7 @@ export function Navbar() {
       }`}
     >
       <div className="mx-auto flex h-[4.25rem] max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Logo size="sm" priority />
+        <Logo size="md" priority />
 
         <nav className="hidden items-center gap-1 md:flex">
           {links.map((l) => (
