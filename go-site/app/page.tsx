@@ -7,6 +7,7 @@ import { Properties } from "./components/Properties";
 import { Services } from "./components/Services";
 import { OpexAdvantage } from "./components/OpexAdvantage";
 import { TechStack } from "./components/TechStack";
+import { About } from "./components/About";
 import { Contact } from "./components/Contact";
 import { Footer } from "./components/Footer";
 import { WhatsAppFloat } from "./components/WhatsAppFloat";
@@ -24,6 +25,7 @@ export default function HomePage() {
         <Services />
         <OpexAdvantage />
         <TechStack />
+        <About />
         <Contact />
       </main>
       <Footer />
