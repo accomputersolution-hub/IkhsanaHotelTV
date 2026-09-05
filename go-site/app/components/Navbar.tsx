@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X } from "lucide-react";
 
 const links = [
-  { href: "#services", label: "Services" },
-  { href: "#opex", label: "Pricing Model" },
-  { href: "#tech", label: "Tech & Security" },
-  { href: "#contact", label: "Contact Us" },
+  { href: "/#services", label: "Services" },
+  { href: "/#opex", label: "Pricing Model" },
+  { href: "/#tech", label: "Tech & Security" },
+  { href: "/#contact", label: "Contact Us" },
 ];
 
 export function Navbar() {
@@ -29,19 +30,22 @@ export function Navbar() {
       }`}
     >
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:h-[4.25rem] lg:px-8">
-        <a href="#top" className="font-display text-lg font-semibold tracking-tight text-white sm:text-xl">
+        <Link
+          href="/"
+          className="font-display text-lg font-semibold tracking-tight text-white sm:text-xl"
+        >
           PCN <span className="text-gradient">Cloud</span>
-        </a>
+        </Link>
 
         <nav className="hidden items-center gap-8 md:flex">
           {links.map((l) => (
-            <a
+            <Link
               key={l.href}
               href={l.href}
               className="text-sm font-medium text-slate-300 transition hover:text-white"
             >
               {l.label}
-            </a>
+            </Link>
           ))}
           <a
             href="https://admin.pcncloud.in"
@@ -73,14 +77,14 @@ export function Navbar() {
           >
             <div className="flex flex-col gap-1 px-4 py-4">
               {links.map((l) => (
-                <a
+                <Link
                   key={l.href}
                   href={l.href}
                   onClick={() => setOpen(false)}
                   className="rounded-lg px-3 py-3 text-sm font-medium text-slate-200 hover:bg-white/5"
                 >
                   {l.label}
-                </a>
+                </Link>
               ))}
               <a
                 href="https://admin.pcncloud.in"
