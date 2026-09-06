@@ -199,13 +199,26 @@ object KioskLockTask {
      * Live TV baseline) are always allowlisted. Call whenever Lock Task is (re)started
      * so phone Cast can legally take the foreground under Device Owner pin.
      */
+    /** Logged once per process so non-DO poll ticks do not spam logcat. */
+    @Volatile
+    private var loggedNonOwnerAllowlistOnce = false
+
     fun ensureChromecastAllowlisted(context: Context): Boolean {
         if (!KioskPolicy.isKioskModeEnabled(context)) return false
         return try {
             val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             val adminName = adminComponent(context)
             if (!dpm.isDeviceOwnerApp(context.packageName)) {
-                Log.d(TAG, "ensureChromecastAllowlisted — not Device Owner (screen pin only)")
+                // Screen-pin only: setLockTaskPackages is unavailable. Cast works by
+                // temporarily stopLockTask() (see CastHandoffMonitor) — not allowlisting.
+                if (!loggedNonOwnerAllowlistOnce) {
+                    loggedNonOwnerAllowlistOnce = true
+                    Log.i(
+                        TAG,
+                        "ensureChromecastAllowlisted — not Device Owner; " +
+                            "using screen-pin unpin path for Cast (no setLockTaskPackages)",
+                    )
+                }
                 return false
             }
             rememberSessionLockTaskPackage(context, CHROMECAST_PACKAGE)

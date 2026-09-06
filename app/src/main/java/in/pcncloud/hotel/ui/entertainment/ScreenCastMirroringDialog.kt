@@ -46,11 +46,12 @@ class ScreenCastMirroringDialog private constructor(
             clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
         }
 
-        findViewById<Button>(R.id.btnCastClose)?.setOnClickListener { dismiss() }
-        findViewById<Button>(R.id.btnStartAirPlay)?.apply {
-            setOnClickListener { launchAirScreen() }
+        findViewById<Button>(R.id.btnCastClose)?.apply {
+            setOnClickListener { dismiss() }
+            // Default focus on Close — not AirPlay — so OK does not launch AirScreen.
             post { requestFocus() }
         }
+        findViewById<Button>(R.id.btnStartAirPlay)?.setOnClickListener { launchAirScreen() }
         // Keep Cast arm after dismiss — guest usually closes the dialog then casts
         // from YouTube / Prime. Arm expires (~15 min) and restores Lock Task.
     }

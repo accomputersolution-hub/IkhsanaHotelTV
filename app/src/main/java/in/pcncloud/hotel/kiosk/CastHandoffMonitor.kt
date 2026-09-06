@@ -12,9 +12,12 @@ import java.lang.ref.WeakReference
 /**
  * Aggressive Chromecast / AirScreen handoff for hotel kiosk TVs.
  *
- * Allowlisting mediashell alone is often not enough under Lock Task: Cast connects
- * on the phone but the hotel UI stays on the TV. This monitor temporarily stops
- * Lock Task when Cast elevates, then restores the kiosk when Cast ends.
+ * Device Owner: keep mediashell on [DevicePolicyManager.setLockTaskPackages], and still
+ * temporarily [Activity.stopLockTask] when Cast elevates (many ATVs still block paint).
+ *
+ * **Not Device Owner (screen pin only):** allowlisting is impossible. Cast only works if
+ * we unpin first ([prepareForIncomingCast] / [yieldToCast]) and suppress reclaim until
+ * Cast ends. Guests should open Screen Cast once before YouTube/Prime Cast.
  */
 object CastHandoffMonitor {
 
@@ -90,12 +93,26 @@ object CastHandoffMonitor {
         return false
     }
 
+    /**
+     * Unpin now so phone Cast can paint. Required on non–Device Owner TVs
+     * (screen pin only cannot allowlist mediashell).
+     */
     fun prepareForIncomingCast(activity: Activity, armMs: Long = DEFAULT_ARM_MS) {
         attachActivity(activity)
         armForIncomingCast(armMs)
-        KioskLockTask.ensureChromecastAllowlisted(activity)
+        val deviceOwner = KioskPolicy.isDeviceOwner(activity)
+        if (deviceOwner) {
+            KioskLockTask.ensureChromecastAllowlisted(activity)
+        } else {
+            Log.i(
+                TAG,
+                "prepareForIncomingCast — NOT Device Owner; " +
+                    "screen-pin unpin is the only Cast path",
+            )
+        }
         KioskPolicy.suppressReclaimFor(armMs, "cast_armed_prepare")
         stopLockTaskOn(activity, "prepare_incoming_cast")
+        // Keep hotel visible but unpinned until Media Shell elevates, then move back.
         Log.i(TAG, "Prepared for incoming Cast — Lock Task stopped, armed ${armMs}ms")
     }
 
@@ -135,6 +152,7 @@ object CastHandoffMonitor {
     }
 
     private fun isElevated(context: Context, packageName: String): Boolean {
+        // FGS+ = typical phone Cast session (even when UI is still blocked).
         if (
             KioskPolicy.isPackageAtMostImportance(
                 context,
@@ -144,15 +162,18 @@ object CastHandoffMonitor {
         ) {
             return true
         }
-        if (
-            isArmedForIncomingCast() &&
-            KioskPolicy.isPackageAtMostImportance(
-                context,
-                packageName,
-                ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE,
-            )
-        ) {
-            return true
+        // Armed / non-DO: also treat SERVICE/VISIBLE as Cast starting so we yield
+        // before reclaim fights the receiver.
+        if (isArmedForIncomingCast() || !KioskPolicy.isDeviceOwner(context)) {
+            if (
+                KioskPolicy.isPackageAtMostImportance(
+                    context,
+                    packageName,
+                    ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE,
+                )
+            ) {
+                return true
+            }
         }
         return isTopActivity(context, packageName)
     }
@@ -174,6 +195,17 @@ object CastHandoffMonitor {
         }
     }
 
+    private fun isLockTaskActive(activity: Activity): Boolean {
+        return try {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) return false
+            val am = activity.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                ?: return false
+            am.lockTaskModeState != ActivityManager.LOCK_TASK_MODE_NONE
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     private fun tick() {
         val context = appContext ?: return
         if (!KioskPolicy.isKioskModeEnabled(context)) {
@@ -186,7 +218,19 @@ object CastHandoffMonitor {
             return
         }
 
-        KioskLockTask.ensureChromecastAllowlisted(context)
+        // DO only — non-DO cannot setLockTaskPackages; calling every tick just spams logs.
+        if (KioskPolicy.isDeviceOwner(context)) {
+            KioskLockTask.ensureChromecastAllowlisted(context)
+        }
+
+        // Non-DO / armed: if something re-pinned us, unpin again so Cast can paint.
+        if (yieldedForCast || isArmedForIncomingCast()) {
+            val activity = activityRef?.get()
+            if (activity != null && !activity.isFinishing && isLockTaskActive(activity)) {
+                Log.i(TAG, "Re-assert unpin — Lock Task was re-enabled during Cast arm/yield")
+                stopLockTaskOn(activity, "reassert_unpin")
+            }
+        }
 
         val casting = isCastReceiverElevated(context)
         if (casting) {
@@ -239,7 +283,7 @@ object CastHandoffMonitor {
         Log.i(
             TAG,
             "YIELD to Cast ($pkg) — stopLockTask + moveTaskToBack " +
-                "(activity=${activity != null})",
+                "(activity=${activity != null}, deviceOwner=${KioskPolicy.isDeviceOwner(context)})",
         )
 
         if (activity != null && !activity.isFinishing) {
@@ -273,7 +317,9 @@ object CastHandoffMonitor {
         KioskPolicy.clearExternalAppActive(context)
         KioskPolicy.clearOttLaunchState(context, suppressMs = 500L)
 
-        KioskLockTask.ensureChromecastAllowlisted(context)
+        if (KioskPolicy.isDeviceOwner(context)) {
+            KioskLockTask.ensureChromecastAllowlisted(context)
+        }
 
         val activity = activityRef?.get()
         if (activity != null && !activity.isFinishing) {
