@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Build
 import android.util.Log
+import `in`.pcncloud.hotel.AdminReceiver
 
 /**
  * Device-owner Lock Task helpers for hotel kiosk.
@@ -47,7 +48,7 @@ object KioskLockTask {
     )
 
     fun adminComponent(context: Context): ComponentName =
-        MyDeviceAdminReceiver.getComponentName(context)
+        AdminReceiver.getComponentName(context)
 
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -325,7 +326,7 @@ object KioskLockTask {
 
             val packages = buildLockTaskPackageArrayForLaunch(context, targetPackage)
             dpm.setLockTaskPackages(adminName, packages)
-            MyDeviceAdminReceiver.applyStrictLockTaskFeatures(context)
+            AdminReceiver.applyStrictLockTaskFeatures(context)
             Log.i(TAG, "Pre-launch setLockTaskPackages → ${packages.toList()}")
         } catch (e: Exception) {
             Log.w(TAG, "applyLockTaskForLaunch failed for $targetPackage", e)
@@ -344,7 +345,7 @@ object KioskLockTask {
             if (!dpm.isDeviceOwnerApp(context.packageName)) return
             val packages = buildEffectiveLockTaskPackages(context)
             dpm.setLockTaskPackages(adminName, packages)
-            MyDeviceAdminReceiver.applyStrictLockTaskFeatures(context)
+            AdminReceiver.applyStrictLockTaskFeatures(context)
             Log.i(TAG, "reassertLockTaskPackages → ${packages.toList()}")
         } catch (e: Exception) {
             Log.w(TAG, "reassertLockTaskPackages failed", e)

@@ -41,7 +41,7 @@ import `in`.pcncloud.hotel.kiosk.HotelSessionManager
 import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
-import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
+import `in`.pcncloud.hotel.AdminReceiver
 import `in`.pcncloud.hotel.wireguard.WireGuardController
 import `in`.pcncloud.hotel.wireguard.WireGuardConsentStore
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
@@ -393,13 +393,13 @@ class MainActivity : ComponentActivity() {
         if (KioskPolicy.isDeviceOwner(this)) {
             try {
                 val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                val adminComponent = MyDeviceAdminReceiver.getComponentName(this)
+                val adminComponent = AdminReceiver.getComponentName(this)
                 // Keep session-launched OTTs + RTDB list in the whitelist so Lock Task
                 // never shrinks mid-OTT and lets HOME escape to the box launcher.
                 val packages = KioskLockTask.buildEffectiveLockTaskPackages(this)
 
                 dpm.setLockTaskPackages(adminComponent, packages)
-                MyDeviceAdminReceiver.applyStrictLockTaskFeatures(this)
+                AdminReceiver.applyStrictLockTaskFeatures(this)
                 startLockTaskSafely(reason)
                 // Device Owner does not need the full-screen physical-TV overlay.
                 if (physicalTvOverlayActive) {
@@ -1090,7 +1090,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         KioskLockTask.applyAllowlist(this, allowedPackagesList)
-        MyDeviceAdminReceiver.applyStrictLockTaskFeatures(this)
+        AdminReceiver.applyStrictLockTaskFeatures(this)
     }
 
     /** Safe hotelId before/after [hotelConfig] init. */
@@ -1135,7 +1135,7 @@ class MainActivity : ComponentActivity() {
     private fun applyLockTaskMode(enabled: Boolean) {
         try {
             if (enabled) {
-                MyDeviceAdminReceiver.applyStrictLockTaskFeatures(this)
+                AdminReceiver.applyStrictLockTaskFeatures(this)
                 startLockTaskSafely("applyLockTaskMode")
                 Log.d("KioskMode", "Lock Task Mode ENABLED")
             } else {

@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import `in`.pcncloud.hotel.BuildConfig
-import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
+import `in`.pcncloud.hotel.AdminReceiver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -62,7 +62,7 @@ object WireGuardController {
     fun onVpnPermissionGranted(context: Context) {
         if (!BuildConfig.IS_CORPORATE) return
         WireGuardConsentStore.markUserGranted(context)
-        MyDeviceAdminReceiver.ensureAlwaysOnWireGuardVpn(context)
+        AdminReceiver.ensureAlwaysOnWireGuardVpn(context)
         ensureRunning(context)
     }
 
@@ -88,7 +88,7 @@ object WireGuardController {
         if (!BuildConfig.IS_CORPORATE) return
         if (WireGuardConsentStore.hasUserGranted(context)) return
         try {
-            MyDeviceAdminReceiver.clearAlwaysOnWireGuardVpn(context)
+            AdminReceiver.clearAlwaysOnWireGuardVpn(context)
         } catch (t: Throwable) {
             Log.w(TAG, "prepareForConsentPrompt clear Always-On failed", t)
         }
@@ -104,7 +104,7 @@ object WireGuardController {
             Log.w(TAG, "ensureRunning deferred — VpnService.prepare() not granted yet")
             return
         }
-        MyDeviceAdminReceiver.ensureAlwaysOnWireGuardVpn(context)
+        AdminReceiver.ensureAlwaysOnWireGuardVpn(context)
         if (!autoConnectInFlight.compareAndSet(false, true)) {
             Log.d(TAG, "ensureRunning skipped — auto-connect already in flight")
             return

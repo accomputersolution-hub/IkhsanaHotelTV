@@ -9,7 +9,7 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.SvgDecoder
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
-import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
+import `in`.pcncloud.hotel.AdminReceiver
 import `in`.pcncloud.hotel.wireguard.WireGuardController
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -26,7 +26,7 @@ class HotelTvApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         try {
-            MyDeviceAdminReceiver.logProvisioningDiagnostics(this)
+            AdminReceiver.logProvisioningDiagnostics(this)
         } catch (e: Exception) {
             Log.w(TAG, "logProvisioningDiagnostics failed during Application.onCreate", e)
         }

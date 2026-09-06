@@ -17,6 +17,7 @@ import android.provider.Settings
 import android.util.Log
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
+import `in`.pcncloud.hotel.AdminReceiver
 import `in`.pcncloud.hotel.MainActivity
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.BuildConfig
@@ -761,7 +762,7 @@ object KioskPolicy {
         try {
             val dpm =
                 context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-            val adminComponent = MyDeviceAdminReceiver.getComponentName(context)
+            val adminComponent = AdminReceiver.getComponentName(context)
             if (!dpm.isDeviceOwnerApp(context.packageName)) {
                 Log.d(TAG, "clearDeviceOwnerLockTaskPackages — not Device Owner, skip")
                 return

@@ -1,249 +1,60 @@
 package `in`.pcncloud.hotel.kiosk
 
-import android.app.admin.DeviceAdminReceiver
-import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
-import android.util.Log
-import `in`.pcncloud.hotel.BuildConfig
+import `in`.pcncloud.hotel.AdminReceiver
 
 /**
- * Device-owner / device-admin component required for [DevicePolicyManager]
- * Lock Task APIs (`setLockTaskPackages`, `setLockTaskFeatures`) and Always-On VPN.
+ * Deprecated alias for [AdminReceiver].
  *
- * Provision TVs once via ADB (factory-reset device, no accounts):
+ * Device Owner must be provisioned against `in.pcncloud.hotel.AdminReceiver`:
  * ```
- * adb shell dpm set-device-owner <applicationId>/in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
+ * adb shell dpm set-device-owner <applicationId>/in.pcncloud.hotel.AdminReceiver
  * ```
- * Hotel: `in.pcncloud.hotel/...`
- * Corporate: `in.pcncloud.corporate/...`
  *
- * True Lock Task (Home / Recents suppressed) only works after Device Owner is set.
+ * Kept so older call sites compile; all [ComponentName]s resolve to [AdminReceiver].
  */
-class MyDeviceAdminReceiver : DeviceAdminReceiver() {
-
-    override fun onEnabled(context: Context, intent: Intent) {
-        Log.i(TAG, "Device admin enabled — applying Lock Task + Always-On VPN policy")
-        ensureSelfAllowlisted(context)
-        applyStrictLockTaskFeatures(context)
-        ensureAlwaysOnWireGuardVpn(context)
-    }
-
-    override fun onDisabled(context: Context, intent: Intent) {
-        Log.w(TAG, "Device admin disabled")
-    }
-
-    override fun onLockTaskModeEntering(context: Context, intent: Intent, pkg: String) {
-        Log.i(TAG, "Lock Task entering → pkg=$pkg")
-        applyStrictLockTaskFeatures(context)
-    }
-
-    override fun onLockTaskModeExiting(context: Context, intent: Intent) {
-        Log.i(TAG, "Lock Task exiting")
-    }
+@Deprecated(
+    message = "Use in.pcncloud.hotel.AdminReceiver",
+    replaceWith = ReplaceWith("AdminReceiver", "in.pcncloud.hotel.AdminReceiver"),
+)
+class MyDeviceAdminReceiver : AdminReceiver() {
 
     companion object {
-        private const val TAG = "MyDeviceAdminReceiver"
+        @Deprecated("Use AdminReceiver.DEVICE_OWNER_COMPONENT_HOTEL")
+        const val DEVICE_OWNER_COMPONENT = AdminReceiver.DEVICE_OWNER_COMPONENT_HOTEL
 
-        /** Exact component string for hotel `adb shell dpm set-device-owner`. */
-        const val DEVICE_OWNER_COMPONENT =
-            "in.pcncloud.hotel/in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver"
-
-        /** Exact component string for corporate `adb shell dpm set-device-owner`. */
+        @Deprecated("Use AdminReceiver.DEVICE_OWNER_COMPONENT_CORPORATE")
         const val DEVICE_OWNER_COMPONENT_CORPORATE =
-            "in.pcncloud.corporate/in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver"
+            AdminReceiver.DEVICE_OWNER_COMPONENT_CORPORATE
 
         fun getComponentName(context: Context): ComponentName =
-            ComponentName(context.applicationContext, MyDeviceAdminReceiver::class.java)
+            AdminReceiver.getComponentName(context)
 
-        /** Flavor-aware ADB component for Device Owner provisioning. */
         fun deviceOwnerAdbComponent(context: Context): String =
-            "${context.packageName}/in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver"
+            AdminReceiver.deviceOwnerAdbComponent(context)
 
-        /**
-         * Logs whether the admin receiver is registered and why Device Owner
-         * provisioning may fail on this device (accounts, existing owner, etc.).
-         */
-        fun logProvisioningDiagnostics(context: Context) {
-            val app = context.applicationContext
-            val component = getComponentName(app)
-            val pm = app.packageManager
-            val dpm = app.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-            val adbComponent = deviceOwnerAdbComponent(app)
+        fun logProvisioningDiagnostics(context: Context) =
+            AdminReceiver.logProvisioningDiagnostics(context)
 
-            val receiverOk = try {
-                val info = pm.getReceiverInfo(component, 0)
-                info.enabled
-            } catch (e: Exception) {
-                Log.e(TAG, "Admin receiver NOT registered in PackageManager → $component", e)
-                false
-            }
+        fun isDeviceOwner(context: Context): Boolean =
+            AdminReceiver.isDeviceOwner(context)
 
-            Log.i(
-                TAG,
-                "Device Owner diagnostics → component=$component receiverEnabled=$receiverOk " +
-                    "installed=${isPackageInstalled(pm, app.packageName)} " +
-                    "isDeviceOwner=${dpm.isDeviceOwnerApp(app.packageName)} " +
-                    "adbCommand=adb shell dpm set-device-owner $adbComponent",
-            )
+        fun ensureAlwaysOnWireGuardVpn(context: Context): Boolean =
+            AdminReceiver.ensureAlwaysOnWireGuardVpn(context)
 
-            if (!receiverOk) {
-                Log.e(
-                    TAG,
-                    "Fix manifest: receiver must export DEVICE_ADMIN_ENABLED + device_admin.xml",
-                )
-            }
-            if (dpm.isDeviceOwnerApp(app.packageName)) {
-                Log.i(TAG, "Already Device Owner — no provisioning needed")
-            }
-        }
+        fun clearAlwaysOnWireGuardVpn(context: Context): Boolean =
+            AdminReceiver.clearAlwaysOnWireGuardVpn(context)
 
-        private fun isPackageInstalled(pm: PackageManager, packageName: String): Boolean {
-            return try {
-                pm.getPackageInfo(packageName, 0)
-                true
-            } catch (_: PackageManager.NameNotFoundException) {
-                false
-            }
-        }
-
-        /** True when this package is provisioned as Device Owner. */
-        fun isDeviceOwner(context: Context): Boolean {
-            return try {
-                val dpm =
-                    context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                dpm.isDeviceOwnerApp(context.packageName)
-            } catch (e: Exception) {
-                Log.w(TAG, "isDeviceOwner check failed", e)
-                false
-            }
-        }
-
-        /**
-         * Corporate Device Owner only: pin **this app** as Always-On VPN so
-         * [com.wireguard.android.backend.GoBackend.VpnService] can start on boot.
-         * Call only after the user has accepted [android.net.VpnService.prepare].
-         */
-        fun ensureAlwaysOnWireGuardVpn(context: Context): Boolean {
-            if (!BuildConfig.IS_CORPORATE) return false
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-                Log.w(TAG, "setAlwaysOnVpnPackage requires API 24+ — skip")
-                return false
-            }
-
-            return try {
-                val app = context.applicationContext
-                val dpm =
-                    app.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                val admin = getComponentName(app)
-
-                if (!dpm.isDeviceOwnerApp(app.packageName)) {
-                    Log.w(
-                        TAG,
-                        "Not Device Owner — cannot setAlwaysOnVpnPackage(self). " +
-                            "Provision with: adb shell dpm set-device-owner ${deviceOwnerAdbComponent(app)}",
-                    )
-                    return false
-                }
-
-                dpm.setAlwaysOnVpnPackage(admin, app.packageName, /* lockdownEnabled= */ false)
-
-                val active = try {
-                    dpm.getAlwaysOnVpnPackage(admin)
-                } catch (_: Throwable) {
-                    null
-                }
-                Log.i(
-                    TAG,
-                    "Always-On VPN set → package=${app.packageName} (WireGuard GoBackend) " +
-                        "lockdown=false activePackage=$active",
-                )
-                true
-            } catch (e: PackageManager.NameNotFoundException) {
-                Log.w(TAG, "setAlwaysOnVpnPackage failed — VpnService missing?", e)
-                false
-            } catch (e: SecurityException) {
-                Log.e(TAG, "setAlwaysOnVpnPackage SecurityException — not Device Owner?", e)
-                false
-            } catch (e: Exception) {
-                Log.e(TAG, "setAlwaysOnVpnPackage failed", e)
-                false
-            }
-        }
-
-        /**
-         * Clears Always-On so [android.net.VpnService.prepare] can return a consent Intent again.
-         * Used when we never recorded a user grant but Device Owner Always-On already authorized.
-         */
-        fun clearAlwaysOnWireGuardVpn(context: Context): Boolean {
-            if (!BuildConfig.IS_CORPORATE) return false
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
-            return try {
-                val app = context.applicationContext
-                val dpm =
-                    app.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                val admin = getComponentName(app)
-                if (!dpm.isDeviceOwnerApp(app.packageName)) return false
-                dpm.setAlwaysOnVpnPackage(admin, /* vpnPackage= */ null, /* lockdownEnabled= */ false)
-                Log.i(TAG, "Always-On VPN cleared — consent dialog can show again")
-                true
-            } catch (e: Exception) {
-                Log.w(TAG, "clearAlwaysOnWireGuardVpn failed", e)
-                false
-            }
-        }
-
-        /**
-         * Whitelists [extraPackages] + this app for Lock Task.
-         * No-op when not Device Owner.
-         */
         fun setLockTaskPackages(
             context: Context,
             extraPackages: List<String> = emptyList(),
-        ): Boolean {
-            return try {
-                val dpm =
-                    context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                val admin = getComponentName(context)
-                if (!dpm.isDeviceOwnerApp(context.packageName)) {
-                    Log.w(TAG, "Not Device Owner — cannot setLockTaskPackages")
-                    return false
-                }
-                val packages = KioskLockTask.buildLockTaskPackageArray(context, extraPackages)
-                dpm.setLockTaskPackages(admin, packages)
-                applyStrictLockTaskFeatures(context)
-                Log.i(TAG, "setLockTaskPackages → ${packages.toList()}")
-                true
-            } catch (e: Exception) {
-                Log.w(TAG, "setLockTaskPackages failed", e)
-                false
-            }
-        }
+        ): Boolean = AdminReceiver.setLockTaskPackages(context, extraPackages)
 
-        /** Ensure hotel app alone is Lock-Task allowlisted (OTT from RTDB only). */
         fun ensureSelfAllowlisted(context: Context): Boolean =
-            setLockTaskPackages(context, emptyList())
+            AdminReceiver.ensureSelfAllowlisted(context)
 
-        /**
-         * Suppress system status / nav / home chrome while in Lock Task
-         * (`LOCK_TASK_FEATURE_NONE`) so the physical Home key cannot reach
-         * the stock Android TV launcher.
-         */
-        fun applyStrictLockTaskFeatures(context: Context) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
-            try {
-                val dpm =
-                    context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                val admin = getComponentName(context)
-                if (!dpm.isDeviceOwnerApp(context.packageName)) return
-                dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
-                Log.i(TAG, "setLockTaskFeatures(LOCK_TASK_FEATURE_NONE)")
-            } catch (e: Exception) {
-                Log.w(TAG, "applyStrictLockTaskFeatures failed", e)
-            }
-        }
+        fun applyStrictLockTaskFeatures(context: Context) =
+            AdminReceiver.applyStrictLockTaskFeatures(context)
     }
 }

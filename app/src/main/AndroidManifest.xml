@@ -145,12 +145,12 @@
         <!--
           Device Owner admin receiver — required for true Lock Task / Home suppression
           and (corporate) Always-On VPN for WireGuard GoBackend$VpnService.
-          Provision once (factory-reset TV, no Google account):
-          Hotel:     adb shell dpm set-device-owner in.pcncloud.hotel/in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
-          Corporate: adb shell dpm set-device-owner in.pcncloud.corporate/in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
+          Provision once (factory-reset TV, no accounts):
+          Hotel:     adb shell dpm set-device-owner in.pcncloud.hotel/in.pcncloud.hotel.AdminReceiver
+          Corporate: adb shell dpm set-device-owner in.pcncloud.corporate/in.pcncloud.hotel.AdminReceiver
         -->
         <receiver
-            android:name="in.pcncloud.hotel.kiosk.MyDeviceAdminReceiver"
+            android:name="in.pcncloud.hotel.AdminReceiver"
             android:description="@string/device_admin_description"
             android:label="@string/app_name"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
