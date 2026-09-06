@@ -29,6 +29,9 @@ object KioskLockTask {
     /** YouTube TV package id — used only for leanback URI fallback when launching. */
     const val YOUTUBE_TV_PACKAGE = "com.google.android.youtube.tv"
 
+    /** Android TV Chromecast / Google Cast built-in receiver (Media Shell). */
+    const val CHROMECAST_PACKAGE = "com.google.android.apps.mediashell"
+
     /** In-room Live TV / IPTV app — must stay Lock-Task allowlisted under kiosk. */
     const val LIVE_TV_PACKAGE = "com.ektv.pro"
 
@@ -266,13 +269,14 @@ object KioskLockTask {
         val pm = context.packageManager
         val intent = pm.getLeanbackLaunchIntentForPackage(targetPackage)
             ?: pm.getLaunchIntentForPackage(targetPackage)
-            ?: if (targetPackage == YOUTUBE_TV_PACKAGE) {
-                Intent(
+            ?: when (targetPackage) {
+                YOUTUBE_TV_PACKAGE -> Intent(
                     Intent.ACTION_VIEW,
                     android.net.Uri.parse("https://www.youtube.com/tv"),
                 )
-            } else {
-                null
+                // Media Shell is usually a headless Cast receiver (no launcher UI).
+                CHROMECAST_PACKAGE -> null
+                else -> null
             }
 
         return intent?.apply {

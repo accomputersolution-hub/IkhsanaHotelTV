@@ -122,6 +122,13 @@ fun entertainmentCatalog(): List<EntertainmentApp> = listOf(
         packageName = "com.spotify.tv.android",
         fallbackIconRes = R.drawable.ic_spotify,
     ),
+    EntertainmentApp(
+        id = "chromecast",
+        labelRes = R.string.ott_chromecast,
+        // Android TV built-in Cast / Chromecast receiver (Media Shell).
+        packageName = "com.google.android.apps.mediashell",
+        fallbackIconRes = R.drawable.ic_chromecast,
+    ),
 )
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -200,6 +207,13 @@ fun EntertainmentHubScreen(
                                         packageName = packageName,
                                         appLabel = context.getString(app.labelRes),
                                     )
+                                } else if (app.id == "chromecast") {
+                                    // Cast receiver is headless — guide guest to cast from phone.
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.entertainment_cast_ready),
+                                        Toast.LENGTH_LONG,
+                                    ).show()
                                 } else {
                                     Toast.makeText(
                                         context,
@@ -298,13 +312,18 @@ private fun EntertainmentAppTile(
         Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-            text = stringResource(
-                if (installed) R.string.entertainment_installed
-                else R.string.entertainment_get_app,
-            ),
-            color = if (installed) installedGreen else secondaryText,
+            text = when {
+                app.id == "chromecast" -> stringResource(R.string.entertainment_cast_hint)
+                installed -> stringResource(R.string.entertainment_installed)
+                else -> stringResource(R.string.entertainment_get_app)
+            },
+            color = when {
+                app.id == "chromecast" -> CorpGold.copy(alpha = 0.85f)
+                installed -> installedGreen
+                else -> secondaryText
+            },
             fontFamily = SansBody,
-            fontWeight = if (installed) FontWeight.SemiBold else FontWeight.Normal,
+            fontWeight = if (installed || app.id == "chromecast") FontWeight.SemiBold else FontWeight.Normal,
             fontSize = 12.sp,
             textAlign = TextAlign.Center,
         )
