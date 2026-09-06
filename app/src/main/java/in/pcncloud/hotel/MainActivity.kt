@@ -40,6 +40,7 @@ import `in`.pcncloud.hotel.kiosk.BlockedKeysManager
 import `in`.pcncloud.hotel.kiosk.HotelSessionManager
 import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
+import `in`.pcncloud.hotel.kiosk.CastHandoffMonitor
 import `in`.pcncloud.hotel.kiosk.KioskWatchdogService
 import `in`.pcncloud.hotel.kiosk.MyDeviceAdminReceiver
 import `in`.pcncloud.hotel.wireguard.WireGuardController
@@ -521,6 +522,12 @@ class MainActivity : ComponentActivity() {
         }
         if (isActivitySurfaceGone()) {
             Log.d(TAG, "startLockTaskSafely skip — finishing/destroyed ($reason)")
+            return
+        }
+        // Never re-pin over an active / armed Cast handoff — this was covering
+        // Media Shell after YouTube / Prime connected.
+        if (CastHandoffMonitor.shouldSkipLockTaskPin(this)) {
+            Log.i(TAG, "startLockTaskSafely skip — Cast handoff active ($reason)")
             return
         }
         // Strict: only pin when the task is actually in the foreground.
@@ -1632,10 +1639,16 @@ class MainActivity : ComponentActivity() {
 
             val kioskOn = resolveKioskEnabled()
             // —— Aggressive foreground snap FIRST (before nav / async) ——
-            if (kioskOn) {
+            // Skip pin snap while Cast handoff is armed/yielding — otherwise
+            // startLockTask covers Media Shell right after YouTube/Prime connects.
+            if (kioskOn && !CastHandoffMonitor.shouldSkipLockTaskPin(this)) {
                 snapKioskSurfaceImmediate("onResume")
-            } else {
+            } else if (!kioskOn) {
                 removeKioskOverlayBarrier()
+            } else {
+                Log.i(TAG, "onResume — skip snap; Cast handoff active")
+                CastHandoffMonitor.attachActivity(this)
+                runCatching { moveTaskToBack(true) }
             }
 
             // UI should already be Root Home (switched before OTT launch). Cleanup only.
@@ -1717,6 +1730,8 @@ class MainActivity : ComponentActivity() {
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to start KioskWatchdogService", e)
                 }
+                // Chromecast handoff: detect Media Shell elevation and unpin so Cast can paint.
+                CastHandoffMonitor.attachActivity(this)
                 if (!deferOverlayForVpn && !awaitingVpnPermission) {
                     ensureOverlayPermissionForBal()
                 }
@@ -1739,17 +1754,17 @@ class MainActivity : ComponentActivity() {
         if (!kioskOn) return
 
         // Phone Chromecast connected → yield the screen to Media Shell / AirScreen.
-        if (KioskPolicy.markCastSessionIfActive(this) != null) {
+        // Device Owner allowlisting alone is often not enough — always stopLockTask.
+        if (
+            KioskPolicy.markCastSessionIfActive(this) != null ||
+            CastHandoffMonitor.isYieldingForCast() ||
+            CastHandoffMonitor.isCastReceiverElevated(this)
+        ) {
             Log.i(TAG, "onPause — Cast active, yield screen to receiver")
-            // Non–Device Owner screen pin only allows THIS app; unpin so Cast can paint.
-            if (!KioskPolicy.isDeviceOwner(this)) {
-                runCatching {
-                    stopLockTask()
-                    Log.i(TAG, "onPause — stopLockTask (non-DO) so Cast can foreground")
-                }
-            } else {
-                // DO Lock Task: mediashell is allowlisted; still push hotel task back.
-                KioskLockTask.ensureChromecastAllowlisted(this)
+            KioskLockTask.ensureChromecastAllowlisted(this)
+            runCatching {
+                stopLockTask()
+                Log.i(TAG, "onPause — stopLockTask so Cast can foreground")
             }
             runCatching { moveTaskToBack(true) }
             return
@@ -2212,6 +2227,19 @@ class MainActivity : ComponentActivity() {
         // Chromecast / AirScreen handoff: mark Cast session BEFORE reclaim gate.
         // Otherwise Watchdog yanks the kiosk back before Media Shell is "visible".
         KioskPolicy.markCastSessionIfActive(this)
+        if (
+            CastHandoffMonitor.isYieldingForCast() ||
+            CastHandoffMonitor.isCastReceiverElevated(this) ||
+            CastHandoffMonitor.isArmedForIncomingCast() ||
+            KioskPolicy.isCastExternalSession(this)
+        ) {
+            Log.i(TAG, "onUserLeaveHint — Cast handoff, skip reclaim + unpin")
+            KioskLockTask.ensureChromecastAllowlisted(this)
+            runCatching { stopLockTask() }
+            runCatching { moveTaskToBack(true) }
+            super.onUserLeaveHint()
+            return
+        }
 
         val skipLabel = KioskPolicy.reclaimSkipLabel(
             reason = "onUserLeaveHint",
@@ -2307,6 +2335,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        CastHandoffMonitor.detachActivity(this)
         nestedAdminBackHandler = null
         try {
             BlockedKeysManager.setLearnMode(applicationContext, false)

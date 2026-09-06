@@ -392,8 +392,14 @@ object KioskPolicy {
      * kiosk UI instead of going full-screen.
      */
     fun shouldProtectExternalAppSession(context: Context): Boolean {
-        // Live Cast / AirPlay receiver on screen → never reclaim over it.
-        if (isCastReceiverActive(context)) return true
+        // Mid Cast handoff (Lock Task temporarily stopped) — never reclaim over Cast UI.
+        if (CastHandoffMonitor.isYieldingForCast()) return true
+
+        // Guest opened Screen Cast dialog — keep reclaim quiet until phone connects.
+        if (CastHandoffMonitor.isArmedForIncomingCast()) return true
+
+        // Live Cast / AirPlay receiver elevated (FGS+) → never reclaim over it.
+        if (CastHandoffMonitor.isCastReceiverElevated(context)) return true
 
         // Cast was marked earlier but the session already ended → drop sticky flag
         // so Watchdog / lifecycle reclaim can restore the hotel kiosk UI.
@@ -407,25 +413,25 @@ object KioskPolicy {
     }
 
     /**
-     * True while Android TV built-in Chromecast (Media Shell) is displaying or
-     * holding a Cast session (foreground UI or foreground service).
+     * True while Android TV built-in Chromecast (Media Shell) is actively casting
+     * (foreground service or higher — not merely a cached idle process).
      */
     fun isChromecastReceiverActive(context: Context): Boolean =
-        // Use CACHED — Cast handoff often starts Media Shell before it reaches SERVICE/VISIBLE.
         isPackageAtMostImportance(
             context,
             KioskLockTask.CHROMECAST_PACKAGE,
-            ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED,
+            ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE,
         )
 
     /**
-     * True while AirScreen is displaying or holding a Cast / AirPlay session.
+     * True while AirScreen is actively casting / mirroring
+     * (foreground service or higher — not merely a cached idle process).
      */
     fun isAirScreenReceiverActive(context: Context): Boolean =
         isPackageAtMostImportance(
             context,
             KioskLockTask.AIRSCREEN_PACKAGE,
-            ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED,
+            ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE,
         )
 
     /** True while any Cast receiver (Media Shell or AirScreen) is active. */

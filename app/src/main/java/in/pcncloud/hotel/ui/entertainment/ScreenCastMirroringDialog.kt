@@ -11,8 +11,10 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.Toast
 import `in`.pcncloud.hotel.R
+import `in`.pcncloud.hotel.kiosk.CastHandoffMonitor
 import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
+import android.app.Activity
 
 /**
  * TV-friendly Screen Cast & Mirroring dialog.
@@ -49,6 +51,8 @@ class ScreenCastMirroringDialog private constructor(
             setOnClickListener { launchAirScreen() }
             post { requestFocus() }
         }
+        // Keep Cast arm after dismiss — guest usually closes the dialog then casts
+        // from YouTube / Prime. Arm expires (~15 min) and restores Lock Task.
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -100,6 +104,16 @@ class ScreenCastMirroringDialog private constructor(
         /** Show the cast/mirroring dialog over the current Activity window. */
         @JvmStatic
         fun show(context: Context): ScreenCastMirroringDialog {
+            // Unpin Lock Task now so YouTube / Prime Cast can paint when the phone
+            // connects — allowlisting mediashell alone is not enough on many ATVs.
+            val activity = context as? Activity
+            if (activity != null) {
+                CastHandoffMonitor.prepareForIncomingCast(activity)
+            } else {
+                CastHandoffMonitor.armForIncomingCast()
+                CastHandoffMonitor.start(context.applicationContext)
+                KioskLockTask.ensureChromecastAllowlisted(context)
+            }
             return ScreenCastMirroringDialog(context).also { it.show() }
         }
     }
