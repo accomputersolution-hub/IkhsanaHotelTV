@@ -396,7 +396,16 @@ class MainActivity : ComponentActivity() {
                 val adminComponent = MyDeviceAdminReceiver.getComponentName(this)
                 // Keep session-launched OTTs + RTDB list in the whitelist so Lock Task
                 // never shrinks mid-OTT and lets HOME escape to the box launcher.
-                val packages = KioskLockTask.buildEffectiveLockTaskPackages(this)
+                // Always include hotel app + Chromecast Media Shell so Cast UI
+                // can legally take the foreground under Device Owner Lock Task.
+                KioskLockTask.ensureChromecastAllowlisted(this)
+                val packages = KioskLockTask.buildEffectiveLockTaskPackages(
+                    this,
+                    listOf(
+                        KioskLockTask.CHROMECAST_PACKAGE,
+                        KioskLockTask.AIRSCREEN_PACKAGE,
+                    ),
+                )
 
                 dpm.setLockTaskPackages(adminComponent, packages)
                 MyDeviceAdminReceiver.applyStrictLockTaskFeatures(this)
@@ -1666,6 +1675,9 @@ class MainActivity : ComponentActivity() {
                         Log.i(TAG, "onResume — clearing isExternalAppActive (returned from OTT)")
                         KioskPolicy.clearExternalAppActive(this)
                         KioskPolicy.clearOttLaunchState(this)
+                        // Re-pin after Cast ends (especially important for non-DO unpin path).
+                        KioskLockTask.ensureChromecastAllowlisted(this)
+                        startLockTaskSafely("onResume_after_cast")
                     }
                 }
             }
@@ -1726,9 +1738,19 @@ class MainActivity : ComponentActivity() {
         val kioskOn = KioskPolicy.isKioskModeEnabled(this)
         if (!kioskOn) return
 
-        // Phone Chromecast connected → keep hotel UI in background so Cast fills the screen.
+        // Phone Chromecast connected → yield the screen to Media Shell / AirScreen.
         if (KioskPolicy.markCastSessionIfActive(this) != null) {
-            Log.i(TAG, "onPause — Cast active, moveTaskToBack (yield screen)")
+            Log.i(TAG, "onPause — Cast active, yield screen to receiver")
+            // Non–Device Owner screen pin only allows THIS app; unpin so Cast can paint.
+            if (!KioskPolicy.isDeviceOwner(this)) {
+                runCatching {
+                    stopLockTask()
+                    Log.i(TAG, "onPause — stopLockTask (non-DO) so Cast can foreground")
+                }
+            } else {
+                // DO Lock Task: mediashell is allowlisted; still push hotel task back.
+                KioskLockTask.ensureChromecastAllowlisted(this)
+            }
             runCatching { moveTaskToBack(true) }
             return
         }

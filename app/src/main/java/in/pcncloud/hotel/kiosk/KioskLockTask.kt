@@ -155,6 +155,8 @@ object KioskLockTask {
                 TAG,
                 "setLockTaskPackages (effective) → ${allowedApps.toList()}",
             )
+            // Explicit mediashell keep-alive (Cast UI under Lock Task).
+            rememberSessionLockTaskPackage(context, CHROMECAST_PACKAGE)
 
             // API 28+: hide status / nav / home affordances that can leak native TV UI.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -191,6 +193,39 @@ object KioskLockTask {
      * Ensure Lock Task is active before launching an allowlisted external app.
      * Must be called from an [Activity] context when kiosk is enabled.
      */
+
+    /**
+     * Re-push Lock Task packages so hotel app + Chromecast Media Shell (+ AirScreen /
+     * Live TV baseline) are always allowlisted. Call whenever Lock Task is (re)started
+     * so phone Cast can legally take the foreground under Device Owner pin.
+     */
+    fun ensureChromecastAllowlisted(context: Context): Boolean {
+        if (!KioskPolicy.isKioskModeEnabled(context)) return false
+        return try {
+            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val adminName = adminComponent(context)
+            if (!dpm.isDeviceOwnerApp(context.packageName)) {
+                Log.d(TAG, "ensureChromecastAllowlisted — not Device Owner (screen pin only)")
+                return false
+            }
+            rememberSessionLockTaskPackage(context, CHROMECAST_PACKAGE)
+            val packages = buildEffectiveLockTaskPackages(
+                context,
+                listOf(CHROMECAST_PACKAGE, AIRSCREEN_PACKAGE),
+            )
+            dpm.setLockTaskPackages(adminName, packages)
+            Log.i(
+                TAG,
+                "ensureChromecastAllowlisted → setLockTaskPackages " +
+                    "(includes mediashell) ${packages.toList()}",
+            )
+            true
+        } catch (t: Throwable) {
+            Log.e(TAG, "ensureChromecastAllowlisted failed", t)
+            false
+        }
+    }
+
     fun ensureLockTaskActive(context: Context) {
         if (!KioskPolicy.isKioskModeEnabled(context) &&
             !context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

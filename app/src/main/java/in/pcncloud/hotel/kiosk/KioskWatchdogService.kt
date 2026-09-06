@@ -34,8 +34,21 @@ class KioskWatchdogService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private val pollRunnable = object : Runnable {
         override fun run() {
-            maybeBringToFront("watchdog_poll")
-            handler.postDelayed(this, POLL_INTERVAL_MS)
+            // Drop sticky Cast protection once Media Shell / AirScreen has stopped,
+            // then reclaim hotel UI if needed.
+            val castEnded = KioskPolicy.clearStaleCastSessionIfEnded(this@KioskWatchdogService)
+            maybeBringToFront(
+                if (castEnded) "watchdog_cast_ended" else "watchdog_poll",
+            )
+            // Poll faster while a Cast session is marked so resume is snappy.
+            val delayMs = if (KioskPolicy.isCastExternalSession(this@KioskWatchdogService) ||
+                KioskPolicy.isCastReceiverActive(this@KioskWatchdogService)
+            ) {
+                CAST_POLL_INTERVAL_MS
+            } else {
+                POLL_INTERVAL_MS
+            }
+            handler.postDelayed(this, delayMs)
         }
     }
 
@@ -93,7 +106,7 @@ class KioskWatchdogService : Service() {
         }
         // Hard gate: never steal focus from YouTube / Netflix / Live TV (EKTV Pro).
         if (KioskPolicy.shouldProtectExternalAppSession(this)) {
-            Log.d(TAG, "maybeBringToFront skipped — Live TV / OTT protected ($reason)")
+            Log.d(TAG, "maybeBringToFront skipped — Live TV / OTT / Cast protected ($reason)")
             return
         }
         // Hard gate: never relaunch UI while kiosk is disabled.
@@ -180,6 +193,8 @@ class KioskWatchdogService : Service() {
         private const val CHANNEL_ID = "hotel_tv_kiosk"
         private const val NOTIFICATION_ID = 1001
         private const val POLL_INTERVAL_MS = 30_000L
+        /** Faster poll while Cast is (or was) active so the kiosk resumes quickly. */
+        private const val CAST_POLL_INTERVAL_MS = 3_000L
 
         const val ACTION_CHECK_NOW = "in.pcncloud.hotel.kiosk.CHECK_NOW"
         const val ACTION_STOP = "in.pcncloud.hotel.kiosk.STOP"

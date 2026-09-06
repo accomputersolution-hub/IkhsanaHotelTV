@@ -392,12 +392,17 @@ object KioskPolicy {
      * kiosk UI instead of going full-screen.
      */
     fun shouldProtectExternalAppSession(context: Context): Boolean {
+        // Live Cast / AirPlay receiver on screen → never reclaim over it.
+        if (isCastReceiverActive(context)) return true
+
+        // Cast was marked earlier but the session already ended → drop sticky flag
+        // so Watchdog / lifecycle reclaim can restore the hotel kiosk UI.
+        clearStaleCastSessionIfEnded(context)
+
         if (isExternalAppActive(context)) return true
         if (isOttLaunchGracePeriod(context)) return true
         if (isLastOttPackageVisible(context)) return true
         if (isPackageVisible(context, KioskLockTask.LIVE_TV_PACKAGE)) return true
-        if (isChromecastReceiverActive(context)) return true
-        if (isAirScreenReceiverActive(context)) return true
         return false
     }
 
@@ -441,6 +446,36 @@ object KioskPolicy {
         markOttLaunched(context, pkg)
         Log.i(TAG, "Cast session protected → $pkg")
         return pkg
+    }
+
+    /**
+     * When the last intentional external package was a Cast receiver but Media Shell /
+     * AirScreen is no longer running, clear the sticky OTT flag so the kiosk resumes.
+     */
+    fun clearStaleCastSessionIfEnded(context: Context): Boolean {
+        val last = getLastOttPackage(context)?.trim().orEmpty()
+        if (last != KioskLockTask.CHROMECAST_PACKAGE &&
+            last != KioskLockTask.AIRSCREEN_PACKAGE
+        ) {
+            return false
+        }
+        if (isCastReceiverActive(context)) return false
+
+        prefs(context).edit()
+            .putBoolean(KEY_EXTERNAL_APP_ACTIVE, false)
+            .remove(KEY_EXTERNAL_APP_UNTIL)
+            .remove(KEY_LAST_OTT_PACKAGE)
+            .remove(KEY_OTT_LAUNCHED_AT_MS)
+            .apply()
+        Log.i(TAG, "Cast session ended ($last) — kiosk reclaim re-enabled")
+        return true
+    }
+
+    /** True when the durable external session is a Cast / AirPlay receiver package. */
+    fun isCastExternalSession(context: Context): Boolean {
+        val last = getLastOttPackage(context)?.trim().orEmpty()
+        return last == KioskLockTask.CHROMECAST_PACKAGE ||
+            last == KioskLockTask.AIRSCREEN_PACKAGE
     }
 
     /**
