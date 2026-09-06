@@ -14,6 +14,7 @@ import { flushRoomSession, newSessionKey } from './session-reset.js';
 import { getHotelId, onHotelChange } from './tenant-context.js';
 import { isSuperAdmin } from './auth.js';
 import { isSuperAdminManagedRoom, purgeUnmanagedRooms } from './room-inventory.js';
+import { unpairTvApi } from './api-client.js';
 
 const ROOM_STATUSES = {
   vacant: { label: 'Vacant', badge: 'room-status-vacant' },
@@ -512,59 +513,21 @@ async function handleUnpairTv(roomNumber, btn) {
   btn.textContent = 'Unpairing…';
 
   try {
-    // Firestore: clear room pairing + decrement activeTvScreens (floor 0).
-    await runTransaction(db, async (tx) => {
-      const hotelRef = doc(db, 'Hotels', hotelId);
-      const roomRef = doc(db, 'Hotels', hotelId, 'Rooms', room);
-      const roomSnap = await tx.get(roomRef);
-      const hotelSnap = await tx.get(hotelRef);
-      const roomData = roomSnap.exists() ? roomSnap.data() || {} : {};
-      const counted =
-        roomData.pairingCounted === true || roomData.pairing_counted === true;
-
-      if (counted) {
-        const current = Math.max(0, Number(hotelSnap.data()?.activeTvScreens) || 0);
-        const next = Math.max(0, current - 1);
-        tx.set(
-          hotelRef,
-          {
-            activeTvScreens: next,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true },
-        );
-      }
-
-      tx.set(
-        roomRef,
-        {
-          isTvPaired: false,
-          is_tv_paired: false,
-          pairedDeviceId: '',
-          paired_device_id: '',
-          pairingCounted: false,
-          pairing_counted: false,
-          unpairedAt: Date.now(),
-          unpairedBy: 'admin_panel',
-          roomNumber: room,
-        },
-        { merge: true },
-      );
-    });
-
-    // RTDB: signal TV to return to pairing screen.
-    const path = `hotels/${hotelId}/rooms/${room}`;
-    await rtdbUpdate(rtdbRef(rtdb, path), {
-      session_active: false,
-      status: 'UNPAIRED',
-      unpairedAt: Date.now(),
-      unpairedBy: 'admin_panel',
-    });
-    console.log('[unpair] Firestore + RTDB OK →', room);
+    // Prefer Admin SDK API — client Firestore/RTDB rules often deny hotel staff writes.
+    await unpairTvApi(hotelId, room);
+    console.log('[unpair] API OK →', hotelId, room);
     toast(`${formatRoomLabel(room)} TV unpaired — device will return to pairing`);
   } catch (err) {
     console.error('[unpair] failed:', err);
-    toast(err.message || 'Failed to unpair TV', 'error');
+    const msg = String(err?.message || '');
+    if (/permission|denied|authorized|403/i.test(msg)) {
+      toast(
+        'Permission denied — sign in as Hotel Admin / Super Admin for this hotel, then try Unpair again.',
+        'error',
+      );
+    } else {
+      toast(msg || 'Failed to unpair TV', 'error');
+    }
   } finally {
     btn.disabled = false;
     btn.textContent = prev;

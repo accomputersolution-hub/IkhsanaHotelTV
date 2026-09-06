@@ -90,3 +90,12 @@ export async function publishAnnouncementApi(hotelId, text) {
     { auth: true },
   );
 }
+
+/** Unpair a room TV via Admin SDK (bypasses Firestore/RTDB client permission denials). */
+export async function unpairTvApi(hotelId, roomNumber) {
+  return postJson(
+    '/api/tv/unpair',
+    { hotelId, roomNumber },
+    { auth: true },
+  );
+}
