@@ -765,11 +765,20 @@ class MainActivity : ComponentActivity() {
         val kioskOn = resolveKioskEnabled() || KioskPolicy.isKioskModeEnabled(this)
         Log.i(
             TAG,
-            "Home launcher diagnostic → package=$packageName isDefault=$isDefault kiosk=$kioskOn",
+            "Home launcher diagnostic → package=$packageName " +
+                "component=${KioskPolicy.homeLauncherComponent(this)} " +
+                "isDefault=$isDefault kiosk=$kioskOn " +
+                "adb=${KioskPolicy.setHomeActivityAdbCommand(this)}",
         )
 
         if (!kioskOn) {
             Log.d(TAG, "Skip Home launcher prompt — kiosk disabled")
+            return
+        }
+
+        // Device Owner: set persistent preferred HOME without a picker.
+        if (KioskPolicy.ensurePersistentDefaultHomeLauncher(this)) {
+            KioskPolicy.clearReclaimSuppression("persistent_home_set")
             return
         }
 
@@ -779,7 +788,11 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        Log.w(TAG, "Not default HOME launcher — opening Home settings / chooser")
+        Log.w(
+            TAG,
+            "Not default HOME launcher — opening Home settings / chooser. " +
+                "Or run: ${KioskPolicy.setHomeActivityAdbCommand(this)}",
+        )
         openDefaultHomePicker()
     }
 

@@ -26,10 +26,11 @@ import `in`.pcncloud.hotel.BuildConfig
 class MyDeviceAdminReceiver : DeviceAdminReceiver() {
 
     override fun onEnabled(context: Context, intent: Intent) {
-        Log.i(TAG, "Device admin enabled — applying Lock Task + Always-On VPN policy")
+        Log.i(TAG, "Device admin enabled - applying Lock Task + Always-On VPN + HOME launcher")
         ensureSelfAllowlisted(context)
         applyStrictLockTaskFeatures(context)
         ensureAlwaysOnWireGuardVpn(context)
+        KioskPolicy.ensurePersistentDefaultHomeLauncher(context)
     }
 
     override fun onDisabled(context: Context, intent: Intent) {

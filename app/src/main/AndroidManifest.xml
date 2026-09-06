@@ -100,7 +100,22 @@
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
-            <!-- Required for OS Home button / set-home-activity (must be a separate filter) -->
+            <!--
+              Required for OS Home / set-home-activity (separate filter from LAUNCHER).
+
+              Real component (both flavors):
+                <applicationId>/in.pcncloud.hotel.MainActivity
+
+              Corporate ADB (applicationId != class package — do NOT use /.MainActivity):
+                adb shell cmd package set-home-activity in.pcncloud.corporate/in.pcncloud.hotel.MainActivity
+
+              Hotel ADB:
+                adb shell cmd package set-home-activity in.pcncloud.hotel/.MainActivity
+                (or full) in.pcncloud.hotel/in.pcncloud.hotel.MainActivity
+
+              Corporate also merges activity-alias in.pcncloud.corporate.MainActivity → this activity
+              so the common /.MainActivity shorthand works for corporate builds.
+            -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
