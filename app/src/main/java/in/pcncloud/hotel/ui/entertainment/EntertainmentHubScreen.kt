@@ -61,6 +61,7 @@ import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.integration.AppLauncherUtils
+import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.BaseScreen
@@ -208,7 +209,10 @@ fun EntertainmentHubScreen(
                                         appLabel = context.getString(app.labelRes),
                                     )
                                 } else if (app.id == "chromecast") {
-                                    // Cast receiver is headless — guide guest to cast from phone.
+                                    // Headless Cast receiver — unlock Lock Task + guide phone Cast.
+                                    // Without prepareChromecastForKiosk, phone Cast only works after
+                                    // the kiosk app is force-stopped (Lock Task blocks Media Shell).
+                                    KioskLockTask.prepareChromecastForKiosk(context)
                                     Toast.makeText(
                                         context,
                                         context.getString(R.string.entertainment_cast_ready),
