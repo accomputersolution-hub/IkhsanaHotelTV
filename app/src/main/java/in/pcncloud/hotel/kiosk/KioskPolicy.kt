@@ -5,8 +5,10 @@ import android.app.ActivityManager
 import android.app.ActivityOptions
 import android.app.PendingIntent
 import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Build
@@ -46,7 +48,7 @@ object KioskPolicy {
     /**
      * Minimum safe gap between consecutive PendingIntent reclaim sends.
      * Primary reclaim always fires immediately; this only drops duplicate
-     * secondary calls (prevents pause/resume storms) — never delays the first.
+     * secondary calls (prevents pause/resume storms) - never delays the first.
      */
     private const val FORCE_BRING_DEBOUNCE_MS = 50L
     /**
@@ -62,7 +64,7 @@ object KioskPolicy {
     /**
      * Minimum interval between consecutive forceBringToFront startActivity calls.
      * Prevents ActivityManager throttle and onPause ↔ onNewIntent storms.
-     * Does **not** delay the primary Intent — only drops secondary calls inside the window.
+     * Does **not** delay the primary Intent - only drops secondary calls inside the window.
      */
     private const val RECLAIM_PENDING_GUARD_MS = 50L
 
@@ -77,7 +79,7 @@ object KioskPolicy {
 
     /**
      * True while [IntroVideoScreen] is the active NavHost destination.
-     * Process-local — Watchdog / onNewIntent must not force Root Home nav
+     * Process-local - Watchdog / onNewIntent must not force Root Home nav
      * (that released ExoPlayer on API 28 before playback could finish).
      */
     @Volatile
@@ -85,7 +87,7 @@ object KioskPolicy {
 
     /**
      * True while Staff Secret Settings / Master PIN UI is on screen.
-     * Process-local — focus loss from Toast / dialogs must NOT snap to Home.
+     * Process-local - focus loss from Toast / dialogs must NOT snap to Home.
      */
     @Volatile
     private var staffAdminUiActive: Boolean = false
@@ -120,15 +122,15 @@ object KioskPolicy {
         isReclaimPending = false
     }
 
-    /** Product / Remote Config key name — also stored in SharedPreferences. */
+    /** Product / Remote Config key name - also stored in SharedPreferences. */
     const val KEY_KIOSK_ENABLED = "is_kiosk_mode_enabled"
 
-    /** Legacy key — migrated once to [KEY_KIOSK_ENABLED]. */
+    /** Legacy key - migrated once to [KEY_KIOSK_ENABLED]. */
     private const val KEY_KIOSK_ENABLED_LEGACY = "kiosk_mode_enabled"
 
     private const val KEY_ADMIN_OVERRIDE = "kiosk_admin_override"
     /**
-     * Set by [exitKioskModeCleanly] — cleared when the user intentionally re-opens
+     * Set by [exitKioskModeCleanly] - cleared when the user intentionally re-opens
      * the app so kiosk / Lock Task / HOME reclaim are restored.
      */
     private const val KEY_STAFF_LAUNCHER_EXIT_PENDING = "staff_launcher_exit_pending"
@@ -143,7 +145,7 @@ object KioskPolicy {
      * Cleared only on HOME/BACK return ([clearExternalAppActive] / [clearOttLaunchState]).
      */
     private const val KEY_EXTERNAL_APP_ACTIVE = "is_external_app_active"
-    /** Wall-clock when [markOttLaunched] last ran — blocks premature onResume clear. */
+    /** Wall-clock when [markOttLaunched] last ran - blocks premature onResume clear. */
     private const val KEY_OTT_LAUNCHED_AT_MS = "ott_launched_at_ms"
     /** Block accidental OTT re-launch after returning from YouTube / Home. */
     private const val KEY_OTT_LAUNCH_SUPPRESS_UNTIL = "ott_launch_suppress_until_ms"
@@ -154,7 +156,7 @@ object KioskPolicy {
 
     /** Explicit Admin whitelist from RTDB `hotels/{id}/config/allowedPackages`. */
     private const val KEY_ALLOWED_PACKAGES = "allowedPackages"
-    /** Hotel that owns [KEY_ALLOWED_PACKAGES] — prevents cross-tenant leakage. */
+    /** Hotel that owns [KEY_ALLOWED_PACKAGES] - prevents cross-tenant leakage. */
     private const val KEY_ALLOWED_PACKAGES_HOTEL_ID = "allowedPackagesHotelId"
 
     /** MainActivity / Admin camelCase flag (preferred over [KEY_KIOSK_ENABLED] when set). */
@@ -183,7 +185,7 @@ object KioskPolicy {
                 app
             }
         } catch (e: Exception) {
-            Log.w(TAG, "prefs: CE storage unavailable — using device-protected context", e)
+            Log.w(TAG, "prefs: CE storage unavailable - using device-protected context", e)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 app.createDeviceProtectedStorageContext()
             } else {
@@ -200,7 +202,7 @@ object KioskPolicy {
                 val userManager = getSystemService(Context.USER_SERVICE) as? UserManager
                 userManager?.isUserUnlocked ?: true
             } catch (_: Exception) {
-                // Fail open — prefer attempting CE; prefs() catch falls back to DE.
+                // Fail open - prefer attempting CE; prefs() catch falls back to DE.
                 true
             }
         }
@@ -215,7 +217,7 @@ object KioskPolicy {
                     .putBoolean(KEY_KIOSK_ENABLED, legacy)
                     .remove(KEY_KIOSK_ENABLED_LEGACY)
                     .apply()
-                Log.i(TAG, "Migrated legacy kiosk flag → $KEY_KIOSK_ENABLED=$legacy")
+                Log.i(TAG, "Migrated legacy kiosk flag -> $KEY_KIOSK_ENABLED=$legacy")
             }
         } catch (e: Exception) {
             Log.w(TAG, "migrateIfNeeded skipped (Direct Boot / storage locked?)", e)
@@ -238,7 +240,7 @@ object KioskPolicy {
 
     /**
      * True when this package is provisioned as Device Owner.
-     * Never throws — physical TVs where `dpm set-device-owner` was rejected return false.
+     * Never throws - physical TVs where `dpm set-device-owner` was rejected return false.
      */
     fun isDeviceOwner(context: Context): Boolean {
         return try {
@@ -246,13 +248,13 @@ object KioskPolicy {
                 context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             dpm.isDeviceOwnerApp(context.packageName)
         } catch (e: Exception) {
-            Log.w(TAG, "isDeviceOwner check failed — treating as non-owner", e)
+            Log.w(TAG, "isDeviceOwner check failed - treating as non-owner", e)
             false
         }
     }
 
     /**
-     * Kiosk ON but Device Owner missing / rejected → use Screen Pinning + Overlay fallback.
+     * Kiosk ON but Device Owner missing / rejected -> use Screen Pinning + Overlay fallback.
      */
     fun needsPhysicalTvFallback(context: Context): Boolean =
         isKioskModeEnabled(context) && !isDeviceOwner(context)
@@ -274,6 +276,66 @@ object KioskPolicy {
             resolvedPackage.equals(context.packageName, ignoreCase = true)
         } catch (e: Exception) {
             Log.w(TAG, "isMyAppDefaultLauncher check failed", e)
+            false
+        }
+    }
+
+    /**
+     * Exact PackageManager component for [MainActivity] as default Home.
+     *
+     * Corporate note: applicationId is `in.pcncloud.corporate` but the class lives in
+     * `in.pcncloud.hotel`, so ADB must use the full class name - not `.MainActivity`
+     * (that wrongly expands to `in.pcncloud.corporate.MainActivity`).
+     *
+     * Correct ADB:
+     * ```
+     * adb shell cmd package set-home-activity in.pcncloud.corporate/in.pcncloud.hotel.MainActivity
+     * ```
+     * Corporate also registers alias `in.pcncloud.corporate.MainActivity` -> same target.
+     */
+    fun homeLauncherComponent(context: Context): ComponentName =
+        ComponentName(context.packageName, "in.pcncloud.hotel.MainActivity")
+
+    /** Flavor-aware ADB one-liner for [cmd package set-home-activity]. */
+    fun setHomeActivityAdbCommand(context: Context): String =
+        "adb shell cmd package set-home-activity " +
+            "${context.packageName}/in.pcncloud.hotel.MainActivity"
+
+    /**
+     * Device Owner: permanently prefer this app as the HOME launcher via
+     * [DevicePolicyManager.addPersistentPreferredActivity].
+     * No-op when not Device Owner (caller should open Home settings instead).
+     */
+    fun ensurePersistentDefaultHomeLauncher(context: Context): Boolean {
+        if (!isDeviceOwner(context)) {
+            Log.d(
+                TAG,
+                "ensurePersistentDefaultHomeLauncher - not Device Owner; " +
+                    "use: ${setHomeActivityAdbCommand(context)}",
+            )
+            return false
+        }
+        return try {
+            val dpm =
+                context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val admin = MyDeviceAdminReceiver.getComponentName(context)
+            val homeFilter = IntentFilter(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addCategory(Intent.CATEGORY_DEFAULT)
+            }
+            val homeComponent = homeLauncherComponent(context)
+            dpm.addPersistentPreferredActivity(admin, homeFilter, homeComponent)
+            Log.i(
+                TAG,
+                "Persistent HOME launcher set -> $homeComponent " +
+                    "(adb=${setHomeActivityAdbCommand(context)})",
+            )
+            true
+        } catch (e: SecurityException) {
+            Log.e(TAG, "ensurePersistentDefaultHomeLauncher SecurityException", e)
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "ensurePersistentDefaultHomeLauncher failed", e)
             false
         }
     }
@@ -342,7 +404,7 @@ object KioskPolicy {
      * Unified gate: reclaim / Watchdog / Root-Home snap must not run.
      *
      * When [context] is provided, also skips while an intentional OTT / Live TV
-     * session is active or [KioskLockTask.LIVE_TV_PACKAGE] is still visible —
+     * session is active or [KioskLockTask.LIVE_TV_PACKAGE] is still visible -
      * Watchdog must never steal focus from EKTV Pro.
      *
      * @param ignoreTimedSuppress when true (Accessibility HOME), still reclaim
@@ -358,19 +420,19 @@ object KioskPolicy {
         ignoreTimedSuppress: Boolean = false,
     ): String? {
         if (exitingAppCleanly) {
-            Log.d(TAG, "skip reclaim — exitingAppCleanly ($reason)")
+            Log.d(TAG, "skip reclaim - exitingAppCleanly ($reason)")
             return "exitingAppCleanly"
         }
         if (staffAdminUiActive) {
-            Log.d(TAG, "skip reclaim — staffAdminUiActive ($reason)")
+            Log.d(TAG, "skip reclaim - staffAdminUiActive ($reason)")
             return "staffAdminUiActive"
         }
         if (!ignoreTimedSuppress && isReclaimSuppressed()) {
-            Log.d(TAG, "skip reclaim — suppress window ($reason)")
+            Log.d(TAG, "skip reclaim - suppress window ($reason)")
             return "timedSuppress"
         }
         if (context != null && shouldProtectExternalAppSession(context)) {
-            Log.d(TAG, "skip reclaim — Live TV / OTT / Cast protected ($reason)")
+            Log.d(TAG, "skip reclaim - Live TV / OTT / Cast protected ($reason)")
             return "ottSession"
         }
         return null
@@ -387,8 +449,8 @@ object KioskPolicy {
      * Chromecast Media Shell is still on screen (even if the durable flag was
      * cleared too early).
      *
-     * Without Media Shell protection, phone→TV Cast briefly steals focus and
-     * Watchdog / onUserLeaveHint reclaim the hotel app — Cast only works after
+     * Without Media Shell protection, phone->TV Cast briefly steals focus and
+     * Watchdog / onUserLeaveHint reclaim the hotel app - Cast only works after
      * the kiosk process is force-stopped.
      */
     fun shouldProtectExternalAppSession(context: Context): Boolean {
@@ -413,7 +475,7 @@ object KioskPolicy {
 
     /**
      * Persist Super Admin package whitelist for [hotelId] only.
-     * Never write a global/unscoped list — empty [hotelId] clears the cache.
+     * Never write a global/unscoped list - empty [hotelId] clears the cache.
      */
     fun setAllowedPackagesList(
         context: Context,
@@ -437,13 +499,13 @@ object KioskPolicy {
         Log.i(
             TAG,
             "allowedPackages hotelId=$normalizedHotel count=${cleaned.size} " +
-                "(includes Live TV baseline) → $cleaned",
+                "(includes Live TV baseline) -> $cleaned",
         )
     }
 
     /**
      * Returns this hotel's whitelist only.
-     * Mismatch / missing hotel / unpaired → [emptyList] (no cross-tenant fallback).
+     * Mismatch / missing hotel / unpaired -> [emptyList] (no cross-tenant fallback).
      */
     fun getAllowedPackagesList(
         context: Context,
@@ -453,15 +515,15 @@ object KioskPolicy {
             hotelId ?: HotelConfig(context).getHotelId(),
         )
         if (currentHotel.isBlank()) {
-            Log.d(TAG, "getAllowedPackagesList — unpaired → baseline only")
+            Log.d(TAG, "getAllowedPackagesList - unpaired -> baseline only")
             return KioskLockTask.BASELINE_LOCK_TASK_PACKAGES
         }
         val cachedHotel = prefs(context).getString(KEY_ALLOWED_PACKAGES_HOTEL_ID, null)
         val stored = if (cachedHotel.isNullOrBlank() || cachedHotel != currentHotel) {
             Log.w(
                 TAG,
-                "getAllowedPackagesList — cache miss/mismatch " +
-                    "cached=$cachedHotel current=$currentHotel → baseline only",
+                "getAllowedPackagesList - cache miss/mismatch " +
+                    "cached=$cachedHotel current=$currentHotel -> baseline only",
             )
             emptyList()
         } else {
@@ -514,7 +576,7 @@ object KioskPolicy {
         } catch (e: Exception) {
             Log.w(TAG, "Watchdog stop during clearTenantKioskCache failed", e)
         }
-        Log.i(TAG, "clearTenantKioskCache — hotel_tv_kiosk tenant state wiped")
+        Log.i(TAG, "clearTenantKioskCache - hotel_tv_kiosk tenant state wiped")
     }
 
     /**
@@ -531,7 +593,7 @@ object KioskPolicy {
         if (cachedHotel != normalized) {
             Log.w(
                 TAG,
-                "Whitelist tenant switch cached=$cachedHotel → $normalized — clearing stale list",
+                "Whitelist tenant switch cached=$cachedHotel -> $normalized - clearing stale list",
             )
             setAllowedPackagesList(context, emptyList(), normalized)
         }
@@ -539,24 +601,24 @@ object KioskPolicy {
 
     /**
      * Validates whether an external app may be launched.
-     * When Kiosk Mode is OFF → allow everything.
-     * When Kiosk Mode is ON → any non-empty package (Admin `allowedPackages` is
+     * When Kiosk Mode is OFF -> allow everything.
+     * When Kiosk Mode is ON -> any non-empty package (Admin `allowedPackages` is
      * persisted for the panel but no longer blocks guest launches).
-     * Never throws — a prefs / parse failure fails closed (deny) under kiosk.
+     * Never throws - a prefs / parse failure fails closed (deny) under kiosk.
      */
     fun canLaunchApp(context: Context, targetPackageName: String): Boolean {
         return try {
             if (!isKioskModeEnabled(context)) return true
             targetPackageName.trim().isNotEmpty()
         } catch (t: Throwable) {
-            Log.e(TAG, "canLaunchApp failed — denying under kiosk (safe)", t)
+            Log.e(TAG, "canLaunchApp failed - denying under kiosk (safe)", t)
             isKioskModeEnabled(context).not()
         }
     }
 
     /**
      * Silent interception when an unauthorized package launch is refused.
-     * Never throws, never restarts the process — only reorders [MainActivity]
+     * Never throws, never restarts the process - only reorders [MainActivity]
      * to the front with [Intent.FLAG_ACTIVITY_REORDER_TO_FRONT].
      */
     fun denyExternalLaunchSilently(
@@ -565,11 +627,11 @@ object KioskPolicy {
     ): Boolean {
         return try {
             if (!blockedPackage.isNullOrBlank()) {
-                Log.w(TAG, "Silently blocked external package → $blockedPackage")
+                Log.w(TAG, "Silently blocked external package -> $blockedPackage")
             }
             bringMainActivityToFrontGracefully(context)
         } catch (t: Throwable) {
-            Log.e(TAG, "denyExternalLaunchSilently failed (ignored — no crash)", t)
+            Log.e(TAG, "denyExternalLaunchSilently failed (ignored - no crash)", t)
             true
         }
     }
@@ -612,7 +674,7 @@ object KioskPolicy {
                     )
                 }
             }
-            Log.i(TAG, "bringMainActivityToFrontGracefully — REORDER_TO_FRONT")
+            Log.i(TAG, "bringMainActivityToFrontGracefully - REORDER_TO_FRONT")
             true
         } catch (t: Throwable) {
             Log.e(TAG, "bringMainActivityToFrontGracefully failed (ignored)", t)
@@ -644,7 +706,7 @@ object KioskPolicy {
         try {
             KioskWatchdogService.stop(context.applicationContext)
         } catch (e: Exception) {
-            Log.w(TAG, "releaseAllKioskInterceptors — Watchdog stop failed", e)
+            Log.w(TAG, "releaseAllKioskInterceptors - Watchdog stop failed", e)
         }
 
         onKioskModeChangedListeners.forEach { listener ->
@@ -654,7 +716,7 @@ object KioskPolicy {
                 Log.w(TAG, "onKioskModeChanged(false) listener failed", e)
             }
         }
-        Log.i(TAG, "releaseAllKioskInterceptors — OTT/busy/Watchdog cleared (no package disables)")
+        Log.i(TAG, "releaseAllKioskInterceptors - OTT/busy/Watchdog cleared (no package disables)")
     }
 
     private val onKioskModeChangedListeners =
@@ -695,16 +757,16 @@ object KioskPolicy {
                 }
             }
         } else {
-            // Instant OFF: stop interceptors / Watchdog / OTT gates — allow GTPL focus.
+            // Instant OFF: stop interceptors / Watchdog / OTT gates - allow GTPL focus.
             releaseAllKioskInterceptors(context)
             markUserMinimized(context)
             clearDeviceOwnerLockTaskPackages(context)
             resolveActivity(context)?.let { activity ->
                 try {
                     activity.stopLockTask()
-                    Log.i(TAG, "setKioskModeEnabled(false) — stopLockTask")
+                    Log.i(TAG, "setKioskModeEnabled(false) - stopLockTask")
                 } catch (e: Exception) {
-                    Log.w(TAG, "setKioskModeEnabled(false) — stopLockTask failed", e)
+                    Log.w(TAG, "setKioskModeEnabled(false) - stopLockTask failed", e)
                 }
             }
         }
@@ -731,7 +793,7 @@ object KioskPolicy {
                 source = source,
             )
         } else {
-            // Flag already persisted (e.g. RTDB) — still tear down interceptors instantly.
+            // Flag already persisted (e.g. RTDB) - still tear down interceptors instantly.
             releaseAllKioskInterceptors(activity)
             markUserMinimized(activity)
         }
@@ -740,14 +802,14 @@ object KioskPolicy {
             // 1. Stop active Lock Task Mode (must run before clearing packages on some OEMs).
             try {
                 activity.stopLockTask()
-                Log.i(TAG, "disableKioskMode — stopLockTask ok")
+                Log.i(TAG, "disableKioskMode - stopLockTask ok")
             } catch (e: Exception) {
-                Log.w(TAG, "disableKioskMode — stopLockTask failed (may already be off)", e)
+                Log.w(TAG, "disableKioskMode - stopLockTask failed (may already be off)", e)
             }
 
             // 2. Clear Device Owner LockTask whitelist so external apps can launch freely.
             clearDeviceOwnerLockTaskPackages(activity)
-            Log.i(TAG, "disableKioskMode — Lock Task released, packages cleared")
+            Log.i(TAG, "disableKioskMode - Lock Task released, packages cleared")
         } catch (e: Exception) {
             Log.e(TAG, "Error disabling kiosk mode", e)
         }
@@ -763,13 +825,13 @@ object KioskPolicy {
                 context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             val adminComponent = MyDeviceAdminReceiver.getComponentName(context)
             if (!dpm.isDeviceOwnerApp(context.packageName)) {
-                Log.d(TAG, "clearDeviceOwnerLockTaskPackages — not Device Owner, skip")
+                Log.d(TAG, "clearDeviceOwnerLockTaskPackages - not Device Owner, skip")
                 return
             }
             // Empty array: no restricted Lock Task allowlist (OTT launches freely).
             dpm.setLockTaskPackages(adminComponent, arrayOf())
             KioskLockTask.clearSessionLockTaskPackages(context)
-            Log.i(TAG, "clearDeviceOwnerLockTaskPackages → setLockTaskPackages([])")
+            Log.i(TAG, "clearDeviceOwnerLockTaskPackages -> setLockTaskPackages([])")
         } catch (e: Exception) {
             Log.e(TAG, "clearDeviceOwnerLockTaskPackages failed", e)
         }
@@ -788,7 +850,7 @@ object KioskPolicy {
         markUserMinimized(context)
         val activity = resolveActivity(context)
         if (activity == null) {
-            Log.w(TAG, "launchSystemDefaultLauncher — no Activity context")
+            Log.w(TAG, "launchSystemDefaultLauncher - no Activity context")
             return false
         }
         return launchSystemDefaultLauncher(activity)
@@ -806,9 +868,9 @@ object KioskPolicy {
             }
 
             // Step 2: Push hotel app back to expose the TV's underlying native UI.
-            // Do NOT start GTPL / leanback / FallbackHome intents — they black-screen.
+            // Do NOT start GTPL / leanback / FallbackHome intents - they black-screen.
             val moved = activity.moveTaskToBack(true)
-            Log.i(TAG, "launchSystemDefaultLauncher → moveTaskToBack=$moved")
+            Log.i(TAG, "launchSystemDefaultLauncher -> moveTaskToBack=$moved")
             if (!moved) {
                 try {
                     activity.startActivity(
@@ -816,7 +878,7 @@ object KioskPolicy {
                             flags = Intent.FLAG_ACTIVITY_NEW_TASK
                         },
                     )
-                    Log.i(TAG, "moveTaskToBack failed — opened ACTION_SETTINGS")
+                    Log.i(TAG, "moveTaskToBack failed - opened ACTION_SETTINGS")
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed opening Settings fallback", e)
                     return false
@@ -835,7 +897,7 @@ object KioskPolicy {
     }
 
     /**
-     * Technician "Exit to Main Launcher" — ordered teardown so Watchdog / overlay
+     * Technician "Exit to Main Launcher" - ordered teardown so Watchdog / overlay
      * cannot glitch during unpin.
      *
      * Order:
@@ -845,7 +907,7 @@ object KioskPolicy {
      * 4. Launch standard HOME intent, then [moveTaskToBack] as backup
      */
     fun exitKioskModeCleanly(activity: Activity): Boolean {
-        Log.i(TAG, "exitKioskModeCleanly — begin")
+        Log.i(TAG, "exitKioskModeCleanly - begin")
         setExitingAppCleanly(true)
         suppressReclaimFor(120_000L, "exit_kiosk_cleanly")
         prefs(activity).edit()
@@ -859,7 +921,7 @@ object KioskPolicy {
         try {
             AlertOverlayService.stopFully(activity)
         } catch (e: Exception) {
-            Log.w(TAG, "exitKioskModeCleanly — AlertOverlayService stop failed", e)
+            Log.w(TAG, "exitKioskModeCleanly - AlertOverlayService stop failed", e)
         }
 
         try {
@@ -869,7 +931,7 @@ object KioskPolicy {
                 persistFlag = true,
             )
         } catch (e: Exception) {
-            Log.e(TAG, "exitKioskModeCleanly — disableKioskMode failed", e)
+            Log.e(TAG, "exitKioskModeCleanly - disableKioskMode failed", e)
             try {
                 activity.stopLockTask()
             } catch (_: Exception) {
@@ -885,26 +947,26 @@ object KioskPolicy {
             }
             activity.startActivity(homeIntent)
             launchedHome = true
-            Log.i(TAG, "exitKioskModeCleanly — CATEGORY_HOME launched")
+            Log.i(TAG, "exitKioskModeCleanly - CATEGORY_HOME launched")
         } catch (e: Exception) {
-            Log.e(TAG, "exitKioskModeCleanly — HOME intent failed", e)
+            Log.e(TAG, "exitKioskModeCleanly - HOME intent failed", e)
         }
 
         val moved = try {
             activity.moveTaskToBack(true)
         } catch (e: Exception) {
-            Log.w(TAG, "exitKioskModeCleanly — moveTaskToBack failed", e)
+            Log.w(TAG, "exitKioskModeCleanly - moveTaskToBack failed", e)
             false
         }
         Log.i(
             TAG,
-            "exitKioskModeCleanly — done home=$launchedHome moveTaskToBack=$moved",
+            "exitKioskModeCleanly - done home=$launchedHome moveTaskToBack=$moved",
         )
         return launchedHome || moved
     }
 
     /**
-     * Staff "Exit to launcher" is transient — re-opening the app must restore kiosk.
+     * Staff "Exit to launcher" is transient - re-opening the app must restore kiosk.
      * Safe to call from Application ON_START, Splash, or MainActivity entry points.
      *
      * @return true when staff-exit transient state was consumed and kiosk re-enabled
@@ -915,7 +977,7 @@ object KioskPolicy {
 
         Log.i(
             TAG,
-            "restoreKioskAfterStaffLauncherExitIfNeeded — " +
+            "restoreKioskAfterStaffLauncherExitIfNeeded - " +
                 "pending=$pending exitingAppCleanly=$exitingAppCleanly",
         )
 
@@ -951,7 +1013,7 @@ object KioskPolicy {
 
     fun clearAdminOverride(context: Context) {
         prefs(context).edit().putBoolean(KEY_ADMIN_OVERRIDE, false).apply()
-        Log.i(TAG, "Admin override cleared — Remote Config may apply again")
+        Log.i(TAG, "Admin override cleared - Remote Config may apply again")
     }
 
     fun markUserMinimized(context: Context) {
@@ -977,14 +1039,14 @@ object KioskPolicy {
             .putBoolean(KEY_EXTERNAL_APP_ACTIVE, true)
             .putLong(KEY_EXTERNAL_APP_UNTIL, until)
             .apply()
-        // Leaving for OTT is intentional — do not treat as "user minimized for Home".
+        // Leaving for OTT is intentional - do not treat as "user minimized for Home".
         clearUserMinimized(context)
         Log.i(TAG, "External app ACTIVE until=$until (${durationMs}ms)")
     }
 
     /**
      * True while guest is inside an intentionally launched OTT / allowlisted app.
-     * Authoritative gate for Watchdog — survives nav pops / Entertainment dispose.
+     * Authoritative gate for Watchdog - survives nav pops / Entertainment dispose.
      */
     fun isExternalAppActive(context: Context): Boolean =
         prefs(context).getBoolean(KEY_EXTERNAL_APP_ACTIVE, false)
@@ -997,7 +1059,7 @@ object KioskPolicy {
     }
 
     /**
-     * Clears only the time window — does **not** clear [isExternalAppActive].
+     * Clears only the time window - does **not** clear [isExternalAppActive].
      * Safe for Entertainment enter; Watchdog still respects the durable flag.
      */
     fun clearExternalAppSession(context: Context) {
@@ -1027,12 +1089,12 @@ object KioskPolicy {
             .remove(KEY_EXTERNAL_APP_UNTIL)
             .remove(KEY_OTT_LAUNCHED_AT_MS)
             .apply()
-        Log.i(TAG, "isExternalAppActive=false — Watchdog reclaim re-enabled")
+        Log.i(TAG, "isExternalAppActive=false - Watchdog reclaim re-enabled")
     }
 
     /** Remember which OTT package was intentionally launched. */
     fun markOttLaunched(context: Context, packageName: String) {
-        // Do NOT clear KEY_ON_GUEST_HOME — MainActivity may already have switched
+        // Do NOT clear KEY_ON_GUEST_HOME - MainActivity may already have switched
         // to Root Home synchronously before startActivity (anti-flicker).
         // commit() so Watchdog / onUserLeaveHint see the flag on the same leave cycle.
         prefs(context).edit()
@@ -1042,11 +1104,11 @@ object KioskPolicy {
             .putLong(KEY_OTT_LAUNCHED_AT_MS, System.currentTimeMillis())
             .commit()
         markExternalAppSession(context)
-        Log.i(TAG, "OTT launched → $packageName (isExternalAppActive=true)")
+        Log.i(TAG, "OTT launched -> $packageName (isExternalAppActive=true)")
     }
 
     /**
-     * True for a short window after [markOttLaunched] — MainActivity may briefly
+     * True for a short window after [markOttLaunched] - MainActivity may briefly
      * resume during the handoff; do not clear [isExternalAppActive] yet.
      */
     fun isOttLaunchGracePeriod(context: Context, graceMs: Long = 20_000L): Boolean {
@@ -1109,7 +1171,7 @@ object KioskPolicy {
     /**
      * Clears OTT session + durable active flag and suppresses auto re-launch briefly
      * (HOME / BACK return path only). Do **not** call from Entertainment dispose or
-     * pre-OTT Root Home nav — that would let Watchdog steal focus from YouTube.
+     * pre-OTT Root Home nav - that would let Watchdog steal focus from YouTube.
      */
     fun clearOttLaunchState(context: Context, suppressMs: Long = 2_500L) {
         val until = System.currentTimeMillis() + suppressMs
@@ -1120,7 +1182,7 @@ object KioskPolicy {
             .remove(KEY_OTT_LAUNCHED_AT_MS)
             .putLong(KEY_OTT_LAUNCH_SUPPRESS_UNTIL, until)
             .apply()
-        Log.i(TAG, "OTT launch state cleared — isExternalAppActive=false, suppress until=$until")
+        Log.i(TAG, "OTT launch state cleared - isExternalAppActive=false, suppress until=$until")
     }
 
     fun shouldSuppressOttLaunch(context: Context): Boolean {
@@ -1164,7 +1226,7 @@ object KioskPolicy {
     fun millisSinceLastForceBring(): Long =
         System.currentTimeMillis() - lastForceBringAtMs
 
-    /** Loop-guard window for [context] — 50ms on Physical TV and Device Owner. */
+    /** Loop-guard window for [context] - 50ms on Physical TV and Device Owner. */
     fun loopGuardMs(context: Context): Long =
         if (needsPhysicalTvFallback(context)) PHYSICAL_TV_LOOP_GUARD_MS else SAFE_BRING_LOOP_GUARD_MS
 
@@ -1199,22 +1261,22 @@ object KioskPolicy {
         if (currentTime - lastForceBringAtMs < guardMs) {
             Log.d(
                 TAG,
-                "forceBringToFrontSafely suppressed — loop guard " +
+                "forceBringToFrontSafely suppressed - loop guard " +
                     "(${currentTime - lastForceBringAtMs}ms < ${guardMs}ms)",
             )
             return false
         }
         if (reclaimLifecycleBusy) {
-            Log.d(TAG, "forceBringToFrontSafely skipped — onNewIntent/onResume in progress")
+            Log.d(TAG, "forceBringToFrontSafely skipped - onNewIntent/onResume in progress")
             return false
         }
         if (isInReclaimQuietPeriod()) {
-            Log.d(TAG, "forceBringToFrontSafely skipped — reclaim quiet period")
+            Log.d(TAG, "forceBringToFrontSafely skipped - reclaim quiet period")
             return false
         }
-        // Already visible — do not startActivity again (causes onPause loop).
+        // Already visible - do not startActivity again (causes onPause loop).
         if (isMainActivityForeground(context) && isProcessLifecycleStarted()) {
-            Log.d(TAG, "forceBringToFrontSafely skipped — MainActivity already foreground")
+            Log.d(TAG, "forceBringToFrontSafely skipped - MainActivity already foreground")
             return false
         }
 
@@ -1233,7 +1295,7 @@ object KioskPolicy {
 
     /**
      * True when an immediate Physical TV reclaim Intent was sent within [withinMs].
-     * Uses wall-clock only — never a sticky flag that can block after the window.
+     * Uses wall-clock only - never a sticky flag that can block after the window.
      */
     fun wasReclaimIssuedRecently(withinMs: Long = RECLAIM_PENDING_GUARD_MS): Boolean {
         if (lastForceBringAtMs <= 0L) return false
@@ -1243,11 +1305,11 @@ object KioskPolicy {
     /**
      * Physical TV (!Device Owner) urgent Home reclaim via high-priority PendingIntent.
      *
-     * Never uses plain [Context.startActivity] — that path is throttled by ActivityManager
+     * Never uses plain [Context.startActivity] - that path is throttled by ActivityManager
      * on Android TV and stalls MainActivity in ON_STOP for ~5s while GTPL shows.
      *
      * @param bypassDuplicateGuard when true (e.g. [android.app.Activity.onUserLeaveHint]),
-     *   always send the PendingIntent immediately — no 50ms storm window skip.
+     *   always send the PendingIntent immediately - no 50ms storm window skip.
      * @param ignoreTimedSuppress when true (Accessibility HOME), reclaim even during
      *   [suppressReclaimFor] windows such as the default-Home picker (180s).
      */
@@ -1273,9 +1335,9 @@ object KioskPolicy {
                 preferImmediateOptions = true,
             )
         }
-        // HOME key reclaim must interrupt OTT / suppress windows — guest pressed Home.
+        // HOME key reclaim must interrupt OTT / suppress windows - guest pressed Home.
         if (!ignoreTimedSuppress && isExternalAppActive(context)) {
-            Log.d(TAG, "forceBringToFrontPhysicalTvUrgent skipped — OTT session")
+            Log.d(TAG, "forceBringToFrontPhysicalTvUrgent skipped - OTT session")
             return false
         }
 
@@ -1312,7 +1374,7 @@ object KioskPolicy {
 
         Log.i(
             TAG,
-            "forceBringToFrontPhysicalTvUrgent — PendingIntent IMMEDIATE " +
+            "forceBringToFrontPhysicalTvUrgent - PendingIntent IMMEDIATE " +
                 "bypassGuard=$bypassDuplicateGuard " +
                 "(elapsed was ${if (elapsedMs == Long.MAX_VALUE) "n/a" else "${elapsedMs}ms"})",
         )
@@ -1333,7 +1395,7 @@ object KioskPolicy {
         val appContext = context.applicationContext
         val intent = Intent(appContext, MainActivity::class.java).apply {
             flags = reclaimIntentFlags()
-            // Never CLEAR_TOP — destroys MainActivity mid-key-dispatch and breaks InputChannel.
+            // Never CLEAR_TOP - destroys MainActivity mid-key-dispatch and breaks InputChannel.
             if (navigateToHome) {
                 putExtra(MainActivity.EXTRA_NAVIGATE_TO_HOME, true)
             }
@@ -1376,13 +1438,13 @@ object KioskPolicy {
             )
             true
         } catch (e: Exception) {
-            // Do not fall back to plain startActivity — that triggers the 5s throttle stall.
+            // Do not fall back to plain startActivity - that triggers the 5s throttle stall.
             Log.e(TAG, "Physical TV PendingIntent reclaim failed (no startActivity fallback)", e)
             false
         }
     }
 
-    /** Flags for every reclaim Intent — reorder existing task, never animate. */
+    /** Flags for every reclaim Intent - reorder existing task, never animate. */
     private fun reclaimIntentFlags(): Int =
         Intent.FLAG_ACTIVITY_NEW_TASK or
             Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
@@ -1397,10 +1459,10 @@ object KioskPolicy {
      */
     private fun buildReclaimActivityOptions(context: Context): ActivityOptions {
         val options = try {
-            // Explicit 0,0 — documented "no animation" for custom transitions.
+            // Explicit 0,0 - documented "no animation" for custom transitions.
             ActivityOptions.makeCustomAnimation(context, 0, 0)
         } catch (t: Throwable) {
-            Log.w(TAG, "makeCustomAnimation(0,0) failed — try kiosk_no_anim", t)
+            Log.w(TAG, "makeCustomAnimation(0,0) failed - try kiosk_no_anim", t)
             try {
                 ActivityOptions.makeCustomAnimation(
                     context,
@@ -1408,7 +1470,7 @@ object KioskPolicy {
                     R.anim.kiosk_no_anim,
                 )
             } catch (t2: Throwable) {
-                Log.w(TAG, "makeCustomAnimation(kiosk_no_anim) failed — makeBasic()", t2)
+                Log.w(TAG, "makeCustomAnimation(kiosk_no_anim) failed - makeBasic()", t2)
                 ActivityOptions.makeBasic()
             }
         }
@@ -1465,7 +1527,7 @@ object KioskPolicy {
     /**
      * Call from [android.app.Application.onCreate] before UI starts.
      * If the previous process did not exit cleanly, arm crash recovery once.
-     * Safe under Direct Boot — never throws into Application.onCreate.
+     * Safe under Direct Boot - never throws into Application.onCreate.
      */
     fun onProcessStart(context: Context) {
         try {
@@ -1476,7 +1538,7 @@ object KioskPolicy {
                 p.edit()
                     .putBoolean(KEY_PENDING_CRASH_RECOVERY, true)
                     .apply()
-                Log.w(TAG, "Previous process exited uncleanly — crash recovery armed")
+                Log.w(TAG, "Previous process exited uncleanly - crash recovery armed")
             }
             // New session starts unclean until ProcessLifecycle ON_STOP or explicit clean exit.
             p.edit().putBoolean(KEY_EXITED_CLEANLY, false).apply()
@@ -1485,7 +1547,7 @@ object KioskPolicy {
         }
     }
 
-    /** Foreground session active — dying now without ON_STOP counts as unclean. */
+    /** Foreground session active - dying now without ON_STOP counts as unclean. */
     fun markSessionActive(context: Context) {
         prefs(context).edit().putBoolean(KEY_EXITED_CLEANLY, false).apply()
     }
@@ -1565,13 +1627,13 @@ object KioskPolicy {
             return false
         }
 
-        // Intro playing + already foreground — do not re-fire NAVIGATE_TO_HOME intents.
+        // Intro playing + already foreground - do not re-fire NAVIGATE_TO_HOME intents.
         if (isIntroPlaybackActive() && isMainActivityForeground(context)) {
             Log.d(TAG, "shouldBringAppToFront=false (intro playing + already foreground)")
             return false
         }
 
-        // Absolute block when kiosk is off — no watchdog / boot relaunch loops.
+        // Absolute block when kiosk is off - no watchdog / boot relaunch loops.
         if (!isKioskModeEnabled(context) && !hasPendingCrashRecovery(context)) {
             Log.d(TAG, "shouldBringAppToFront=false (kiosk off, no crash recovery)")
             return false
@@ -1582,7 +1644,7 @@ object KioskPolicy {
             return false
         }
 
-        // MainActivity already foreground — Watchdog must not re-launch (log loop).
+        // MainActivity already foreground - Watchdog must not re-launch (log loop).
         if (isMainActivityForeground(context)) {
             Log.d(TAG, "shouldBringAppToFront=false (MainActivity already foreground)")
             return false
@@ -1643,15 +1705,15 @@ object KioskPolicy {
      * Prefer [forceBringToFrontSafely] from Activity lifecycle callbacks to avoid
      * onPause ↔ onNewIntent infinite loops on physical TVs.
      *
-     * Never finishes or recreates the Activity — only NEW_TASK | SINGLE_TOP so the
+     * Never finishes or recreates the Activity - only NEW_TASK | SINGLE_TOP so the
      * existing top instance is reused instead of spawning rapid new instances.
      *
      * @param skipDebounce when true, use [ActivityOptions.makeBasic] immediately
-     *   (physical TV) — still respects the context loop guard unless [applyLoopGuard]
+     *   (physical TV) - still respects the context loop guard unless [applyLoopGuard]
      *   is false (caller already guarded via [forceBringToFrontSafely] /
      *   [forceBringToFrontPhysicalTvUrgent]).
      * @param ignoreLifecycleBusy when true (physical TV urgent), do not bail on
-     *   [reclaimLifecycleBusy] — only the short launch-request guard applies.
+     *   [reclaimLifecycleBusy] - only the short launch-request guard applies.
      */
     fun forceBringToFront(
         context: Context,
@@ -1672,22 +1734,22 @@ object KioskPolicy {
         }
         if (!isKioskModeEnabled(context)) return false
         if (!ignoreTimedSuppress && isExternalAppActive(context)) {
-            Log.d(TAG, "forceBringToFront skipped — OTT/external session active")
+            Log.d(TAG, "forceBringToFront skipped - OTT/external session active")
             return false
         }
         if (reclaimLifecycleBusy && !ignoreLifecycleBusy) {
-            Log.d(TAG, "forceBringToFront skipped — reclaim lifecycle busy")
+            Log.d(TAG, "forceBringToFront skipped - reclaim lifecycle busy")
             return false
         }
 
         // Hard minimum interval for every reclaim path (including skipDebounce callers
-        // that already stamped lastForceBringAtMs — those pass applyLoopGuard=false).
+        // that already stamped lastForceBringAtMs - those pass applyLoopGuard=false).
         if (applyLoopGuard) {
             val now = System.currentTimeMillis()
             if (lastForceBringAtMs > 0L && now - lastForceBringAtMs < RECLAIM_PENDING_GUARD_MS) {
                 Log.d(
                     TAG,
-                    "forceBringToFront suppressed — min interval " +
+                    "forceBringToFront suppressed - min interval " +
                         "(${now - lastForceBringAtMs}ms < ${RECLAIM_PENDING_GUARD_MS}ms)",
                 )
                 return false
@@ -1711,7 +1773,7 @@ object KioskPolicy {
                 if (now - lastForceBringAtMs < guardMs) {
                     Log.d(
                         TAG,
-                        "forceBringToFront skipDebounce suppressed — loop guard " +
+                        "forceBringToFront skipDebounce suppressed - loop guard " +
                             "(${now - lastForceBringAtMs}ms < ${guardMs}ms)",
                     )
                     return false
@@ -1719,14 +1781,14 @@ object KioskPolicy {
                 lastForceBringAtMs = now
                 reclaimQuietUntilMs = now + guardMs
             }
-            Log.i(TAG, "forceBringToFront — no-anim ActivityOptions (physical TV / skipDebounce)")
+            Log.i(TAG, "forceBringToFront - no-anim ActivityOptions (physical TV / skipDebounce)")
             val started = startActivityImmediate(context, intent)
             if (started) return true
-            Log.w(TAG, "forceBringToFront skipDebounce ActivityOptions failed — PendingIntent")
+            Log.w(TAG, "forceBringToFront skipDebounce ActivityOptions failed - PendingIntent")
             return sendForceBringPendingIntent(context, appContext, intent, requestCode)
         }
 
-        // ——— Android 12+ (API 31+): PendingIntent + debounce ———
+        // --- Android 12+ (API 31+): PendingIntent + debounce ---
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val now = System.currentTimeMillis()
             if (now - lastForceBringAtMs <= FORCE_BRING_DEBOUNCE_MS) {
@@ -1737,12 +1799,12 @@ object KioskPolicy {
             return sendForceBringPendingIntent(context, appContext, intent, requestCode)
         }
 
-        // ——— Android 10 & 11 (API 29–30) only: ActivityOptions startActivity ———
+        // --- Android 10 & 11 (API 29–30) only: ActivityOptions startActivity ---
         if (Build.VERSION.SDK_INT in 29..30) {
             if (applyLoopGuard) {
                 val now = System.currentTimeMillis()
                 if (now - lastForceBringAtMs < loopGuardMs(context)) {
-                    Log.d(TAG, "forceBringToFront API29/30 suppressed — loop guard")
+                    Log.d(TAG, "forceBringToFront API29/30 suppressed - loop guard")
                     return false
                 }
                 lastForceBringAtMs = now
@@ -1751,7 +1813,7 @@ object KioskPolicy {
             return startActivityImmediate(context, intent)
         }
 
-        // ——— API < 29 (Android 9): PendingIntent + debounce ———
+        // --- API < 29 (Android 9): PendingIntent + debounce ---
         val now = System.currentTimeMillis()
         if (now - lastForceBringAtMs <= FORCE_BRING_DEBOUNCE_MS) {
             Log.d(TAG, "forceBringToFront debounced (${now - lastForceBringAtMs}ms) api=${Build.VERSION.SDK_INT}")
@@ -1761,7 +1823,7 @@ object KioskPolicy {
         return sendForceBringPendingIntent(context, appContext, intent, requestCode)
     }
 
-    /** Immediate startActivity via no-animation ActivityOptions — no debounce. */
+    /** Immediate startActivity via no-animation ActivityOptions - no debounce. */
     private fun startActivityImmediate(context: Context, intent: Intent): Boolean {
         return try {
             val options = buildReclaimActivityOptions(context)
@@ -1770,7 +1832,7 @@ object KioskPolicy {
             Log.i(TAG, "forceBringToFront via no-anim ActivityOptions api=${Build.VERSION.SDK_INT}")
             true
         } catch (e: Exception) {
-            Log.w(TAG, "no-anim ActivityOptions startActivity failed — plain startActivity", e)
+            Log.w(TAG, "no-anim ActivityOptions startActivity failed - plain startActivity", e)
             try {
                 context.startActivity(intent)
                 suppressTransitionFlash(context)
@@ -1826,7 +1888,7 @@ object KioskPolicy {
             )
             true
         } catch (e: Exception) {
-            Log.w(TAG, "forceBringToFront PendingIntent failed — fallback startActivity", e)
+            Log.w(TAG, "forceBringToFront PendingIntent failed - fallback startActivity", e)
             try {
                 context.startActivity(intent)
                 suppressTransitionFlash(context)
