@@ -384,7 +384,7 @@ object KioskPolicy {
 
     /**
      * True while guest is intentionally in Live TV / OTT / Cast, or EKTV Pro /
-     * Chromecast Media Shell is still on screen (even if the durable flag was
+     * AirScreen is still on screen (even if the durable flag was
      * cleared too early).
      *
      * Without Media Shell protection, phone→TV Cast briefly steals focus and
@@ -396,18 +396,18 @@ object KioskPolicy {
         if (isOttLaunchGracePeriod(context)) return true
         if (isLastOttPackageVisible(context)) return true
         if (isPackageVisible(context, KioskLockTask.LIVE_TV_PACKAGE)) return true
-        if (isChromecastReceiverActive(context)) return true
+        if (isAirScreenReceiverActive(context)) return true
         return false
     }
 
     /**
-     * True while Android TV Cast / Chromecast Media Shell is displaying or
+     * True while Android TV Cast / AirScreen is displaying or
      * holding a Cast session (foreground UI or foreground service).
      */
-    fun isChromecastReceiverActive(context: Context): Boolean =
+    fun isAirScreenReceiverActive(context: Context): Boolean =
         isPackageAtMostImportance(
             context,
-            KioskLockTask.CHROMECAST_PACKAGE,
+            KioskLockTask.AIRSCREEN_PACKAGE,
             ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE,
         )
 

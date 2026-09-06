@@ -1642,7 +1642,7 @@ class MainActivity : ComponentActivity() {
                     KioskPolicy.isOttLaunchGracePeriod(this) ||
                         KioskPolicy.isLastOttPackageVisible(this) ||
                         KioskPolicy.isPackageVisible(this, KioskLockTask.LIVE_TV_PACKAGE) ||
-                        KioskPolicy.isChromecastReceiverActive(this) -> {
+                        KioskPolicy.isAirScreenReceiverActive(this) -> {
                         // Spurious resume while Live TV / OTT / Cast is still visible — do NOT clear.
                         Log.d(
                             TAG,
@@ -1654,8 +1654,8 @@ class MainActivity : ComponentActivity() {
                             this,
                             KioskPolicy.getLastOttPackage(this)
                                 ?: when {
-                                    KioskPolicy.isChromecastReceiverActive(this) ->
-                                        KioskLockTask.CHROMECAST_PACKAGE
+                                    KioskPolicy.isAirScreenReceiverActive(this) ->
+                                        KioskLockTask.AIRSCREEN_PACKAGE
                                     else -> KioskLockTask.LIVE_TV_PACKAGE
                                 },
                         )

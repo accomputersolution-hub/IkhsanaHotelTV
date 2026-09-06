@@ -41,9 +41,9 @@
     <string name="agenda_empty">No agenda scheduled for today.</string>
     <string name="agenda_empty_day">No sessions on this day.</string>
     <string name="feature_entertainment">Entertainment &amp; Apps</string>
-    <string name="feature_entertainment_subtitle">OTT, streaming &amp; Chromecast</string>
+    <string name="feature_entertainment_subtitle">OTT, streaming &amp; Cast</string>
     <string name="entertainment_title">Entertainment &amp; Apps</string>
-    <string name="entertainment_subtitle">Streaming apps &amp; Chromecast · Back returns to Home</string>
+    <string name="entertainment_subtitle">Streaming apps &amp; Cast · Back returns to Home</string>
     <string name="entertainment_installed">Installed</string>
     <string name="entertainment_get_app">Get on Play Store</string>
     <string name="entertainment_not_installed">%1$s is not installed — opening Play Store</string>
@@ -59,9 +59,9 @@
     <string name="ott_jiocinema">JioCinema</string>
     <string name="ott_sonyliv">SonyLIV</string>
     <string name="ott_spotify">Spotify</string>
-    <string name="ott_chromecast">Chromecast</string>
-    <string name="entertainment_cast_hint">Cast from your phone to this TV</string>
-    <string name="entertainment_cast_ready">This TV is Chromecast-ready — open Cast on your phone and choose this room TV</string>
+    <string name="ott_cast">Cast</string>
+    <string name="entertainment_cast_hint">Cast / AirPlay from your phone</string>
+    <string name="entertainment_app_not_installed">App not installed</string>
     <string name="live_tv_coming_soon">Live TV channels coming soon</string>
     <string name="live_tv_app_not_installed">Live TV App not installed</string>
     <string name="services_title">Guest Services &amp; Housekeeping</string>

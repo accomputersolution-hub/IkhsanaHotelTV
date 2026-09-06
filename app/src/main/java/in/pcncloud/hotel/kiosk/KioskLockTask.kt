@@ -29,8 +29,8 @@ object KioskLockTask {
     /** YouTube TV package id — used only for leanback URI fallback when launching. */
     const val YOUTUBE_TV_PACKAGE = "com.google.android.youtube.tv"
 
-    /** Android TV Chromecast / Google Cast built-in receiver (Media Shell). */
-    const val CHROMECAST_PACKAGE = "com.google.android.apps.mediashell"
+    /** AirScreen — AirPlay / Google Cast / Miracast receiver for room TVs. */
+    const val AIRSCREEN_PACKAGE = "com.ionitech.airscreen"
 
     /** In-room Live TV / IPTV app — must stay Lock-Task allowlisted under kiosk. */
     const val LIVE_TV_PACKAGE = "com.ektv.pro"
@@ -38,12 +38,11 @@ object KioskLockTask {
     /**
      * Essential Lock Task packages always merged with the hotel launcher.
      * - Live TV: so Lock Task Mode does not silently block IPTV
-     * - Chromecast Media Shell: so phone→TV Cast keeps working while kiosk is pinned
-     *   (without this, Cast often only works after the kiosk app is force-stopped)
+     * - AirScreen: so phone Cast / AirPlay keeps working while kiosk is pinned
      */
     val BASELINE_LOCK_TASK_PACKAGES: List<String> = listOf(
         LIVE_TV_PACKAGE,
-        CHROMECAST_PACKAGE,
+        AIRSCREEN_PACKAGE,
     )
 
     fun adminComponent(context: Context): ComponentName =
@@ -214,26 +213,6 @@ object KioskLockTask {
         KioskPolicy.canLaunchApp(context, targetPackageName)
 
     /**
-     * Ensure Chromecast Media Shell stays on the Lock Task allowlist so phone→TV
-     * Cast is not blocked while the hotel kiosk is pinned.
-     *
-     * Does **not** call [KioskPolicy.markOttLaunched] (Media Shell is headless —
-     * guest stays in hotel UI until Cast actually takes the screen).
-     */
-    fun prepareChromecastForKiosk(context: Context): Boolean {
-        return try {
-            applyLockTaskForLaunch(context, CHROMECAST_PACKAGE)
-            ensureLockTaskActive(context)
-            reassertLockTaskPackages(context)
-            Log.i(TAG, "Chromecast Media Shell prepared under Lock Task")
-            true
-        } catch (t: Throwable) {
-            Log.e(TAG, "prepareChromecastForKiosk failed", t)
-            false
-        }
-    }
-
-    /**
      * Launch any installed package under Lock Task with safe Intent flags.
      * @return true if startActivity was attempted successfully
      */
@@ -245,11 +224,6 @@ object KioskLockTask {
                 Log.w(TAG, "Refusing launch — invalid/empty package under kiosk")
                 KioskPolicy.denyExternalLaunchSilently(context, targetPackage)
                 return false
-            }
-
-            // Headless Cast receiver — no launcher Activity; only refresh Lock Task.
-            if (target == CHROMECAST_PACKAGE) {
-                return prepareChromecastForKiosk(context)
             }
 
             // Mark OTT session BEFORE leaving MainActivity so watchdog / onUserLeaveHint skip reclaim.
@@ -302,8 +276,6 @@ object KioskLockTask {
                     Intent.ACTION_VIEW,
                     android.net.Uri.parse("https://www.youtube.com/tv"),
                 )
-                // Media Shell is usually a headless Cast receiver (no launcher UI).
-                CHROMECAST_PACKAGE -> null
                 else -> null
             }
 

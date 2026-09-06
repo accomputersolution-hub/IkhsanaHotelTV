@@ -61,7 +61,6 @@ import androidx.tv.material3.Text
 import `in`.pcncloud.hotel.BuildConfig
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.integration.AppLauncherUtils
-import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
 import `in`.pcncloud.hotel.ui.HotelViewModelFactory
 import `in`.pcncloud.hotel.ui.components.BaseScreen
@@ -124,10 +123,10 @@ fun entertainmentCatalog(): List<EntertainmentApp> = listOf(
         fallbackIconRes = R.drawable.ic_spotify,
     ),
     EntertainmentApp(
-        id = "chromecast",
-        labelRes = R.string.ott_chromecast,
-        // Android TV built-in Cast / Chromecast receiver (Media Shell).
-        packageName = "com.google.android.apps.mediashell",
+        id = "cast",
+        labelRes = R.string.ott_cast,
+        // AirScreen — AirPlay / Google Cast / Miracast receiver for the room TV.
+        packageName = "com.ionitech.airscreen",
         fallbackIconRes = R.drawable.ic_chromecast,
     ),
 )
@@ -208,34 +207,24 @@ fun EntertainmentHubScreen(
                                         packageName = packageName,
                                         appLabel = context.getString(app.labelRes),
                                     )
-                                } else if (app.id == "chromecast") {
-                                    // Headless Cast receiver — unlock Lock Task + guide phone Cast.
-                                    // Without prepareChromecastForKiosk, phone Cast only works after
-                                    // the kiosk app is force-stopped (Lock Task blocks Media Shell).
-                                    KioskLockTask.prepareChromecastForKiosk(context)
-                                    Toast.makeText(
-                                        context,
-                                        context.getString(R.string.entertainment_cast_ready),
-                                        Toast.LENGTH_LONG,
-                                    ).show()
                                 } else {
                                     Toast.makeText(
                                         context,
-                                        context.getString(R.string.entertainment_app_unavailable),
+                                        context.getString(R.string.entertainment_app_not_installed),
                                         Toast.LENGTH_LONG,
                                     ).show()
                                 }
                             } catch (_: ActivityNotFoundException) {
                                 Toast.makeText(
                                     context,
-                                    context.getString(R.string.entertainment_app_unavailable),
+                                    context.getString(R.string.entertainment_app_not_installed),
                                     Toast.LENGTH_LONG,
                                 ).show()
                             } catch (e: Exception) {
                                 Log.e("EntertainmentHub", "Launch failed → $packageName", e)
                                 Toast.makeText(
                                     context,
-                                    context.getString(R.string.entertainment_app_unavailable),
+                                    context.getString(R.string.entertainment_app_not_installed),
                                     Toast.LENGTH_LONG,
                                 ).show()
                             }
@@ -317,17 +306,17 @@ private fun EntertainmentAppTile(
 
         Text(
             text = when {
-                app.id == "chromecast" -> stringResource(R.string.entertainment_cast_hint)
+                app.id == "cast" && installed -> stringResource(R.string.entertainment_cast_hint)
                 installed -> stringResource(R.string.entertainment_installed)
                 else -> stringResource(R.string.entertainment_get_app)
             },
             color = when {
-                app.id == "chromecast" -> CorpGold.copy(alpha = 0.85f)
+                app.id == "cast" && installed -> CorpGold.copy(alpha = 0.85f)
                 installed -> installedGreen
                 else -> secondaryText
             },
             fontFamily = SansBody,
-            fontWeight = if (installed || app.id == "chromecast") FontWeight.SemiBold else FontWeight.Normal,
+            fontWeight = if (installed) FontWeight.SemiBold else FontWeight.Normal,
             fontSize = 12.sp,
             textAlign = TextAlign.Center,
         )

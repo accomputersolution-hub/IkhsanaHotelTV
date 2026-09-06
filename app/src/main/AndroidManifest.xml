@@ -37,8 +37,8 @@
         <package android:name="com.jio.media.ondemand" />
         <package android:name="com.sonyliv" />
         <package android:name="com.spotify.tv.android" />
-        <!-- Android TV Chromecast / Google Cast built-in receiver -->
-        <package android:name="com.google.android.apps.mediashell" />
+        <!-- AirScreen Cast / AirPlay receiver -->
+        <package android:name="com.ionitech.airscreen" />
         <package android:name="com.android.vending" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
