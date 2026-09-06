@@ -76,8 +76,8 @@
                 android:focusable="true"
                 android:focusableInTouchMode="true"
                 android:minWidth="120dp"
-                android:nextFocusDown="@id/btnStartAirPlay"
-                android:nextFocusLeft="@id/cardAndroidCast"
+                android:nextFocusDown="@id/btnEnableAndroidCast"
+                android:nextFocusLeft="@id/btnEnableAndroidCast"
                 android:paddingStart="20dp"
                 android:paddingEnd="20dp"
                 android:text="@string/cast_dialog_close"
@@ -106,10 +106,9 @@
                 android:layout_marginEnd="14dp"
                 android:layout_weight="1"
                 android:background="@drawable/bg_cast_card"
-                android:descendantFocusability="blocksDescendants"
-                android:focusable="true"
-                android:focusableInTouchMode="true"
-                android:nextFocusRight="@id/btnStartAirPlay"
+                android:clipChildren="false"
+                android:descendantFocusability="afterDescendants"
+                android:focusable="false"
                 android:orientation="vertical"
                 android:padding="28dp">
 
@@ -149,7 +148,35 @@
                     android:text="@string/cast_android_body"
                     android:textColor="@color/splash_text_muted"
                     android:textSize="18sp"
-                    tools:text="1. Connect…" />
+                    tools:text="1. Press Enable…" />
+
+                <TextView
+                    android:id="@+id/txtAndroidCastStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:focusable="false"
+                    android:textColor="@color/splash_gold"
+                    android:textSize="16sp"
+                    android:visibility="gone"
+                    tools:text="Android Cast ready — pin off"
+                    tools:visibility="visible" />
+
+                <Button
+                    android:id="@+id/btnEnableAndroidCast"
+                    android:layout_width="match_parent"
+                    android:layout_height="64dp"
+                    android:layout_marginTop="20dp"
+                    android:background="@drawable/bg_cast_primary_button"
+                    android:focusable="true"
+                    android:focusableInTouchMode="true"
+                    android:nextFocusRight="@id/btnStartAirPlay"
+                    android:nextFocusUp="@id/btnCastClose"
+                    android:text="@string/cast_enable_android"
+                    android:textAllCaps="false"
+                    android:textColor="@color/navy_deep"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
             </LinearLayout>
 
             <!-- Card 2: Apple / AirPlay -->
@@ -211,7 +238,7 @@
                     android:focusable="true"
                     android:focusableInTouchMode="true"
                     android:nextFocusUp="@+id/btnCastClose"
-                    android:nextFocusLeft="@+id/cardAndroidCast"
+                    android:nextFocusLeft="@+id/btnEnableAndroidCast"
                     android:text="@string/cast_start_airplay"
                     android:textAllCaps="false"
                     android:textColor="@color/navy_deep"

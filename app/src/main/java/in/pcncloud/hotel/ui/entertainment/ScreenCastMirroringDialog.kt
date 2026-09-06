@@ -1,34 +1,35 @@
 package `in`.pcncloud.hotel.ui.entertainment
 
+import android.app.Activity
 import android.app.Dialog
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
+import android.view.View
 import android.view.Window
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.TextView
 import android.widget.Toast
 import `in`.pcncloud.hotel.R
 import `in`.pcncloud.hotel.kiosk.CastHandoffMonitor
 import `in`.pcncloud.hotel.kiosk.KioskLockTask
 import `in`.pcncloud.hotel.kiosk.KioskPolicy
-import android.app.Activity
 
 /**
  * TV-friendly Screen Cast & Mirroring dialog.
  *
- * Split layout:
- * - Left: Android / built-in Chromecast instructions (no action button)
- * - Right: Apple AirPlay — launches AirScreen (`com.ionitech.airscreen`)
- *
- * Shown from Compose via [show] using an [android.app.Dialog]
- * (MainActivity is ComponentActivity, not a Fragment host).
+ * Left: Android Cast — explicit **Enable Android Cast** unpins Lock Task / screen pin
+ * so YouTube / Prime can paint (required when the TV is not Device Owner).
+ * Right: Apple AirPlay — launches AirScreen.
  */
 class ScreenCastMirroringDialog private constructor(
     context: Context,
 ) : Dialog(context, R.style.Theme_PcnCloudTv_CastDialog) {
+
+    private var statusView: TextView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,14 +47,24 @@ class ScreenCastMirroringDialog private constructor(
             clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
         }
 
-        findViewById<Button>(R.id.btnCastClose)?.apply {
-            setOnClickListener { dismiss() }
-            // Default focus on Close — not AirPlay — so OK does not launch AirScreen.
+        statusView = findViewById(R.id.txtAndroidCastStatus)
+
+        findViewById<Button>(R.id.btnCastClose)?.setOnClickListener { dismiss() }
+
+        findViewById<Button>(R.id.btnEnableAndroidCast)?.apply {
+            setOnClickListener { enableAndroidCast() }
+            // Default focus here — guest must unpin before phone Cast works on non-DO.
             post { requestFocus() }
         }
+
         findViewById<Button>(R.id.btnStartAirPlay)?.setOnClickListener { launchAirScreen() }
-        // Keep Cast arm after dismiss — guest usually closes the dialog then casts
-        // from YouTube / Prime. Arm expires (~15 min) and restores Lock Task.
+
+        // If dialog was opened already armed, show ready state.
+        if (CastHandoffMonitor.isArmedForIncomingCast() ||
+            CastHandoffMonitor.isYieldingForCast()
+        ) {
+            showAndroidCastReady()
+        }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -62,6 +73,36 @@ class ScreenCastMirroringDialog private constructor(
             return true
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    /** Unpin kiosk so phone Chromecast / Cast can take the TV screen. */
+    private fun enableAndroidCast() {
+        val activity = context as? Activity
+        if (activity != null) {
+            CastHandoffMonitor.prepareForIncomingCast(activity)
+            // Extra stop in case prepare raced with a reclaim re-pin.
+            runCatching { activity.stopLockTask() }
+        } else {
+            CastHandoffMonitor.armForIncomingCast()
+            CastHandoffMonitor.start(context.applicationContext)
+        }
+
+        showAndroidCastReady()
+        Toast.makeText(
+            context.applicationContext,
+            context.getString(R.string.cast_android_ready),
+            Toast.LENGTH_LONG,
+        ).show()
+        Log.i(TAG, "Enable Android Cast — pin removed / armed for phone Cast")
+    }
+
+    private fun showAndroidCastReady() {
+        statusView?.apply {
+            text = context.getString(R.string.cast_android_ready_short)
+            visibility = View.VISIBLE
+        }
+        findViewById<TextView>(R.id.txtCastSubtitle)?.text =
+            context.getString(R.string.cast_android_ready_short)
     }
 
     private fun launchAirScreen() {
@@ -78,7 +119,6 @@ class ScreenCastMirroringDialog private constructor(
         }
 
         try {
-            // Prefer kiosk-safe launch (marks OTT session + Lock Task allowlist).
             val launched = KioskLockTask.launchAllowlistedPackage(context, packageName)
             if (!launched) {
                 KioskPolicy.markOttLaunched(context, packageName)
@@ -102,18 +142,15 @@ class ScreenCastMirroringDialog private constructor(
     companion object {
         private const val TAG = "ScreenCastDialog"
 
-        /** Show the cast/mirroring dialog over the current Activity window. */
         @JvmStatic
         fun show(context: Context): ScreenCastMirroringDialog {
-            // Unpin Lock Task now so YouTube / Prime Cast can paint when the phone
-            // connects — allowlisting mediashell alone is not enough on many ATVs.
+            // Pre-arm when dialog opens so Close → phone Cast also works.
             val activity = context as? Activity
             if (activity != null) {
                 CastHandoffMonitor.prepareForIncomingCast(activity)
             } else {
                 CastHandoffMonitor.armForIncomingCast()
                 CastHandoffMonitor.start(context.applicationContext)
-                KioskLockTask.ensureChromecastAllowlisted(context)
             }
             return ScreenCastMirroringDialog(context).also { it.show() }
         }

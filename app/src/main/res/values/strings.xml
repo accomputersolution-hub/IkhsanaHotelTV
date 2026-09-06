@@ -236,9 +236,10 @@
     <string name="cast_dialog_close">Close</string>
     <string name="cast_android_badge">Android</string>
     <string name="cast_android_title">For Android Devices</string>
-    <string name="cast_android_body">1. Connect your phone to the Hotel Wi-Fi.
-2. Open YouTube, Netflix, or Prime Video.
-3. Tap the Cast icon and select your Room TV.</string>
+    <string name="cast_android_body">1. Press Enable Android Cast below (removes kiosk pin).\n2. Connect your phone to Hotel Wi-Fi.\n3. Open YouTube / Netflix / Prime Video.\n4. Tap Cast and select this Room TV.</string>
+    <string name="cast_enable_android">Enable Android Cast</string>
+    <string name="cast_android_ready">Pin removed — Cast from your phone now (15 min)</string>
+    <string name="cast_android_ready_short">Android Cast ready — pin off</string>
     <string name="cast_apple_badge">Apple</string>
     <string name="cast_apple_title">For Apple/iPhone Devices</string>
     <string name="cast_apple_body">Use AirPlay to mirror your iPhone or iPad screen to the TV.</string>
