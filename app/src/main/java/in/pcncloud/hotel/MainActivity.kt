@@ -1641,18 +1641,23 @@ class MainActivity : ComponentActivity() {
                 when {
                     KioskPolicy.isOttLaunchGracePeriod(this) ||
                         KioskPolicy.isLastOttPackageVisible(this) ||
-                        KioskPolicy.isPackageVisible(this, KioskLockTask.LIVE_TV_PACKAGE) -> {
-                        // Spurious resume while Live TV / OTT is still visible — do NOT clear.
+                        KioskPolicy.isPackageVisible(this, KioskLockTask.LIVE_TV_PACKAGE) ||
+                        KioskPolicy.isChromecastReceiverActive(this) -> {
+                        // Spurious resume while Live TV / OTT / Cast is still visible — do NOT clear.
                         Log.d(
                             TAG,
-                            "onResume — OTT/Live TV still protected " +
+                            "onResume — OTT/Live TV/Cast still protected " +
                                 "(${KioskPolicy.getLastOttPackage(this)}); keep session",
                         )
                         // Re-assert durable flag so Watchdog stays quiet.
                         KioskPolicy.markOttLaunched(
                             this,
                             KioskPolicy.getLastOttPackage(this)
-                                ?: KioskLockTask.LIVE_TV_PACKAGE,
+                                ?: when {
+                                    KioskPolicy.isChromecastReceiverActive(this) ->
+                                        KioskLockTask.CHROMECAST_PACKAGE
+                                    else -> KioskLockTask.LIVE_TV_PACKAGE
+                                },
                         )
                     }
                     else -> {

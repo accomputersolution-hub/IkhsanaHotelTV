@@ -370,7 +370,7 @@ object KioskPolicy {
             return "timedSuppress"
         }
         if (context != null && shouldProtectExternalAppSession(context)) {
-            Log.d(TAG, "skip reclaim — Live TV / OTT protected ($reason)")
+            Log.d(TAG, "skip reclaim — Live TV / OTT / Cast protected ($reason)")
             return "ottSession"
         }
         return null
@@ -383,16 +383,33 @@ object KioskPolicy {
     ): Boolean = reclaimSkipLabel(reason, context, ignoreTimedSuppress) != null
 
     /**
-     * True while guest is intentionally in Live TV / OTT, or EKTV Pro is still
-     * visible (even if the durable flag was cleared too early).
+     * True while guest is intentionally in Live TV / OTT / Cast, or EKTV Pro /
+     * Chromecast Media Shell is still on screen (even if the durable flag was
+     * cleared too early).
+     *
+     * Without Media Shell protection, phone→TV Cast briefly steals focus and
+     * Watchdog / onUserLeaveHint reclaim the hotel app — Cast only works after
+     * the kiosk process is force-stopped.
      */
     fun shouldProtectExternalAppSession(context: Context): Boolean {
         if (isExternalAppActive(context)) return true
         if (isOttLaunchGracePeriod(context)) return true
         if (isLastOttPackageVisible(context)) return true
         if (isPackageVisible(context, KioskLockTask.LIVE_TV_PACKAGE)) return true
+        if (isChromecastReceiverActive(context)) return true
         return false
     }
+
+    /**
+     * True while Android TV Cast / Chromecast Media Shell is displaying or
+     * holding a Cast session (foreground UI or foreground service).
+     */
+    fun isChromecastReceiverActive(context: Context): Boolean =
+        isPackageAtMostImportance(
+            context,
+            KioskLockTask.CHROMECAST_PACKAGE,
+            ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE,
+        )
 
     /**
      * Persist Super Admin package whitelist for [hotelId] only.
@@ -1049,7 +1066,22 @@ object KioskPolicy {
     }
 
     /** True when [packageName] (or a `:subprocess`) is at least VISIBLE importance. */
-    fun isPackageVisible(context: Context, packageName: String): Boolean {
+    fun isPackageVisible(context: Context, packageName: String): Boolean =
+        isPackageAtMostImportance(
+            context,
+            packageName,
+            ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE,
+        )
+
+    /**
+     * True when [packageName] (or a `:subprocess`) is running at [maxImportance]
+     * or higher priority (lower numeric value = more important).
+     */
+    fun isPackageAtMostImportance(
+        context: Context,
+        packageName: String,
+        maxImportance: Int,
+    ): Boolean {
         val pkg = packageName.trim()
         if (pkg.isEmpty()) return false
         return try {
@@ -1060,13 +1092,13 @@ object KioskPolicy {
             for (proc in procs) {
                 val name = proc.processName ?: continue
                 if (name != pkg && !name.startsWith("$pkg:")) continue
-                if (proc.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE) {
+                if (proc.importance <= maxImportance) {
                     return true
                 }
             }
             false
         } catch (t: Throwable) {
-            Log.w(TAG, "isPackageVisible($pkg) failed", t)
+            Log.w(TAG, "isPackageAtMostImportance($pkg ≤$maxImportance) failed", t)
             false
         }
     }
