@@ -486,6 +486,7 @@ function setupAddHotelModal() {
         allowedPackages: [
           'com.google.android.youtube.tv',
           'com.amazon.amazonvideo.livingroom',
+          'com.google.android.apps.mediashell',
           'com.ionitech.airscreen',
         ],
         branding: {

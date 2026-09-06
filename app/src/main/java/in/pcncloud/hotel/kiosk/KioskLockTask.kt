@@ -32,16 +32,25 @@ object KioskLockTask {
     /** AirScreen — AirPlay / Google Cast / Miracast receiver for room TVs. */
     const val AIRSCREEN_PACKAGE = "com.ionitech.airscreen"
 
+    /**
+     * Android TV built-in Chromecast / Google Cast receiver (Media Shell).
+     * Must stay Lock-Task allowlisted — otherwise phone Chromecast connects but
+     * the kiosk stays on top and Cast never fills the screen.
+     */
+    const val CHROMECAST_PACKAGE = "com.google.android.apps.mediashell"
+
     /** In-room Live TV / IPTV app — must stay Lock-Task allowlisted under kiosk. */
     const val LIVE_TV_PACKAGE = "com.ektv.pro"
 
     /**
      * Essential Lock Task packages always merged with the hotel launcher.
      * - Live TV: so Lock Task Mode does not silently block IPTV
-     * - AirScreen: so phone Cast / AirPlay keeps working while kiosk is pinned
+     * - Chromecast Media Shell: so phone→TV Cast can take the full screen under kiosk
+     * - AirScreen: so AirPlay / Cast via AirScreen keeps working while kiosk is pinned
      */
     val BASELINE_LOCK_TASK_PACKAGES: List<String> = listOf(
         LIVE_TV_PACKAGE,
+        CHROMECAST_PACKAGE,
         AIRSCREEN_PACKAGE,
     )
 

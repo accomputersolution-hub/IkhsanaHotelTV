@@ -384,32 +384,64 @@ object KioskPolicy {
 
     /**
      * True while guest is intentionally in Live TV / OTT / Cast, or EKTV Pro /
-     * AirScreen is still on screen (even if the durable flag was
-     * cleared too early).
+     * Chromecast Media Shell / AirScreen is still on screen (even if the durable
+     * flag was cleared too early).
      *
-     * Without Media Shell protection, phone→TV Cast briefly steals focus and
-     * Watchdog / onUserLeaveHint reclaim the hotel app — Cast only works after
-     * the kiosk process is force-stopped.
+     * Without Media Shell protection, phone→TV Chromecast briefly steals focus and
+     * Watchdog / onUserLeaveHint reclaim the hotel app — Cast stays behind the
+     * kiosk UI instead of going full-screen.
      */
     fun shouldProtectExternalAppSession(context: Context): Boolean {
         if (isExternalAppActive(context)) return true
         if (isOttLaunchGracePeriod(context)) return true
         if (isLastOttPackageVisible(context)) return true
         if (isPackageVisible(context, KioskLockTask.LIVE_TV_PACKAGE)) return true
+        if (isChromecastReceiverActive(context)) return true
         if (isAirScreenReceiverActive(context)) return true
         return false
     }
 
     /**
-     * True while Android TV Cast / AirScreen is displaying or
+     * True while Android TV built-in Chromecast (Media Shell) is displaying or
      * holding a Cast session (foreground UI or foreground service).
+     */
+    fun isChromecastReceiverActive(context: Context): Boolean =
+        // Use CACHED — Cast handoff often starts Media Shell before it reaches SERVICE/VISIBLE.
+        isPackageAtMostImportance(
+            context,
+            KioskLockTask.CHROMECAST_PACKAGE,
+            ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED,
+        )
+
+    /**
+     * True while AirScreen is displaying or holding a Cast / AirPlay session.
      */
     fun isAirScreenReceiverActive(context: Context): Boolean =
         isPackageAtMostImportance(
             context,
             KioskLockTask.AIRSCREEN_PACKAGE,
-            ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE,
+            ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED,
         )
+
+    /** True while any Cast receiver (Media Shell or AirScreen) is active. */
+    fun isCastReceiverActive(context: Context): Boolean =
+        isChromecastReceiverActive(context) || isAirScreenReceiverActive(context)
+
+    /**
+     * If a Cast receiver is running, mark it as the intentional external session so
+     * Watchdog / onUserLeaveHint do not yank the hotel UI back over Cast.
+     * @return package marked, or null if no Cast receiver is running
+     */
+    fun markCastSessionIfActive(context: Context): String? {
+        val pkg = when {
+            isChromecastReceiverActive(context) -> KioskLockTask.CHROMECAST_PACKAGE
+            isAirScreenReceiverActive(context) -> KioskLockTask.AIRSCREEN_PACKAGE
+            else -> null
+        } ?: return null
+        markOttLaunched(context, pkg)
+        Log.i(TAG, "Cast session protected → $pkg")
+        return pkg
+    }
 
     /**
      * Persist Super Admin package whitelist for [hotelId] only.

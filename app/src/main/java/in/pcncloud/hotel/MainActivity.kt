@@ -1642,18 +1642,20 @@ class MainActivity : ComponentActivity() {
                     KioskPolicy.isOttLaunchGracePeriod(this) ||
                         KioskPolicy.isLastOttPackageVisible(this) ||
                         KioskPolicy.isPackageVisible(this, KioskLockTask.LIVE_TV_PACKAGE) ||
-                        KioskPolicy.isAirScreenReceiverActive(this) -> {
+                        KioskPolicy.isCastReceiverActive(this) -> {
                         // Spurious resume while Live TV / OTT / Cast is still visible — do NOT clear.
                         Log.d(
                             TAG,
                             "onResume — OTT/Live TV/Cast still protected " +
                                 "(${KioskPolicy.getLastOttPackage(this)}); keep session",
                         )
-                        // Re-assert durable flag so Watchdog stays quiet.
+                        // Re-assert durable flag so Watchdog stays quiet and Cast stays foreground.
                         KioskPolicy.markOttLaunched(
                             this,
                             KioskPolicy.getLastOttPackage(this)
                                 ?: when {
+                                    KioskPolicy.isChromecastReceiverActive(this) ->
+                                        KioskLockTask.CHROMECAST_PACKAGE
                                     KioskPolicy.isAirScreenReceiverActive(this) ->
                                         KioskLockTask.AIRSCREEN_PACKAGE
                                     else -> KioskLockTask.LIVE_TV_PACKAGE
@@ -1723,6 +1725,14 @@ class MainActivity : ComponentActivity() {
 
         val kioskOn = KioskPolicy.isKioskModeEnabled(this)
         if (!kioskOn) return
+
+        // Phone Chromecast connected → keep hotel UI in background so Cast fills the screen.
+        if (KioskPolicy.markCastSessionIfActive(this) != null) {
+            Log.i(TAG, "onPause — Cast active, moveTaskToBack (yield screen)")
+            runCatching { moveTaskToBack(true) }
+            return
+        }
+
         if (KioskPolicy.shouldSkipKioskReclaim("onPause", this)) return
         if (KioskPolicy.isExternalAppActive(this)) return
 
@@ -2176,6 +2186,10 @@ class MainActivity : ComponentActivity() {
         // Suppress outgoing transition before the system can paint the stock launcher.
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
+
+        // Chromecast / AirScreen handoff: mark Cast session BEFORE reclaim gate.
+        // Otherwise Watchdog yanks the kiosk back before Media Shell is "visible".
+        KioskPolicy.markCastSessionIfActive(this)
 
         val skipLabel = KioskPolicy.reclaimSkipLabel(
             reason = "onUserLeaveHint",
