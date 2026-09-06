@@ -26,7 +26,7 @@ import `in`.pcncloud.hotel.kiosk.KioskLockTask
  * - intent-filter DEVICE_ADMIN_ENABLED
  * - meta-data android.app.device_admin → @xml/device_admin
  */
-class AdminReceiver : DeviceAdminReceiver() {
+open class AdminReceiver : DeviceAdminReceiver() {
 
     override fun onEnabled(context: Context, intent: Intent) {
         Log.i(TAG, "Device admin enabled — applying Lock Task + Always-On VPN policy")
