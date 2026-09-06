@@ -229,4 +229,19 @@
     <string name="admin_key_blocker_back">Back</string>
     <string name="admin_key_blocker_saved">Blocked keyCode %1$d</string>
     <string name="admin_key_blocker_removed">Removed keyCode %1$d</string>
+
+    <!-- Screen Cast & Mirroring dialog -->
+    <string name="cast_dialog_title">Screen Cast &amp; Mirroring</string>
+    <string name="cast_dialog_subtitle">Cast from your phone to this room TV</string>
+    <string name="cast_dialog_close">Close</string>
+    <string name="cast_android_badge">Android</string>
+    <string name="cast_android_title">For Android Devices</string>
+    <string name="cast_android_body">1. Connect your phone to the Hotel Wi-Fi.
+2. Open YouTube, Netflix, or Prime Video.
+3. Tap the Cast icon and select your Room TV.</string>
+    <string name="cast_apple_badge">Apple</string>
+    <string name="cast_apple_title">For Apple/iPhone Devices</string>
+    <string name="cast_apple_body">Use AirPlay to mirror your iPhone or iPad screen to the TV.</string>
+    <string name="cast_start_airplay">Start AirPlay for iPhone</string>
+    <string name="cast_airplay_not_installed">AirPlay module is not installed</string>
 </resources>

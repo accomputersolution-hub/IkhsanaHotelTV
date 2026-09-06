@@ -194,6 +194,12 @@ fun EntertainmentHubScreen(
                             }
                             val packageName = app.packageName
                             try {
+                                // Cast tile opens the Screen Cast & Mirroring guide
+                                // (Android Chromecast tips + AirPlay → AirScreen).
+                                if (app.id == "cast") {
+                                    ScreenCastMirroringDialog.show(context)
+                                    return@EntertainmentAppTile
+                                }
                                 // Standard launch-intent check — do not leave this screen if missing.
                                 val launchIntent =
                                     context.packageManager.getLaunchIntentForPackage(packageName)

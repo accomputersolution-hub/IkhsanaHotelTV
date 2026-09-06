@@ -46,4 +46,18 @@
         <item name="android:taskToFrontEnterAnimation">@null</item>
         <item name="android:taskToFrontExitAnimation">@null</item>
     </style>
+
+    <!-- Fullscreen translucent dialog for Screen Cast & Mirroring on Android TV. -->
+    <style name="Theme.PcnCloudTv.CastDialog" parent="Theme.AppCompat.Dialog">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.72</item>
+        <item name="android:windowAnimationStyle">@style/Theme.PcnCloudTv.NoAnimation</item>
+        <item name="android:defaultFocusHighlightEnabled">false</item>
+        <item name="android:colorControlHighlight">@android:color/transparent</item>
+        <item name="colorControlHighlight">@android:color/transparent</item>
+    </style>
 </resources>
