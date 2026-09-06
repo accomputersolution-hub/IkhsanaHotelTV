@@ -390,6 +390,20 @@ class MainActivity : ComponentActivity() {
     private fun ensureDeviceOwnerLockTask(reason: String) {
         if (!resolveKioskEnabled()) return
 
+        // TEMP: no screen pin — Cast testing while default launcher + key interceptor reclaim.
+        if (KioskLockTask.isScreenPinTemporarilyDisabled()) {
+            KioskLockTask.releaseScreenPinForCastTesting(this)
+            if (physicalTvOverlayActive) {
+                removeKioskOverlayBarrier()
+            }
+            Log.i(
+                TAG,
+                "TEMP: ensureDeviceOwnerLockTask skipped pin ($reason) — " +
+                    "HOME reclaim still active after Cast",
+            )
+            return
+        }
+
         if (KioskPolicy.isDeviceOwner(this)) {
             try {
                 val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
@@ -434,6 +448,15 @@ class MainActivity : ComponentActivity() {
      * Never throws admin / authorization exceptions to the guest UI.
      */
     private fun activatePhysicalTvFallback(reason: String) {
+        if (KioskLockTask.isScreenPinTemporarilyDisabled()) {
+            KioskLockTask.releaseScreenPinForCastTesting(this)
+            removeKioskOverlayBarrier()
+            Log.i(
+                TAG,
+                "TEMP: physical TV pin/overlay skipped ($reason) — Cast testing mode",
+            )
+            return
+        }
         Log.w(
             TAG,
             "Physical TV fallback ($reason) — Screen Pinning + Overlay " +
@@ -506,6 +529,11 @@ class MainActivity : ComponentActivity() {
      * from repeated startLockTask in onNewIntent / onResume.
      */
     private fun startLockTaskSafely(reason: String = "kiosk") {
+        if (KioskLockTask.isScreenPinTemporarilyDisabled()) {
+            KioskLockTask.releaseScreenPinForCastTesting(this)
+            Log.d(TAG, "TEMP: startLockTaskSafely skipped — screen pin disabled ($reason)")
+            return
+        }
         if (!resolveKioskEnabled() && !isKioskModeEnabled) {
             Log.d(TAG, "startLockTaskSafely skip — kiosk off ($reason)")
             return
@@ -1588,6 +1616,18 @@ class MainActivity : ComponentActivity() {
         try {
             window?.setWindowAnimations(0)
         } catch (_: Throwable) {
+        }
+        if (KioskLockTask.isScreenPinTemporarilyDisabled()) {
+            // Unpin only — keep reclaim stack so Cast-end lands on hotel home.
+            KioskLockTask.releaseScreenPinForCastTesting(this)
+            removeKioskOverlayBarrier()
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
+            Log.i(
+                TAG,
+                "snapKioskSurfaceImmediate ($reason) — TEMP pin off; HOME reclaim armed",
+            )
+            return
         }
         // Device Owner whitelist + pin, or Physical TV Screen Pinning path.
         ensureDeviceOwnerLockTask(reason)

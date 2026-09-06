@@ -26,6 +26,19 @@ object KioskLockTask {
     /** Packages launched this kiosk session — merged into every setLockTaskPackages call. */
     private const val KEY_SESSION_LOCK_TASK_PACKAGES = "sessionLockTaskPackages"
 
+    /**
+     * TEMPORARY: disable Lock Task / screen pin for Chromecast testing.
+     *
+     * Kiosk reclaim stays ON (default HOME launcher + [HomeKeyInterceptorService] +
+     * Watchdog) so after Cast ends the guest returns to hotel [MainActivity] home —
+     * not the stock Android TV launcher.
+     *
+     * Flip to `false` to restore screen pin.
+     */
+    const val TEMP_DISABLE_SCREEN_PIN: Boolean = true
+
+    fun isScreenPinTemporarilyDisabled(): Boolean = TEMP_DISABLE_SCREEN_PIN
+
     /** YouTube TV package id — used only for leanback URI fallback when launching. */
     const val YOUTUBE_TV_PACKAGE = "com.google.android.youtube.tv"
 
@@ -48,6 +61,28 @@ object KioskLockTask {
 
     fun adminComponent(context: Context): ComponentName =
         MyDeviceAdminReceiver.getComponentName(context)
+
+    /**
+     * If [TEMP_DISABLE_SCREEN_PIN] is on, unpin the current task and clear the
+     * Device Owner Lock Task allowlist so Media Shell / Cast can take the screen.
+     */
+    fun releaseScreenPinForCastTesting(context: Context) {
+        if (!TEMP_DISABLE_SCREEN_PIN) return
+        try {
+            val activity = context.findActivity()
+            if (activity != null && isInLockTask(activity)) {
+                activity.stopLockTask()
+                Log.i(TAG, "TEMP: stopLockTask — screen pin off for Cast testing")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "TEMP: stopLockTask failed", e)
+        }
+        try {
+            KioskPolicy.clearDeviceOwnerLockTaskPackages(context)
+        } catch (e: Exception) {
+            Log.w(TAG, "TEMP: clearDeviceOwnerLockTaskPackages failed", e)
+        }
+    }
 
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -130,6 +165,11 @@ object KioskLockTask {
             Log.d(TAG, "applyAllowlist skipped — kiosk OFF, DPM packages cleared")
             return
         }
+        if (TEMP_DISABLE_SCREEN_PIN) {
+            releaseScreenPinForCastTesting(context)
+            Log.i(TAG, "TEMP: applyAllowlist skipped — screen pin disabled for Cast")
+            return
+        }
         try {
             val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             val adminName = adminComponent(context)
@@ -184,6 +224,11 @@ object KioskLockTask {
      * Must be called from an [Activity] context when kiosk is enabled.
      */
     fun ensureLockTaskActive(context: Context) {
+        if (TEMP_DISABLE_SCREEN_PIN) {
+            releaseScreenPinForCastTesting(context)
+            Log.d(TAG, "TEMP: ensureLockTaskActive skipped — screen pin disabled")
+            return
+        }
         if (!KioskPolicy.isKioskModeEnabled(context) &&
             !context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .getBoolean("isKioskModeEnabled", false)
@@ -222,6 +267,11 @@ object KioskLockTask {
      */
     fun prepareChromecastForKiosk(context: Context): Boolean {
         return try {
+            if (TEMP_DISABLE_SCREEN_PIN) {
+                releaseScreenPinForCastTesting(context)
+                Log.i(TAG, "TEMP: Chromecast ready without Lock Task (pin disabled)")
+                return true
+            }
             applyLockTaskForLaunch(context, CHROMECAST_PACKAGE)
             ensureLockTaskActive(context)
             reassertLockTaskPackages(context)
@@ -318,6 +368,10 @@ object KioskLockTask {
      * Remember [targetPackage] for the session and push the full effective whitelist.
      */
     fun applyLockTaskForLaunch(context: Context, targetPackage: String) {
+        if (TEMP_DISABLE_SCREEN_PIN) {
+            Log.d(TAG, "TEMP: applyLockTaskForLaunch skipped for $targetPackage")
+            return
+        }
         try {
             val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             val adminName = adminComponent(context)
@@ -338,6 +392,11 @@ object KioskLockTask {
      */
     fun reassertLockTaskPackages(context: Context) {
         if (!KioskPolicy.isKioskModeEnabled(context)) return
+        if (TEMP_DISABLE_SCREEN_PIN) {
+            releaseScreenPinForCastTesting(context)
+            Log.d(TAG, "TEMP: reassertLockTaskPackages skipped — screen pin disabled")
+            return
+        }
         try {
             val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             val adminName = adminComponent(context)
